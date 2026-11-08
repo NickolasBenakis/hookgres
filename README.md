@@ -1,12 +1,12 @@
-# Hookwire
+# Hookgres
 
-**Outbound webhooks on the Postgres you already run.** Signed delivery, retries
+**Postgres webhooks for TypeScript: reliable, signed outbound webhooks on the Postgres you already run.** Signed delivery, retries
 with backoff, endpoint health, secret rotation and replay, in one TypeScript
 library with no extra servers, queues or per-message bills.
 
-Hookwire is the webhook-sending half of Svix or Hookdeck, as a library:
+Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
 
-- **Standard Webhooks signatures.** Receivers can verify with Hookwire's
+- **Standard Webhooks signatures.** Receivers can verify with Hookgres's
   `verifyWebhook` or any [Standard Webhooks](https://www.standardwebhooks.com)
   library, in any language.
 - **Transactional outbox.** Queue a webhook inside your own transaction; it
@@ -24,7 +24,7 @@ Hookwire is the webhook-sending half of Svix or Hookdeck, as a library:
 ## Install
 
 ```sh
-npm install hookwire pg
+npm install hookgres pg
 ```
 
 Requires Node 20+ and Postgres 13+.
@@ -33,23 +33,23 @@ Requires Node 20+ and Postgres 13+.
 
 ```ts
 import pg from "pg";
-import { Hookwire } from "hookwire";
+import { Hookgres } from "hookgres";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const hookwire = new Hookwire({ pool });
+const hookgres = new Hookgres({ pool });
 
-await hookwire.migrate(); // creates the "hookwire" schema; safe to run on every boot
-hookwire.start(); // background delivery worker
+await hookgres.migrate(); // creates the "hookgres" schema; safe to run on every boot
+hookgres.start(); // background delivery worker
 
 // Your customer registers an endpoint (show them the secret once).
-const endpoint = await hookwire.createEndpoint({
+const endpoint = await hookgres.createEndpoint({
   tenantId: "acme",
   url: "https://acme.example.com/webhooks",
   eventTypes: ["invoice.paid", "invoice.refunded"], // omit for all events
 });
 
 // Anywhere in your app:
-await hookwire.send({
+await hookgres.send({
   tenantId: "acme",
   eventType: "invoice.paid",
   payload: { invoiceId: "in_123", amount: 4200 },
@@ -57,7 +57,7 @@ await hookwire.send({
 });
 
 // On shutdown: finishes in-flight deliveries.
-await hookwire.stop();
+await hookgres.stop();
 ```
 
 ### Send inside your transaction
@@ -67,7 +67,7 @@ const client = await pool.connect();
 try {
   await client.query("BEGIN");
   await client.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [id]);
-  await hookwire.send(
+  await hookgres.send(
     { tenantId, eventType: "invoice.paid", payload: { id } },
     { client },
   );
@@ -85,7 +85,7 @@ try {
 ```ts
 // e.g. a cron route hit every minute
 let processed: number;
-do processed = await hookwire.runOnce();
+do processed = await hookgres.runOnce();
 while (processed > 0);
 ```
 
@@ -108,7 +108,7 @@ across retries so receivers can deduplicate), `webhook-timestamp` and
 Verifying on the receiving side (needs the raw body):
 
 ```ts
-import { verifyWebhook } from "hookwire";
+import { verifyWebhook } from "hookgres";
 
 app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
   const event = verifyWebhook({
@@ -149,9 +149,9 @@ responds but before the result is saved, so receivers should deduplicate on
 ### Options
 
 ```ts
-new Hookwire({
+new Hookgres({
   pool, // or connectionString
-  schema: "hookwire",
+  schema: "hookgres",
   retrySchedule: [5_000, 300_000 /* ... */], // ms before each retry
   requestTimeoutMs: 15_000,
   disableEndpointAfterMs: 5 * 24 * 3600_000, // null to never disable
@@ -164,7 +164,7 @@ new Hookwire({
 
 ## Security note
 
-Hookwire sends requests to URLs your users provide. In production, stop
+Hookgres sends requests to URLs your users provide. In production, stop
 endpoints from reaching your internal network (SSRF): pass a `fetch` that
 blocks private IP ranges, or route deliveries through an egress proxy.
 

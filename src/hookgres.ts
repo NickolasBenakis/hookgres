@@ -36,12 +36,12 @@ export const DEFAULT_RETRY_SCHEDULE = [
 
 const RESPONSE_BODY_LIMIT = 4096;
 
-export interface HookwireOptions {
-  /** An existing `pg.Pool`. Hookwire never closes a pool it did not create. */
+export interface HookgresOptions {
+  /** An existing `pg.Pool`. Hookgres never closes a pool it did not create. */
   pool?: pg.Pool;
-  /** Alternatively, a connection string; Hookwire creates and owns the pool. */
+  /** Alternatively, a connection string; Hookgres creates and owns the pool. */
   connectionString?: string;
-  /** Postgres schema for Hookwire's tables. Defaults to `hookwire`. */
+  /** Postgres schema for Hookgres's tables. Defaults to `hookgres`. */
   schema?: string;
   /** Delay in ms before each retry. Its length + 1 is the max attempt count. */
   retrySchedule?: number[];
@@ -94,7 +94,7 @@ interface AttemptOutcome {
   durationMs: number;
 }
 
-export class Hookwire {
+export class Hookgres {
   readonly pool: pg.Pool;
   private readonly ownsPool: boolean;
   private readonly schema: string;
@@ -122,7 +122,7 @@ export class Hookwire {
   private wakePending = false;
   private generation = 0;
 
-  constructor(options: HookwireOptions) {
+  constructor(options: HookgresOptions) {
     if (options.pool) {
       this.pool = options.pool;
       this.ownsPool = false;
@@ -130,10 +130,10 @@ export class Hookwire {
       this.pool = new pg.Pool({ connectionString: options.connectionString });
       this.ownsPool = true;
     } else {
-      throw new Error("Hookwire needs either `pool` or `connectionString`");
+      throw new Error("Hookgres needs either `pool` or `connectionString`");
     }
 
-    const schema = options.schema ?? "hookwire";
+    const schema = options.schema ?? "hookgres";
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) {
       throw new Error(
         `Invalid schema name "${schema}": use lowercase letters, digits and underscores`,
@@ -166,21 +166,21 @@ export class Hookwire {
     }
     this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
     this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.userAgent = options.userAgent ?? "Hookwire/0.1";
+    this.userAgent = options.userAgent ?? "Hookgres/0.1";
     this.onError =
       options.onError ??
-      ((error) => console.error("[hookwire] worker error:", error));
+      ((error) => console.error("[hookgres] worker error:", error));
   }
 
   // ---------------------------------------------------------------- schema
 
-  /** Creates or upgrades Hookwire's tables. Safe to run concurrently. */
+  /** Creates or upgrades Hookgres's tables. Safe to run concurrently. */
   async migrate(): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-        `hookwire:migrate:${this.schema}`,
+        `hookgres:migrate:${this.schema}`,
       ]);
       await client.query(`CREATE SCHEMA IF NOT EXISTS ${this.schema}`);
       await client.query(
@@ -483,7 +483,7 @@ export class Hookwire {
     if (this.loopPromise === loop) this.loopPromise = null;
   }
 
-  /** Stops the worker and closes the pool if Hookwire created it. */
+  /** Stops the worker and closes the pool if Hookgres created it. */
   async close(): Promise<void> {
     await this.stop();
     if (this.ownsPool) await this.pool.end();

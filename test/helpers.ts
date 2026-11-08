@@ -3,7 +3,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, inject } from "vitest";
-import { Hookwire, type HookwireOptions } from "../src/index.js";
+import { Hookgres, type HookgresOptions } from "../src/index.js";
 
 export interface ReceivedRequest {
   headers: IncomingHttpHeaders;
@@ -51,16 +51,16 @@ export async function startReceiver(): Promise<Receiver> {
 }
 
 /**
- * Per-file test context: a pool, a unique schema, and a factory for Hookwire
+ * Per-file test context: a pool, a unique schema, and a factory for Hookgres
  * instances that are all stopped after each test.
  */
-export function useHookwire() {
+export function useHookgres() {
   const ctx = {
     pool: undefined as unknown as pg.Pool,
     schema: `hw_${randomBytes(6).toString("hex")}`,
-    instances: [] as Hookwire[],
-    create(options: Partial<HookwireOptions> = {}) {
-      const hw = new Hookwire({
+    instances: [] as Hookgres[],
+    create(options: Partial<HookgresOptions> = {}) {
+      const hw = new Hookgres({
         pool: ctx.pool,
         schema: ctx.schema,
         retrySchedule: [0, 0],
@@ -114,7 +114,7 @@ export async function waitFor(
 }
 
 /** Calls runOnce() until a pass processes nothing. */
-export async function drain(hw: Hookwire): Promise<void> {
+export async function drain(hw: Hookgres): Promise<void> {
   for (let i = 0; i < 100; i++) {
     if ((await hw.runOnce()) === 0) return;
   }

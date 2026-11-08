@@ -1,8 +1,8 @@
 export {
   DEFAULT_RETRY_SCHEDULE,
-  Hookwire,
-  type HookwireOptions,
-} from "./hookwire.js";
+  Hookgres,
+  type HookgresOptions,
+} from "./hookgres.js";
 export {
   assertSecret,
   generateSecret,

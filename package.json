@@ -1,7 +1,7 @@
 {
-  "name": "hookwire",
+  "name": "hookgres",
   "version": "0.1.0",
-  "description": "Postgres-native outbound webhooks for TypeScript: signed delivery, retries, endpoint health and replay, with no extra infrastructure.",
+  "description": "Hookgres: reliable, signed webhooks on your Postgres. Retries, endpoint health, secret rotation and replay for TypeScript, with no extra infrastructure.",
   "keywords": [
     "webhooks",
     "postgres",
@@ -10,7 +10,11 @@
     "outbox",
     "delivery",
     "retries",
-    "svix-alternative"
+    "svix-alternative",
+    "postgres-webhooks",
+    "pg-webhooks",
+    "webhooks-postgres",
+    "transactional-outbox"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -47,5 +51,10 @@
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   },
-  "packageManager": "pnpm@10.33.3"
+  "packageManager": "pnpm@10.33.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NickolasBenakis/hookgres.git"
+  },
+  "homepage": "https://github.com/NickolasBenakis/hookgres#readme"
 }

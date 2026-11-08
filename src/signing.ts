@@ -101,7 +101,7 @@ function readHeader(headers: HeaderBag, name: string): string | undefined {
 }
 
 /**
- * Verifies a webhook signed by Hookwire (or any Standard Webhooks sender) and
+ * Verifies a webhook signed by Hookgres (or any Standard Webhooks sender) and
  * returns the parsed JSON body. Throws `WebhookVerificationError` otherwise.
  */
 export function verifyWebhook<T = unknown>(options: VerifyOptions): T {

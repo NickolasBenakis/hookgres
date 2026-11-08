@@ -4,11 +4,11 @@ import {
   drain,
   type Receiver,
   startReceiver,
-  useHookwire,
+  useHookgres,
   waitFor,
 } from "./helpers.js";
 
-const ctx = useHookwire();
+const ctx = useHookgres();
 let receiver: Receiver;
 
 beforeEach(async () => {
