@@ -4,3 +4,7 @@ coverage
 .git
 docs/.vitepress/dist
 docs/.vitepress/cache
+.env*
+.vercel
+private
+DECISIONS.md

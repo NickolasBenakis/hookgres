@@ -1,0 +1,24 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: A small script or steps. Leave out secrets and real customer data.
+      render: ts
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: hookgres 0.1.0, Node.js 24.1, Postgres 17
+    validations:
+      required: true
