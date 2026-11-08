@@ -1,8 +1,8 @@
 # Hookgres
 
-**Postgres webhooks for TypeScript: reliable, signed outbound webhooks on the Postgres you already run.** Signed delivery, retries
-with backoff, endpoint health, secret rotation and replay, in one TypeScript
-library with no extra servers, queues or per-message bills.
+**Postgres webhooks for TypeScript.** Send signed webhooks to your customers
+from the Postgres you already run, with retries, endpoint health, secret
+rotation and replay, and without extra servers, queues or per-message bills.
 
 Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
 
