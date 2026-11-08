@@ -249,6 +249,7 @@
     transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
   }
   fieldset.seg { margin: 0; min-inline-size: 0; }
+  @media (max-width: 400px) { .seg button { font-size: 13.5px; padding: 10px 8px; } }
   .seg.small button { font-size: 13.5px; padding: 9px 16px; }
   .panels { display: grid; }
   .panel {
@@ -497,7 +498,7 @@
         </div>
         <div class="log" aria-hidden="true">
           <div class="log-row head">
-            <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>18h</span><span>28h</span><span>Delivery</span>
+            <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>17.6h</span><span>27.6h</span><span>Delivery</span>
           </div>
           <div class="log-row">
             <div class="endpoint"><b>acme.com/webhooks</b><small>every event</small></div>
@@ -819,7 +820,7 @@ hookgres.start();
         db.className = "tx-db";
         if (commit) {
           const track = $(".track", demo);
-          packet.style.setProperty("--dist", `${track.clientWidth - packet.offsetWidth}px`);
+          packet.style.setProperty("--dist", `${Math.max(0, track.clientWidth - packet.offsetWidth)}px`);
           db.textContent = "committed";
           rx.textContent = "…";
           status.textContent = "Committed: the webhook was queued with your change, and the worker sends it.";
@@ -841,7 +842,7 @@ hookgres.start();
 
   // Retry simulator: the default schedule, compressed.
   {
-    const labels = ["0s", "5s", "5m", "35m", "2.6h", "7.6h", "18h", "28h"];
+    const labels = ["0s", "5s", "5m", "35m", "2.6h", "7.6h", "17.6h", "27.6h"];
     const outcomes = {
       healthy: [204],
       flaky: [503, 503, 204],
@@ -884,7 +885,8 @@ hookgres.start();
     });
     sendButton.addEventListener("click", async () => {
       const id = ++run;
-      const codes = outcomes[mode];
+      const runMode = mode;
+      const codes = outcomes[runMode];
       for (const w of wraps) w.replaceChildren();
       setProgress(0, false);
       clock.textContent = "t = 0s";
@@ -895,7 +897,7 @@ hookgres.start();
         if (id !== run) return;
         const code = codes[i];
         const chip = document.createElement("span");
-        chip.className = `attempt ${code < 300 ? "ok" : code >= 500 && mode === "down" ? "bad" : "warn"}`;
+        chip.className = `attempt ${code < 300 ? "ok" : code >= 500 && runMode === "down" ? "bad" : "warn"}`;
         chip.textContent = code;
         wraps[i].append(chip);
         setProgress(i / (labels.length - 1), true);
@@ -913,8 +915,11 @@ hookgres.start();
     });
   }
 
-  // Live signature demo: Standard Webhooks HMAC-SHA256 with WebCrypto.
-  {
+  // Live signature demo: Standard Webhooks HMAC-SHA256 with WebCrypto
+  // (only available on HTTPS and localhost).
+  if (!globalThis.crypto?.subtle) {
+    $("#sig-verdict").textContent = "This demo needs HTTPS";
+  } else {
     const payload = $("#sig-payload");
     const tamper = $("#sig-tamper");
     const verdict = $("#sig-verdict");
@@ -953,7 +958,8 @@ hookgres.start();
       out.sig.classList.remove("fresh");
       void out.sig.offsetWidth;
       out.sig.classList.add("fresh");
-      out.body.textContent = JSON.stringify(JSON.parse(received), null, 2);
+      // The exact bytes that were signed, so the copied request verifies.
+      out.body.textContent = received;
       const ok = expected === signature;
       verdict.className = `verdict ${ok ? "ok" : "bad"}`;
       verdict.textContent = ok ? "Signature verified" : "Rejected: signature doesn't match";

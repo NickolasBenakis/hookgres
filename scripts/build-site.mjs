@@ -41,8 +41,13 @@ if (existsSync(robots) && !readFileSync(robots, "utf8").includes(docsSitemap)) {
 // /llms.txt (https://llmstxt.org) and everything in one file at /llms-full.txt.
 const docsDir = join(root, "docs");
 const pages = readdirSync(docsDir, { recursive: true })
-  .filter((file) => file.endsWith(".md"))
   .map((file) => file.split("\\").join("/"))
+  .filter(
+    (file) =>
+      file.endsWith(".md") &&
+      !file.startsWith(".vitepress/") &&
+      !file.startsWith("public/"),
+  )
   .sort((a, b) => order(a) - order(b) || a.localeCompare(b));
 function order(file) {
   if (file === "index.md") return 0;
@@ -63,7 +68,11 @@ const index = [
 ];
 const full = [];
 for (const file of pages) {
-  const markdown = readFileSync(join(docsDir, file), "utf8");
+  // Docs link to /guides/... relative to the VitePress base; make them absolute.
+  const markdown = readFileSync(join(docsDir, file), "utf8").replace(
+    /\]\(\/(?!\/)/g,
+    `](${site}/docs/`,
+  );
   const target = join(out, "docs", file === "index.md" ? "index.md" : file);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, markdown);
