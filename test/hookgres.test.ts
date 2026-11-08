@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { verifyWebhook, type WebhookEnvelope } from "../src/index.js";
+import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
+import { Hookgres, verifyWebhook, type WebhookEnvelope } from "../src/index.js";
 import {
+  closedPortUrl,
   drain,
   type Receiver,
   startReceiver,
@@ -306,7 +307,7 @@ describe("delivery", () => {
     });
     await hw.createEndpoint({
       tenantId: "refused",
-      url: "http://127.0.0.1:1/",
+      url: await closedPortUrl(),
     });
     receiver.respond = async (n) => {
       if (n === 1) return 302;
@@ -327,7 +328,7 @@ describe("delivery", () => {
     expect(errors).toHaveLength(3);
     expect(errors).toContainEqual("HTTP 302");
     expect(errors).toContainEqual("Timed out after 200ms");
-    expect(errors.some((e) => /ECONNREFUSED|fetch failed/.test(e))).toBe(true);
+    expect(errors).toContainEqual("fetch failed: ECONNREFUSED");
   });
 
   it("never delivers twice with competing workers", async () => {
@@ -647,5 +648,104 @@ describe("review regressions", () => {
     hw.start();
     await hw.send({ tenantId: "acme", eventType: "first", payload: {} });
     await waitFor(() => receiver.requests.length === 2, 2000);
+  });
+});
+
+describe("configuration and edge cases", () => {
+  it("creates and closes its own pool from a connection string", async () => {
+    const hw = new Hookgres({
+      connectionString: inject("databaseUrl"),
+      schema: ctx.schema,
+    });
+    hw.start();
+    hw.start(); // second start is a no-op
+    expect(await hw.listEndpoints("nobody")).toEqual([]);
+    await hw.close();
+    expect(hw.pool.ended).toBe(true);
+  });
+
+  it("does not close a pool it was given", async () => {
+    const hw = ctx.create();
+    await hw.close();
+    expect(ctx.pool.ended).toBe(false);
+  });
+
+  it("validates constructor options", () => {
+    expect(() => new Hookgres({})).toThrow(/pool.*connectionString/);
+    expect(() => ctx.create({ retrySchedule: [5, -1] })).toThrow(
+      /non-negative/,
+    );
+    expect(() =>
+      ctx.create({ requestTimeoutMs: 10_000, lockTimeoutMs: 5_000 }),
+    ).toThrow(/lockTimeoutMs/);
+  });
+
+  it("returns null or false for unknown ids", async () => {
+    const hw = ctx.create();
+    expect(await hw.getEndpoint("ep_missing")).toBeNull();
+    expect(await hw.getMessage("msg_missing")).toBeNull();
+    expect(await hw.getDelivery("dlv_missing")).toBeNull();
+    expect(await hw.deleteEndpoint("ep_missing")).toBe(false);
+    expect(await hw.rotateEndpointSecret("ep_missing")).toBeNull();
+    expect(await hw.replayDelivery("dlv_missing")).toBeNull();
+  });
+
+  it("updates metadata and treats an empty patch as a read", async () => {
+    const hw = ctx.create();
+    const ep = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+      metadata: { plan: "free" },
+    });
+    const updated = await hw.updateEndpoint(ep.id, {
+      metadata: { plan: "pro" },
+    });
+    expect(updated?.metadata).toEqual({ plan: "pro" });
+    expect((await hw.updateEndpoint(ep.id, {}))?.id).toBe(ep.id);
+  });
+
+  it("filters deliveries by endpoint and status", async () => {
+    const hw = ctx.create({ retrySchedule: [] });
+    const ok = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const bad = await hw.createEndpoint({
+      tenantId: "acme",
+      url: await closedPortUrl(),
+    });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await drain(hw);
+
+    const failed = await hw.listDeliveries({ status: "failed" });
+    expect(failed.map((d) => d.endpointId)).toEqual([bad.id]);
+    const byEndpoint = await hw.listDeliveries({ endpointId: ok.id });
+    expect(byEndpoint.map((d) => d.status)).toEqual(["succeeded"]);
+  });
+
+  it("records DNS failures with their reason", async () => {
+    const hw = ctx.create({ retrySchedule: [] });
+    await hw.createEndpoint({
+      tenantId: "acme",
+      url: "http://does-not-exist.invalid/hook",
+    });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await drain(hw);
+    const [delivery] = await hw.listDeliveries();
+    expect(delivery?.lastError).toBe("fetch failed: ENOTFOUND");
+  });
+
+  it("surfaces errors from runOnce when onError rethrows", async () => {
+    const hw = ctx.create();
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    // Break the attempts table so recording the result fails.
+    await ctx.pool.query(
+      `ALTER TABLE "${ctx.schema}".attempts ADD CONSTRAINT boom CHECK (false) NOT VALID`,
+    );
+    try {
+      await expect(hw.runOnce()).rejects.toThrow(/boom/);
+    } finally {
+      await ctx.pool.query(
+        `ALTER TABLE "${ctx.schema}".attempts DROP CONSTRAINT boom`,
+      );
+    }
   });
 });

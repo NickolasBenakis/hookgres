@@ -806,14 +806,16 @@ async function readLimited(response: Response): Promise<string | null> {
 }
 
 function describeError(error: unknown, timeoutMs: number): string {
-  if (error instanceof Error) {
-    if (error.name === "TimeoutError") return `Timed out after ${timeoutMs}ms`;
-    const cause = (error as { cause?: { code?: string; message?: string } })
-      .cause;
-    if (cause?.code) return `${error.message}: ${cause.code}`;
-    return error.message;
-  }
-  return String(error);
+  if (!(error instanceof Error)) return String(error);
+  if (error.name === "TimeoutError") return `Timed out after ${timeoutMs}ms`;
+  // fetch wraps the real reason ("ECONNREFUSED", "bad port", ...) in `cause`,
+  // sometimes as an AggregateError when several addresses were tried.
+  const cause = error.cause as
+    | { code?: string; message?: string; errors?: { code?: string }[] }
+    | undefined;
+  const detail =
+    cause?.code ?? cause?.errors?.find((e) => e.code)?.code ?? cause?.message;
+  return detail ? `${error.message}: ${detail}` : error.message;
 }
 
 type Row = Record<string, unknown>;

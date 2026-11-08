@@ -120,3 +120,12 @@ export async function drain(hw: Hookgres): Promise<void> {
   }
   throw new Error("drain did not settle");
 }
+
+/** A URL on a local port that was just freed, so connecting is refused. */
+export async function closedPortUrl(): Promise<string> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return `http://127.0.0.1:${port}/`;
+}

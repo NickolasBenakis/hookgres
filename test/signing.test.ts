@@ -138,3 +138,68 @@ describe("verifyWebhook input errors", () => {
     expect(() => assertSecret("whsec_c2hvcnQ=")).toThrow();
   });
 });
+
+describe("verifyWebhook header and secret formats", () => {
+  const secret = generateSecret();
+  const now = Date.now();
+  const ts = Math.floor(now / 1000);
+  const body = '{"ok":true}';
+  const signature = sign(secret, "msg_1", ts, body);
+
+  it("accepts secrets without the whsec_ prefix", () => {
+    const bare = secret.slice("whsec_".length);
+    const headers = {
+      "webhook-id": "msg_1",
+      "webhook-timestamp": String(ts),
+      "webhook-signature": sign(bare, "msg_1", ts, body),
+    };
+    expect(verifyWebhook({ secret, headers, body, now })).toEqual({ ok: true });
+  });
+
+  it("reads array header values and get()-style header objects", () => {
+    const arrays = {
+      "Webhook-Id": ["msg_1"],
+      "Webhook-Timestamp": [String(ts)],
+      "Webhook-Signature": [signature],
+    };
+    expect(() =>
+      verifyWebhook({ secret, headers: arrays, body, now }),
+    ).not.toThrow();
+    const map = new Map<string, string>([
+      ["webhook-id", "msg_1"],
+      ["webhook-timestamp", String(ts)],
+    ]);
+    const getter = { get: (name: string) => map.get(name) ?? null };
+    expect(() => verifyWebhook({ secret, headers: getter, body, now })).toThrow(
+      /Missing required webhook headers/,
+    );
+  });
+
+  it("rejects a non-numeric timestamp and non-JSON bodies", () => {
+    expect(() =>
+      verifyWebhook({
+        secret,
+        headers: {
+          "webhook-id": "msg_1",
+          "webhook-timestamp": "soon",
+          "webhook-signature": signature,
+        },
+        body,
+        now,
+      }),
+    ).toThrow(/Invalid webhook-timestamp/);
+    const text = "not json";
+    expect(() =>
+      verifyWebhook({
+        secret: [generateSecret(), secret],
+        headers: {
+          "webhook-id": "msg_1",
+          "webhook-timestamp": String(ts),
+          "webhook-signature": sign(secret, "msg_1", ts, text),
+        },
+        body: text,
+        now,
+      }),
+    ).toThrow(/not valid JSON/);
+  });
+});

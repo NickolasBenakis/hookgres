@@ -16,27 +16,41 @@
     "webhooks-postgres",
     "transactional-outbox"
   ],
+  "license": "MIT",
+  "author": "Nikos Benakis <nickolasbenele@gmail.com>",
+  "bugs": {
+    "url": "https://github.com/NickolasBenakis/hookgres/issues",
+    "email": "nickolasbenele@gmail.com"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "smoke": "node scripts/smoke.mjs",
+    "bench": "pnpm build && node scripts/load-test.ts",
+    "prepublishOnly": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"
   },
   "peerDependencies": {
     "pg": "^8.11.0"
@@ -46,7 +60,9 @@
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
+    "@vitest/coverage-v8": "^5.1.0",
     "pg": "^8.23.1",
+    "standardwebhooks": "^1.1.1",
     "testcontainers": "^12.2.1",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
@@ -56,5 +72,6 @@
     "type": "git",
     "url": "git+https://github.com/NickolasBenakis/hookgres.git"
   },
-  "homepage": "https://github.com/NickolasBenakis/hookgres#readme"
+  "homepage": "https://github.com/NickolasBenakis/hookgres#readme",
+  "sideEffects": false
 }

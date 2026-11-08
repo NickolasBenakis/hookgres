@@ -27,7 +27,7 @@ Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
 npm install hookgres pg
 ```
 
-Requires Node 20+ and Postgres 13+.
+Requires Node 22+ and Postgres 14+.
 
 ## Quick start
 
@@ -168,10 +168,51 @@ Hookgres sends requests to URLs your users provide. In production, stop
 endpoints from reaching your internal network (SSRF): pass a `fetch` that
 blocks private IP ranges, or route deliveries through an egress proxy.
 
+## Performance
+
+One laptop (Apple Silicon, Postgres 16 in Docker), 20,000 webhooks, 4 workers
+with 50 concurrent requests each, local receiver:
+
+| Metric                      | Result             |
+| --------------------------- | ------------------ |
+| `send()` throughput         | ~13,000 messages/s |
+| Delivery throughput         | ~5,500 webhooks/s  |
+| Lost or duplicated webhooks | 0                  |
+
+Run it yourself with `pnpm bench` (`LOAD_N`, `LOAD_WORKERS` and
+`LOAD_CONCURRENCY` to tune). Real-world throughput depends mostly on how fast
+receivers respond.
+
+## Examples
+
+[`examples/basic.ts`](examples/basic.ts) is a complete sender and verifying
+receiver in one file:
+
+```sh
+pnpm build && DATABASE_URL=postgres://... node examples/basic.ts
+```
+
 ## Development
 
 ```sh
 pnpm install
 pnpm test        # starts Postgres in Docker via testcontainers (or set DATABASE_URL)
+pnpm coverage    # tests with coverage thresholds
 pnpm typecheck && pnpm lint
+pnpm smoke       # packs the library and runs the example from the tarball
+pnpm bench       # load test: no lost or duplicated webhooks
 ```
+
+CI runs the suite on Postgres 14–18 and Node 22, 24 and 26, and checks
+webhooks against the official
+[Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks)
+library.
+
+## Security
+
+Report vulnerabilities privately to nickolasbenele@gmail.com (see
+[SECURITY.md](SECURITY.md)).
+
+## License
+
+[MIT](LICENSE) © Nikos Benakis
