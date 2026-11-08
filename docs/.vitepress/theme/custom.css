@@ -1,14 +1,794 @@
-/* Brand colours shared with the landing page (site/index.html). */
+/*
+ * Hookgres docs theme. Mirrors the landing page (site/index.html): the same
+ * oklch tokens, system type, translucent nav and dark code panels, mapped
+ * onto VitePress's --vp-* variables. Component overrides are prefixed with a
+ * parent class so they outrank VitePress's scoped styles without !important.
+ */
+
+/* Landing page tokens -------------------------------------------------- */
+
 :root {
-  --vp-c-brand-1: oklch(42% 0.09 245);
-  --vp-c-brand-2: oklch(48% 0.1 245);
-  --vp-c-brand-3: oklch(42% 0.09 245);
-  --vp-c-brand-soft: oklch(42% 0.09 245 / 0.14);
+  --hg-bg: oklch(98.9% 0.002 286);
+  --hg-bg-alt: oklch(96.6% 0.003 286);
+  --hg-surface: oklch(100% 0 0);
+  --hg-ink: oklch(21% 0.005 286);
+  --hg-ink-2: oklch(49% 0.008 286);
+  --hg-ink-3: oklch(52% 0.008 286);
+  --hg-line: oklch(90.5% 0.004 286);
+  --hg-accent: oklch(49% 0.095 248);
+  --hg-accent-hover: oklch(44% 0.095 248);
+  --hg-accent-ink: oklch(100% 0 0);
+  --hg-ok: oklch(52% 0.13 152);
+  --hg-warn: oklch(52% 0.13 60);
+  --hg-bad: oklch(50% 0.18 27);
+  --hg-code-bg: oklch(19% 0.008 270);
+  --hg-code-line: oklch(28% 0.01 270);
+  --hg-code-ink: oklch(92% 0.005 270);
+  --hg-code-dim: oklch(64% 0.012 270);
+  --hg-code-key: oklch(78% 0.1 250);
+  /* The landing page's .code shadow, lighter: docs stack many blocks. */
+  --hg-code-shadow:
+    0 1px 2px oklch(0% 0 0 / 0.04), 0 6px 16px oklch(0% 0 0 / 0.05),
+    0 20px 40px oklch(0% 0 0 / 0.04);
+  --hg-tint: 7%;
+  --hg-tint-base: var(--hg-bg);
+  --hg-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --hg-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --hg-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas,
+    monospace;
+  --hg-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hg-fast: 150ms;
+  --hg-blur: saturate(180%) blur(20px);
 }
 
 .dark {
-  --vp-c-brand-1: oklch(75% 0.1 235);
-  --vp-c-brand-2: oklch(68% 0.1 235);
-  --vp-c-brand-3: oklch(55% 0.1 240);
-  --vp-c-brand-soft: oklch(75% 0.1 235 / 0.16);
+  --hg-bg: oklch(0% 0 0);
+  --hg-bg-alt: oklch(15.5% 0.004 286);
+  --hg-surface: oklch(19% 0.005 286);
+  --hg-ink: oklch(96.5% 0.003 286);
+  --hg-ink-2: oklch(72% 0.008 286);
+  --hg-ink-3: oklch(66% 0.008 286);
+  --hg-line: oklch(28% 0.006 286);
+  --hg-accent: oklch(72% 0.11 245);
+  --hg-accent-hover: oklch(78% 0.1 245);
+  --hg-accent-ink: oklch(15% 0.01 260);
+  --hg-ok: oklch(76% 0.15 152);
+  --hg-warn: oklch(80% 0.14 75);
+  --hg-bad: oklch(70% 0.17 27);
+  --hg-code-bg: oklch(17% 0.006 270);
+  --hg-code-line: oklch(27% 0.008 270);
+  --hg-code-shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
+  --hg-tint: 14%;
+  --hg-tint-base: var(--hg-bg-alt);
+}
+
+/* VitePress mapping ---------------------------------------------------- */
+
+:root {
+  --vp-c-bg: var(--hg-bg);
+  --vp-c-bg-alt: var(--hg-bg-alt);
+  --vp-c-bg-elv: var(--hg-surface);
+  --vp-c-bg-soft: var(--hg-bg-alt);
+
+  --vp-c-text-1: var(--hg-ink);
+  --vp-c-text-2: var(--hg-ink-2);
+  --vp-c-text-3: var(--hg-ink-3);
+
+  --vp-c-divider: var(--hg-line);
+  --vp-c-gutter: color-mix(in oklab, var(--hg-line) 70%, transparent);
+  --vp-c-border: color-mix(in oklab, var(--hg-ink) 16%, transparent);
+
+  --vp-c-default-1: color-mix(in oklab, var(--hg-ink) 16%, transparent);
+  --vp-c-default-2: color-mix(in oklab, var(--hg-ink) 11%, transparent);
+  --vp-c-default-3: color-mix(in oklab, var(--hg-ink) 7%, transparent);
+  --vp-c-default-soft: color-mix(in oklab, var(--hg-ink) 6%, transparent);
+
+  --vp-c-brand-1: var(--hg-accent);
+  --vp-c-brand-2: var(--hg-accent-hover);
+  --vp-c-brand-3: var(--hg-accent);
+  --vp-c-brand-soft: color-mix(in oklab, var(--hg-accent) 10%, transparent);
+
+  --vp-c-tip-1: var(--hg-accent);
+  --vp-c-tip-2: var(--hg-accent-hover);
+  --vp-c-tip-3: var(--hg-accent);
+  --vp-c-success-1: var(--hg-ok);
+  --vp-c-success-2: var(--hg-ok);
+  --vp-c-success-3: var(--hg-ok);
+  --vp-c-success-soft: color-mix(in oklab, var(--hg-ok) 14%, transparent);
+  --vp-c-warning-1: var(--hg-warn);
+  --vp-c-warning-2: var(--hg-warn);
+  --vp-c-warning-3: var(--hg-warn);
+  --vp-c-warning-soft: color-mix(in oklab, var(--hg-warn) 14%, transparent);
+  --vp-c-danger-1: var(--hg-bad);
+  --vp-c-danger-2: var(--hg-bad);
+  --vp-c-danger-3: var(--hg-bad);
+  --vp-c-danger-soft: color-mix(in oklab, var(--hg-bad) 14%, transparent);
+  --vp-c-caution-1: var(--hg-bad);
+  --vp-c-caution-2: var(--hg-bad);
+  --vp-c-caution-3: var(--hg-bad);
+  --vp-c-caution-soft: color-mix(in oklab, var(--hg-bad) 14%, transparent);
+
+  --vp-font-family-base: var(--hg-sans);
+  --vp-font-family-mono: var(--hg-mono);
+
+  --vp-button-brand-text: var(--hg-accent-ink);
+  --vp-button-brand-hover-text: var(--hg-accent-ink);
+  --vp-button-brand-active-text: var(--hg-accent-ink);
+  --vp-button-brand-bg: var(--hg-accent);
+  --vp-button-brand-hover-bg: var(--hg-accent-hover);
+  --vp-button-brand-active-bg: var(--hg-accent-hover);
+
+  --vp-nav-height: 52px;
+  --vp-nav-logo-height: 22px;
+  --vp-nav-bg-color: color-mix(in oklab, var(--hg-bg) 78%, transparent);
+  --vp-local-nav-bg-color: var(--vp-nav-bg-color);
+  --vp-sidebar-bg-color: var(--hg-bg);
+
+  --vp-input-border-color: var(--vp-c-border);
+  --vp-input-switch-bg-color: var(--vp-c-default-soft);
+
+  --vp-code-font-size: 0.875em;
+  --vp-code-color: var(--hg-ink);
+  --vp-code-bg: var(--vp-c-default-soft);
+  --vp-code-link-color: var(--hg-accent);
+  --vp-code-link-hover-color: var(--hg-accent-hover);
+  --vp-code-block-bg: var(--hg-code-bg);
+  --vp-code-block-color: var(--hg-code-ink);
+  --vp-code-block-divider-color: var(--hg-code-line);
+  --vp-code-lang-color: var(--hg-code-dim);
+  --vp-code-line-number-color: var(--hg-code-dim);
+  --vp-code-line-highlight-color: oklch(100% 0 0 / 0.06);
+  --vp-code-copy-code-border-color: var(--hg-code-line);
+  --vp-code-copy-code-bg: var(--hg-code-bg);
+  --vp-code-copy-code-hover-border-color: oklch(36% 0.01 270);
+  --vp-code-copy-code-hover-bg: oklch(23% 0.008 270);
+  --vp-code-copy-code-active-text: var(--hg-code-ink);
+  --vp-code-tab-divider: var(--hg-code-line);
+  --vp-code-tab-bg: var(--hg-code-bg);
+  --vp-code-tab-text-color: var(--hg-code-dim);
+  --vp-code-tab-hover-text-color: var(--hg-code-ink);
+  --vp-code-tab-active-text-color: var(--hg-code-ink);
+  --vp-code-tab-active-bar-color: var(--hg-code-key);
+
+  --vp-custom-block-font-size: 15px;
+  --vp-custom-block-code-font-size: 0.86em;
+
+  --vp-local-search-bg: var(--hg-bg);
+}
+
+/* Base ----------------------------------------------------------------- */
+
+body {
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+kbd,
+pre,
+samp {
+  letter-spacing: 0;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--hg-accent) 22%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--hg-accent);
+  outline-offset: 3px;
+}
+
+/* Nav: content scrolls underneath, so the bar is translucent -------------- */
+
+@media (min-width: 960px) {
+  .VPNav .VPNavBar.has-sidebar .content-body,
+  .VPNav .VPNavBar:not(.has-sidebar):not(.home.top) {
+    backdrop-filter: var(--hg-blur);
+    -webkit-backdrop-filter: var(--hg-blur);
+  }
+
+  /* One continuous hairline under the whole bar, sidebar column included. */
+  .VPNav .VPNavBarTitle.has-sidebar .title {
+    border-bottom-color: transparent;
+  }
+
+  .VPNav .VPNavBar.has-sidebar .wrapper + .divider {
+    padding-left: 0;
+  }
+
+  /* Opaque over the sidebar column, so its edge stops at the hairline. */
+  .VPNav .VPNavBar.has-sidebar .container > .title {
+    background-color: var(--vp-c-bg);
+  }
+}
+
+.VPLocalNav {
+  backdrop-filter: var(--hg-blur);
+  -webkit-backdrop-filter: var(--hg-blur);
+}
+
+/* Brand mark: identical to the landing page's .brand. */
+.VPNavBar .VPNavBarTitle .title {
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.VPNavBar .VPNavBarTitle .logo {
+  margin-right: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--vp-c-text-2);
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover {
+  color: var(--vp-c-text-1);
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--vp-c-brand-1);
+}
+
+.VPNavBar .VPNavBarSocialLinks .VPSocialLink,
+.VPNavBar .VPNavBarSocialLinks .VPSocialLink:hover {
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPNavBar .VPNavBarSocialLinks .VPSocialLink > svg,
+.VPNavBar .VPNavBarSocialLinks .VPSocialLink > [class^="vpi-social-"] {
+  width: 18px;
+  height: 18px;
+}
+
+.VPNavBar .VPNavBarAppearance .VPSwitch {
+  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
+  transition-property: border-color, transform !important;
+  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
+  transition-duration: var(--hg-fast) !important;
+  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
+  transition-timing-function: var(--hg-ease) !important;
+}
+
+.VPNavBar .VPNavBarAppearance .VPSwitch:hover {
+  border-color: var(--vp-c-text-3);
+}
+
+/* Search: a quiet field, like the landing page's install pill. */
+.DocSearch-Button {
+  height: var(--vp-nav-height);
+  transition:
+    background-color var(--hg-fast) var(--hg-ease),
+    transform var(--hg-fast) var(--hg-ease);
+}
+
+@media (min-width: 768px) {
+  .VPNavBarSearch .DocSearch-Button {
+    border: 0;
+    border-radius: 9px;
+    padding: 0 10px 0 11px;
+    height: 32px;
+    background: var(--vp-c-default-soft);
+  }
+
+  .VPNavBarSearch .DocSearch-Button:hover {
+    background: var(--vp-c-default-3);
+  }
+
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Search-Icon {
+    top: 0;
+    width: 13px;
+    height: 13px;
+    color: var(--vp-c-text-3);
+  }
+
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Placeholder {
+    margin-top: 0;
+    padding-right: 20px;
+    font-weight: 400;
+    color: var(--vp-c-text-3);
+    transition: color var(--hg-fast) var(--hg-ease);
+  }
+
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Keys {
+    height: 20px;
+  }
+
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Key,
+  .VPNavBarSearch
+    .DocSearch-Button
+    .DocSearch-Button-Key
+    + .DocSearch-Button-Key {
+    margin: 0;
+    border: 0;
+    padding: 0;
+    height: 20px;
+    line-height: 20px;
+    font-weight: 400;
+    color: var(--vp-c-text-3);
+  }
+}
+
+/* Local search modal */
+.VPLocalSearchBox .shell {
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--hg-ink) 6%, transparent),
+    0 12px 32px oklch(0% 0 0 / 0.12),
+    0 40px 80px oklch(0% 0 0 / 0.12);
+}
+
+/* Sidebar: same canvas as the page, a hairline edge, quiet items ---------- */
+
+@media (min-width: 960px) {
+  .VPSidebar {
+    border-right: 1px solid var(--vp-c-gutter);
+  }
+}
+
+.VPSidebar .nav .group + .group {
+  border-top: 0;
+  padding-top: 18px;
+}
+
+.VPSidebar .nav .VPSidebarItem.is-link > .item {
+  margin-inline: -10px;
+  width: calc(100% + 20px);
+  border-radius: 8px;
+  padding-inline: 10px;
+  transition: background-color var(--hg-fast) var(--hg-ease);
+}
+
+.VPSidebar .nav .VPSidebarItem.is-link > .item .text {
+  padding: 5px 0;
+  line-height: 20px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--vp-c-text-2);
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPSidebar .nav .VPSidebarItem.is-link > .item > .link:hover .text {
+  color: var(--vp-c-text-1);
+}
+
+.VPSidebar .nav .VPSidebarItem.is-active > .item {
+  background-color: var(--vp-c-brand-soft);
+}
+
+.VPSidebar .nav .VPSidebarItem.is-link.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: group headings are not links */
+.VPSidebar .nav .VPSidebarItem.level-0:not(.is-link) > .item > .text {
+  padding-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--vp-c-text-1);
+}
+
+/* Outline ("On this page") */
+.VPDoc .VPDocAsideOutline .content {
+  font-size: 13px;
+}
+
+.VPDoc .VPDocAsideOutline .outline-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.VPDoc .VPDocAsideOutline .outline-link {
+  line-height: 28px;
+  font-size: 13px;
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPDoc .VPDocAsideOutline .outline-link:hover {
+  color: var(--vp-c-text-1);
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPDoc .VPDocAsideOutline .outline-link.active {
+  color: var(--vp-c-brand-1);
+}
+
+.VPDoc .VPDocAsideOutline .outline-marker {
+  top: 30px;
+  height: 16px;
+}
+
+/* Content -------------------------------------------------------------- */
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4 {
+  font-family: var(--hg-display);
+  text-wrap: balance;
+}
+
+.vp-doc h1 {
+  font-size: 36px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+@media (min-width: 768px) {
+  .vp-doc h1 {
+    font-size: 48px;
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+  }
+}
+
+.vp-doc .header-anchor {
+  color: var(--vp-c-text-3);
+  transition: opacity var(--hg-fast) var(--hg-ease);
+}
+
+.vp-doc h2 {
+  margin: 64px 0 16px;
+  border-top-color: var(--vp-c-divider);
+  padding-top: 32px;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.028em;
+  font-weight: 700;
+}
+
+.vp-doc h2 .header-anchor {
+  top: 32px;
+}
+
+.vp-doc h3 {
+  margin: 40px 0 0;
+  font-size: 20px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h4 {
+  margin: 28px 0 0;
+  font-size: 17px;
+  line-height: 1.35;
+  letter-spacing: -0.016em;
+}
+
+/* The sentence under the title reads as a lede, like the landing's .sub,
+   unless it only introduces a list. */
+.vp-doc h1 + p:not(:has(+ ul, + ol)) {
+  margin-top: 20px;
+  font-size: 19px;
+  line-height: 1.47;
+  letter-spacing: -0.014em;
+  color: var(--vp-c-text-2);
+  text-wrap: pretty;
+}
+
+.vp-doc h1 + p:not(:has(+ ul, + ol)) :is(strong, code) {
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.7;
+}
+
+.vp-doc p {
+  margin: 18px 0;
+}
+
+.vp-doc li::marker {
+  color: var(--vp-c-text-3);
+}
+
+.vp-doc strong {
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc a {
+  font-weight: inherit;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-decoration-thickness: from-font;
+  text-underline-offset: 3px;
+  transition:
+    color var(--hg-fast) var(--hg-ease),
+    text-decoration-color var(--hg-fast) var(--hg-ease);
+}
+
+.vp-doc a:hover {
+  color: var(--vp-c-brand-2);
+  text-decoration-color: currentColor;
+}
+
+.vp-doc :not(pre) > code {
+  border-radius: 6px;
+  padding: 0.12em 0.36em;
+}
+
+.vp-doc :not(pre, h1, h2, h3, h4, h5, h6) > code {
+  font-size: 0.86em;
+}
+
+.vp-doc blockquote {
+  border-left-width: 2px;
+  color: var(--vp-c-text-2);
+}
+
+/* Tables: hairline rows, like the landing page's comparison table. */
+.vp-doc table {
+  margin: 28px 0;
+  font-size: 15px;
+}
+
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+  border-top: 0;
+  background-color: transparent;
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+  padding: 13px 20px 13px 0;
+  line-height: 1.5;
+  vertical-align: top;
+}
+
+.vp-doc :is(th, td):last-child {
+  padding-right: 0;
+}
+
+.vp-doc td {
+  font-size: 15px;
+}
+
+.vp-doc thead th {
+  border-top: 1px solid var(--vp-c-divider);
+  padding-block: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vp-c-text-3);
+  background-color: transparent;
+  white-space: nowrap;
+}
+
+.vp-doc td > code:only-child {
+  white-space: nowrap;
+}
+
+/* Custom containers: tinted panels with a coloured title. */
+.vp-doc .custom-block {
+  margin: 24px 0;
+  border: 0;
+  border-radius: 14px;
+  padding: 16px 20px;
+  line-height: 1.6;
+}
+
+.vp-doc .custom-block p {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+
+.vp-doc .custom-block p:first-child {
+  margin: 0;
+}
+
+.vp-doc .custom-block .custom-block-title {
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+
+.vp-doc .custom-block.info,
+.vp-doc .custom-block.note,
+.vp-doc .custom-block.details {
+  background-color: var(--hg-bg-alt);
+}
+
+.vp-doc .custom-block.tip,
+.vp-doc .custom-block.important {
+  background-color: color-mix(
+    in oklab,
+    var(--hg-accent) var(--hg-tint),
+    var(--hg-tint-base)
+  );
+}
+
+.vp-doc .custom-block.warning {
+  background-color: color-mix(
+    in oklab,
+    var(--hg-warn) var(--hg-tint),
+    var(--hg-tint-base)
+  );
+}
+
+.vp-doc .custom-block:is(.danger, .caution) {
+  background-color: color-mix(
+    in oklab,
+    var(--hg-bad) var(--hg-tint),
+    var(--hg-tint-base)
+  );
+}
+
+.vp-doc .custom-block.tip .custom-block-title,
+.vp-doc .custom-block.important .custom-block-title {
+  color: var(--hg-accent);
+}
+
+.vp-doc .custom-block.warning .custom-block-title {
+  color: var(--hg-warn);
+}
+
+.vp-doc .custom-block:is(.danger, .caution) .custom-block-title {
+  color: var(--hg-bad);
+}
+
+/* Code blocks: the landing page's dark panels ---------------------------- */
+
+.vp-doc div[class*="language-"],
+.vp-doc li div[class*="language-"] {
+  margin: 20px 0;
+  border-radius: 14px;
+  box-shadow: var(--hg-code-shadow);
+}
+
+.vp-doc [class*="language-"] pre {
+  padding: 20px 0 22px;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(100% 0 0 / 0.2) transparent;
+}
+
+.vp-doc [class*="language-"] code {
+  padding: 0 22px;
+  font-size: 13.5px;
+}
+
+.vp-doc [class*="language-"] code .highlighted,
+.vp-doc [class*="language-"] code .diff {
+  margin: 0 -22px;
+  padding: 0 22px;
+  width: calc(100% + 44px);
+}
+
+.vp-doc [class*="language-"] > span.lang {
+  top: 6px;
+  right: 14px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.vp-doc [class*="language-"] > button.copy {
+  top: 10px;
+  right: 10px;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  background-size: 18px;
+  transition:
+    border-color var(--hg-fast) var(--hg-ease),
+    background-color var(--hg-fast) var(--hg-ease),
+    opacity var(--hg-fast) var(--hg-ease),
+    transform var(--hg-fast) var(--hg-ease);
+}
+
+.vp-doc [class*="language-"] > button.copy.copied,
+.vp-doc [class*="language-"] > button.copy:hover.copied {
+  border-radius: 0 8px 8px 0;
+}
+
+.vp-doc [class*="language-"] > button.copy.copied::before,
+.vp-doc [class*="language-"] > button.copy:hover.copied::before {
+  border-radius: 8px 0 0 8px;
+  height: 36px;
+}
+
+.vp-doc .custom-block :not(pre) > code {
+  color: var(--vp-c-text-1);
+  background-color: color-mix(in oklab, var(--hg-ink) 7%, transparent);
+}
+
+/* Code groups: one panel, tabs on top. */
+.vp-doc .vp-code-group {
+  margin: 20px 0;
+  border-radius: 14px;
+  background-color: var(--hg-code-bg);
+  box-shadow: var(--hg-code-shadow);
+}
+
+.vp-doc .vp-code-group .tabs {
+  margin: 0;
+  border-radius: 14px 14px 0 0;
+  padding: 0 10px;
+}
+
+.vp-doc .vp-code-group .tabs label {
+  padding: 0 10px;
+  line-height: 44px;
+  font-size: 13px;
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.vp-doc .vp-code-group .tabs label::after {
+  right: 10px;
+  left: 10px;
+}
+
+.vp-doc .vp-code-group div[class*="language-"] {
+  margin: 0;
+  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
+  border-radius: 0 0 14px 14px !important;
+  box-shadow: none;
+}
+
+/* Footer of each page */
+.VPDoc .VPDocFooter .edit-link-button {
+  font-size: 13px;
+  font-weight: 400;
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.VPDoc .VPDocFooter .pager-link {
+  border-color: var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 14px 18px 16px;
+  transition: border-color var(--hg-fast) var(--hg-ease);
+}
+
+.VPDoc .VPDocFooter .pager-link:hover {
+  border-color: color-mix(in oklab, var(--hg-accent) 45%, transparent);
+}
+
+.VPDoc .VPDocFooter .pager-link .desc {
+  font-weight: 400;
+  color: var(--vp-c-text-3);
+}
+
+.VPDoc .VPDocFooter .pager-link .title {
+  margin-top: 2px;
+  font-size: 15px;
+  letter-spacing: -0.012em;
+}
+
+/* Press feedback --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .DocSearch-Button:active,
+  .VPNavBar .VPNavBarAppearance .VPSwitch:active,
+  .vp-doc [class*="language-"] > button.copy:active,
+  .VPLocalNav .menu:active,
+  .VPNavBarHamburger:active,
+  .VPLocalNavOutlineDropdown button:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Every transition above runs on --hg-fast, so this switches them all off. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hg-fast: 0s;
+  }
 }

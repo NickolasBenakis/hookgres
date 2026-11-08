@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import { codeTheme } from "./code-theme";
 
 const repo = "https://github.com/NickolasBenakis/hookgres";
 
@@ -16,6 +17,7 @@ export default defineConfig({
     ["meta", { property: "og:image", content: "https://hookgres.dev/og.png" }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
+  markdown: { theme: codeTheme },
   themeConfig: {
     logo: { src: "/logo.svg", alt: "" },
     siteTitle: "Hookgres",
