@@ -21,6 +21,8 @@ Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
 - **Full delivery log.** Every attempt's status code, response body, error and
   timing is stored for your dashboard and support team.
 
+**[Documentation](https://hookgres.dev/docs/)** · [Getting started](https://hookgres.dev/docs/getting-started) · [Playground](https://hookgres.dev/docs/playground) · [API](https://hookgres.dev/docs/reference/api)
+
 ## Install
 
 ```sh
@@ -166,7 +168,9 @@ new Hookgres({
 
 Hookgres sends requests to URLs your users provide. In production, stop
 endpoints from reaching your internal network (SSRF): pass a `fetch` that
-blocks private IP ranges, or route deliveries through an egress proxy.
+blocks private IP ranges, or route deliveries through an egress proxy. The
+[production guide](https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf)
+has a tested example.
 
 ## Performance
 
@@ -220,6 +224,8 @@ pnpm coverage    # tests with coverage thresholds
 pnpm typecheck && pnpm lint
 pnpm smoke       # packs the library and runs the example from the tarball
 pnpm bench       # load test: no lost or duplicated webhooks
+pnpm docs:dev    # docs at http://localhost:5173/docs/
+pnpm site:build  # landing page + docs in .site-dist/, as deployed to hookgres.dev
 ```
 
 CI runs the suite on Postgres 14–18 and Node 22, 24 and 26, and checks
