@@ -2,341 +2,1422 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Hookgres playground</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfd" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23163a5f'/%3E%3Cpath d='M11 7v11a5 5 0 0 0 10 0v-3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M18 14l3-3 3 3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
     <style>
+      /* Tokens: the same as the landing page (site/index.html). */
       :root {
-        color-scheme: light dark;
-        --bg: oklch(98.5% 0.004 250);
-        --panel: oklch(100% 0 0);
-        --text: oklch(22% 0.02 250);
-        --muted: oklch(50% 0.02 250);
-        --line: oklch(91% 0.01 250);
-        --accent: oklch(55% 0.17 255);
-        --ok: oklch(55% 0.14 150);
-        --warn: oklch(62% 0.15 70);
-        --bad: oklch(56% 0.19 25);
-        --code: oklch(96% 0.006 250);
-        --on-accent: oklch(100% 0 0);
+        --bg: oklch(98.9% 0.002 286);
+        --bg-alt: oklch(96.6% 0.003 286);
+        --surface: oklch(100% 0 0);
+        --ink: oklch(21% 0.005 286);
+        --ink-2: oklch(49% 0.008 286);
+        --ink-3: oklch(52% 0.008 286);
+        --line: oklch(90.5% 0.004 286);
+        /* Postgres blue */
+        --accent: oklch(49% 0.095 248);
+        --accent-hover: oklch(44% 0.095 248);
+        --accent-ink: oklch(100% 0 0);
+        --ok: oklch(52% 0.13 152);
+        --warn: oklch(52% 0.13 60);
+        --bad: oklch(50% 0.18 27);
+        --code-bg: oklch(19% 0.008 270);
+        --code-line: oklch(28% 0.01 270);
+        --code-ink: oklch(92% 0.005 270);
+        --code-dim: oklch(64% 0.012 270);
+        --code-key: oklch(78% 0.1 250);
+        --code-str: oklch(82% 0.1 150);
+        --code-warn: oklch(84% 0.12 80);
+        --code-bad: oklch(77% 0.14 27);
+        --shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.06),
+          0 32px 64px oklch(0% 0 0 / 0.06);
+        --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+          "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        --display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+          "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas,
+          monospace;
+        --wrap: 1180px;
+        --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+        --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+        --chip-tint: 11%;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: oklch(17% 0.015 250);
-          --panel: oklch(21% 0.015 250);
-          --text: oklch(93% 0.01 250);
-          --muted: oklch(70% 0.02 250);
-          --line: oklch(30% 0.02 250);
-          --accent: oklch(72% 0.14 255);
-          --ok: oklch(74% 0.14 150);
-          --warn: oklch(80% 0.13 75);
-          --bad: oklch(70% 0.16 25);
-          --code: oklch(25% 0.015 250);
-          --on-accent: oklch(17% 0.015 250);
+          --bg: oklch(0% 0 0);
+          --bg-alt: oklch(15.5% 0.004 286);
+          --surface: oklch(19% 0.005 286);
+          --ink: oklch(96.5% 0.003 286);
+          --ink-2: oklch(72% 0.008 286);
+          --ink-3: oklch(66% 0.008 286);
+          --line: oklch(28% 0.006 286);
+          --accent: oklch(72% 0.11 245);
+          --accent-hover: oklch(78% 0.1 245);
+          --accent-ink: oklch(15% 0.01 260);
+          --ok: oklch(76% 0.15 152);
+          --warn: oklch(80% 0.14 75);
+          --bad: oklch(70% 0.17 27);
+          --code-bg: oklch(13% 0.006 270);
+          --code-line: oklch(27% 0.008 270);
+          --shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
+          --chip-tint: 8%;
         }
       }
-      * {
+
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
       }
       body {
         margin: 0;
         background: var(--bg);
-        color: var(--text);
-        font:
-          14px/1.5 system-ui,
-          -apple-system,
-          "Segoe UI",
-          sans-serif;
+        color: var(--ink);
+        font: 15px/1.5 var(--sans);
+        letter-spacing: -0.009em;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
       }
-      code,
-      pre,
-      textarea,
-      .mono {
-        font-family: ui-monospace, "SF Mono", Menlo, monospace;
-        font-size: 12.5px;
-      }
-      header {
-        padding: 20px 16px 8px;
-        max-width: 1280px;
-        margin: 0 auto;
-      }
-      h1 {
-        font-size: 20px;
-        margin: 0 0 4px;
-      }
-      h2 {
-        font-size: 13px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--muted);
-        margin: 0 0 12px;
-      }
-      header p {
-        margin: 0;
-        color: var(--muted);
-        max-width: 72ch;
-      }
-      main {
-        max-width: 1280px;
-        margin: 0 auto;
-        padding: 12px 16px 40px;
-        display: grid;
-        grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
-        gap: 16px;
-      }
-      @media (max-width: 860px) {
-        main {
-          grid-template-columns: minmax(0, 1fr);
-        }
-      }
-      section {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 16px;
-        min-width: 0;
-      }
-      label {
-        display: block;
-        font-weight: 500;
-        margin: 10px 0 4px;
-      }
-      select,
+      button,
       input,
+      select,
       textarea {
-        width: 100%;
-        font-size: 16px;
-        padding: 7px 9px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--bg);
-        color: var(--text);
-      }
-      textarea {
-        min-height: 110px;
-        resize: vertical;
-        font-size: 13px;
-      }
-      button {
         font: inherit;
-        font-weight: 500;
-        border: 1px solid var(--line);
-        background: var(--bg);
-        color: var(--text);
-        border-radius: 6px;
-        padding: 6px 12px;
-        cursor: pointer;
+        color: inherit;
+        letter-spacing: inherit;
       }
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: var(--on-accent);
-        width: 100%;
-        margin-top: 14px;
-        padding: 9px 12px;
-      }
-      button:focus-visible,
-      select:focus-visible,
-      input:focus-visible,
-      textarea:focus-visible,
-      tr:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-      }
-      .row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .endpoint {
-        border-top: 1px solid var(--line);
-        padding: 12px 0;
-      }
-      .endpoint:first-of-type {
-        border-top: 0;
-        padding-top: 0;
-      }
-      .endpoint p {
-        margin: 2px 0 8px;
-        color: var(--muted);
-      }
-      .pill {
-        display: inline-block;
-        border-radius: 999px;
-        padding: 1px 8px;
-        font-size: 12px;
-        font-weight: 600;
-        border: 1px solid currentColor;
-        white-space: nowrap;
-      }
-      .ok {
-        color: var(--ok);
-      }
-      .warn {
-        color: var(--warn);
-      }
-      .bad {
-        color: var(--bad);
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .stats {
-        display: flex;
-        gap: 18px;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-      }
-      .stats b {
-        font-size: 20px;
-        font-variant-numeric: tabular-nums;
-        display: block;
-      }
-      .table-wrap {
-        overflow-x: auto;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-variant-numeric: tabular-nums;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 7px 8px;
-        border-bottom: 1px solid var(--line);
-        white-space: nowrap;
-      }
-      th {
-        font-size: 12px;
-        color: var(--muted);
-        font-weight: 500;
-      }
-      tbody tr {
-        cursor: pointer;
-      }
-      tbody tr:hover,
-      tbody tr[aria-selected="true"] {
-        background: var(--code);
-      }
-      pre {
-        background: var(--code);
-        border-radius: 6px;
-        padding: 10px;
-        overflow-x: auto;
-        margin: 6px 0 12px;
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-      .empty {
-        color: var(--muted);
-        padding: 16px 0;
-      }
-      .note {
-        font-size: 12.5px;
-        color: var(--muted);
-        margin: 10px 0 0;
+      button,
+      a,
+      input,
+      select,
+      textarea {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       }
       a {
         color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      ::selection {
+        background: oklch(49% 0.095 248 / 0.22);
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+        font-size: 0.88em;
+        letter-spacing: 0;
+      }
+      .wrap {
+        max-width: var(--wrap);
+        margin: 0 auto;
+        padding: 0 max(20px, env(safe-area-inset-left)) 0 max(20px, env(safe-area-inset-right));
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      /* Navigation: content scrolls underneath, so the bar is translucent. */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in oklch, var(--bg) 78%, transparent);
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        border-bottom: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
+      }
+      .nav .wrap {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        height: 52px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 600;
+        font-size: 17px;
+        letter-spacing: -0.02em;
+      }
+      .brand svg {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+      }
+      .brand .crumb {
+        color: var(--ink-3);
+        font-weight: 500;
+      }
+      .nav-end {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .nav-end > a {
+        color: var(--ink-2);
+      }
+      .nav-end > a:hover {
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+      }
+      .live::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ink-3);
+        transition: background-color 200ms ease;
+      }
+      .live[data-state="live"]::before {
+        background: var(--ok);
+      }
+      .live[data-state="lost"] {
+        color: var(--bad);
+      }
+      .live[data-state="lost"]::before {
+        background: var(--bad);
+      }
+      @media (max-width: 560px) {
+        .nav-end .docs {
+          display: none;
+        }
+        .nav .wrap,
+        .nav-end {
+          gap: 14px;
+        }
+      }
+      @media (max-width: 380px) {
+        .brand .crumb {
+          display: none;
+        }
+      }
+
+      /* Buttons */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 0;
+        border-radius: 999px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition:
+          background-color 160ms var(--ease),
+          color 160ms var(--ease),
+          border-color 160ms var(--ease),
+          transform 160ms var(--ease-out);
+      }
+      .pill:hover {
+        text-decoration: none;
+      }
+      .pill:active {
+        transform: scale(0.97);
+      }
+      .pill.primary {
+        height: 46px;
+        padding: 0 22px;
+        font-size: 16px;
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .pill.ghost {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+      }
+      .pill.quiet {
+        background: transparent;
+        color: var(--ink-2);
+        border: 1px solid var(--line);
+      }
+      .pill.small {
+        height: 30px;
+        padding: 0 13px;
+        font-size: 13px;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .pill.primary:hover {
+          background: var(--accent-hover);
+        }
+        .pill.ghost:hover {
+          background: color-mix(in oklch, var(--accent) 8%, transparent);
+        }
+        .pill.quiet:hover {
+          color: var(--ink);
+          background: color-mix(in oklch, var(--ink) 5%, transparent);
+        }
+      }
+      @media (pointer: coarse) {
+        .pill.small {
+          height: 40px;
+          padding: 0 16px;
+        }
+      }
+      .pill[aria-disabled="true"] {
+        cursor: progress;
+      }
+
+      /* Intro */
+      .intro {
+        padding: clamp(36px, 6vw, 64px) 0 clamp(28px, 4vw, 40px);
+      }
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(32px, 1.3rem + 2.4vw, 48px);
+        line-height: 1.05;
+        letter-spacing: -0.035em;
+        font-weight: 700;
+        margin: 0;
+        text-wrap: balance;
+      }
+      .lede {
+        font-size: clamp(16px, 0.95rem + 0.3vw, 19px);
+        line-height: 1.45;
+        letter-spacing: -0.014em;
+        color: var(--ink-2);
+        max-width: 40em;
+        margin: 14px 0 0;
+        text-wrap: pretty;
+      }
+      .lede code {
+        color: var(--ink);
+      }
+      .lede .schedule {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Layout */
+      .app {
+        display: grid;
+        grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+        grid-template-rows: auto auto 1fr;
+        grid-template-areas:
+          "send log"
+          "endpoints log"
+          "reset log";
+        gap: 20px 28px;
+        align-items: start;
+        padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      }
+      .app > * {
+        min-width: 0;
+      }
+      .send-card {
+        grid-area: send;
+      }
+      .log-section {
+        grid-area: log;
+      }
+      .endpoints-card {
+        grid-area: endpoints;
+      }
+      .reset-row {
+        grid-area: reset;
+      }
+      /* One column, in reading order: send, watch, then the knobs. */
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: none;
+          grid-template-areas: none;
+        }
+        .app > * {
+          grid-area: auto;
+        }
+        .log-section {
+          margin: 8px 0;
+        }
+      }
+      .card {
+        background: var(--surface);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+      .card h2 {
+        font-size: 17px;
+        line-height: 1.3;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+      .card .hint {
+        margin: 4px 0 0;
+        color: var(--ink-3);
+        font-size: 13px;
+        text-wrap: pretty;
+      }
+
+      /* Send form */
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .field-label {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink-2);
+      }
+      .optional {
+        color: var(--ink-3);
+        font-weight: 400;
+      }
+      kbd {
+        font: 500 11.5px/1 var(--sans);
+        letter-spacing: 0;
+        color: var(--ink-3);
+      }
+      .control {
+        width: 100%;
+        font-size: 16px;
+        line-height: 1.4;
+        padding: 10px 12px;
+        border-radius: 11px;
+        border: 1px solid var(--line);
+        background: var(--bg-alt);
+        color: var(--ink);
+        transition:
+          border-color 150ms ease,
+          background-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+      .control::placeholder {
+        color: var(--ink-3);
+        opacity: 1;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .control:hover {
+          border-color: color-mix(in oklch, var(--ink) 22%, var(--line));
+        }
+      }
+      .control:focus-visible {
+        /* The transparent outline keeps a ring in forced-colors mode. */
+        outline: 2px solid transparent;
+        outline-offset: 0;
+        border-color: var(--accent);
+        background: var(--surface);
+        box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent);
+      }
+      .control[aria-invalid="true"] {
+        border-color: var(--bad);
+      }
+      .control[aria-invalid="true"]:focus-visible {
+        box-shadow: 0 0 0 3px color-mix(in oklch, var(--bad) 20%, transparent);
+      }
+      textarea.control {
+        font-family: var(--mono);
+        letter-spacing: 0;
+        min-height: 108px;
+        resize: vertical;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        textarea.control {
+          font-size: 13.5px;
+          line-height: 1.6;
+        }
+      }
+      .select {
+        position: relative;
+      }
+      .select select {
+        appearance: none;
+        padding-right: 38px;
+        cursor: pointer;
+      }
+      .select::after {
+        content: "";
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid var(--ink-3);
+        border-bottom: 1.5px solid var(--ink-3);
+        transform: translateY(-70%) rotate(45deg);
+        pointer-events: none;
+      }
+      .error {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        margin: 2px 0 0;
+        color: var(--bad);
+        font-size: 13px;
+      }
+      .error svg {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        margin-top: 2px;
+      }
+      .send {
+        display: grid;
+        width: 100%;
+        margin-top: 4px;
+      }
+      .send > span {
+        grid-area: 1 / 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition:
+          opacity 180ms var(--ease-out),
+          transform 180ms var(--ease-out);
+      }
+      .send svg {
+        width: 17px;
+        height: 17px;
+      }
+      .send .sent {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      .send[data-state="sent"] .idle {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+      .send[data-state="sent"] .sent {
+        opacity: 1;
+        transform: none;
+      }
+      .result {
+        margin: -4px 0 0;
+        min-height: 1.5em;
+        font-size: 13px;
+        color: var(--ink-3);
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+      }
+      .result[data-tone="bad"] {
+        color: var(--bad);
+      }
+
+      /* Endpoints */
+      .endpoints {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+      }
+      .ep {
+        padding: 16px 0;
+        border-top: 1px solid var(--line);
+      }
+      .ep:first-child {
+        border-top: 0;
+      }
+      .ep:last-child {
+        padding-bottom: 0;
+      }
+      .ep-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .ep-name {
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: -0.012em;
+      }
+      .ep-desc {
+        margin: 3px 0 10px;
+        color: var(--ink-2);
+        font-size: 14px;
+        text-wrap: pretty;
+      }
+      .ep dl {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 3px 14px;
+        margin: 0;
+        font-size: 13px;
+      }
+      .ep dt {
+        color: var(--ink-3);
+      }
+      .ep dd {
+        margin: 0;
+        color: var(--ink-2);
+        font-family: var(--mono);
+        font-size: 12.5px;
+        letter-spacing: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .ep .reason {
+        margin: 10px 0 0;
+        color: var(--bad);
+        font-size: 13px;
+        text-wrap: pretty;
+      }
+      .ep .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      /* Chips: the landing page's attempt look. */
+      .attempt {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 7px;
+        font: 500 12px/1 var(--mono);
+        letter-spacing: 0;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        /* Opaque and surface-based, so the text stays AA on any panel. */
+        background: color-mix(in oklab, currentColor var(--chip-tint), var(--surface));
+        transition:
+          color 200ms ease,
+          background-color 200ms ease;
+      }
+      .attempt::before {
+        content: "";
+        flex: none;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .attempt.ok {
+        color: var(--ok);
+      }
+      .attempt.warn {
+        color: var(--warn);
+      }
+      .attempt.bad {
+        color: var(--bad);
+      }
+      .attempt.muted {
+        color: var(--ink-3);
+      }
+      .attempt.badge {
+        font-family: var(--sans);
+        font-size: 12px;
+      }
+      .attempt.next {
+        color: var(--ink-3);
+        background: transparent;
+        box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink-3) 45%, transparent);
+      }
+      .attempt.next::before {
+        background: transparent;
+        box-shadow: inset 0 0 0 1.5px currentColor;
+      }
+      /* The first attempt after a replay starts a new run. */
+      .attempt.replayed {
+        margin-left: 9px;
+        position: relative;
+      }
+      .attempt.replayed::after {
+        content: "";
+        position: absolute;
+        left: -8px;
+        top: 4px;
+        bottom: 4px;
+        width: 1px;
+        background: var(--line);
+      }
+
+      /* Delivery log */
+      .log-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin: 0 0 14px;
+        padding: 0 2px;
+      }
+      .log-head h2 {
+        font-family: var(--display);
+        font-size: 22px;
+        line-height: 1.2;
+        font-weight: 700;
+        letter-spacing: -0.028em;
+        margin: 0;
+      }
+      .counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 13px;
+        color: var(--ink-2);
+      }
+      .counts li {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .counts li::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--c, var(--ink-3));
+      }
+      .counts b {
+        color: var(--ink);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .messages {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .window {
+        background: var(--surface);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .window-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        padding: 13px 20px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        color: var(--ink-2);
+      }
+      .window-bar .title {
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+      }
+      .window-bar .key {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0;
+        color: var(--ink-3);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .window-bar .meta {
+        display: flex;
+        gap: 10px;
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+      }
+      @media (max-width: 600px) {
+        .window-bar {
+          padding: 12px 16px;
+        }
+        .window-bar .msg-id {
+          display: none;
+        }
+      }
+      .log {
+        list-style: none;
+        margin: 0;
+        padding: 4px 8px 8px;
+      }
+      .delivery {
+        padding: 4px 0;
+      }
+      .delivery + .delivery {
+        border-top: 1px solid var(--line);
+      }
+      .log-row {
+        appearance: none;
+        display: grid;
+        grid-template-columns: minmax(0, 150px) minmax(0, 1fr) minmax(0, 116px) 14px;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        margin: 0;
+        padding: 10px 12px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 150ms ease;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .log-row:hover {
+          background: color-mix(in oklch, var(--ink) 4%, transparent);
+        }
+      }
+      .log-row[aria-expanded="true"] {
+        background: color-mix(in oklch, var(--accent) 8%, transparent);
+      }
+      .log-row:focus-visible {
+        outline-offset: 0;
+      }
+      .endpoint {
+        min-width: 0;
+      }
+      .endpoint b {
+        display: block;
+        font-weight: 500;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .endpoint small {
+        display: block;
+        font-size: 12px;
+        color: var(--ink-3);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .slots {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+      }
+      .status {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink-2);
+        transition: color 200ms ease;
+      }
+      .status small {
+        display: block;
+        font-weight: 400;
+        color: var(--ink-3);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.warn {
+        color: var(--warn);
+      }
+      .status.bad {
+        color: var(--bad);
+      }
+      .status.info {
+        color: var(--accent);
+      }
+      .chev {
+        width: 14px;
+        height: 14px;
+        color: var(--ink-3);
+        transition: transform 200ms var(--ease-out);
+      }
+      .log-row[aria-expanded="true"] .chev {
+        transform: rotate(90deg);
+      }
+      @media (max-width: 600px) {
+        .log {
+          padding: 2px 6px 6px;
+        }
+        .log-row {
+          grid-template-columns: minmax(0, 1fr) auto 14px;
+          row-gap: 10px;
+          padding: 10px;
+        }
+        .log-row .slots {
+          grid-column: 1 / -1;
+          grid-row: 2;
+        }
+        .log-row .status {
+          text-align: right;
+        }
+      }
+      .empty-log {
+        padding: 48px 24px;
+        text-align: center;
+      }
+      .empty-log h3 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .empty-log p {
+        margin: 6px auto 0;
+        max-width: 34em;
+        color: var(--ink-2);
+        font-size: 14px;
+        text-wrap: pretty;
+      }
+
+      /* Delivery detail, opened under its row. */
+      .detail {
+        margin: 6px 4px 6px;
+        padding: 18px;
+        border-radius: 12px;
+        background: var(--bg-alt);
+      }
+      .detail-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+      }
+      .detail-head .id {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        letter-spacing: 0;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .detail-head .pill {
+        margin-left: auto;
+      }
+      .detail .note {
+        margin: 8px 0 0;
+        color: var(--ink-3);
+        font-size: 13px;
+        max-width: 60ch;
+        text-wrap: pretty;
+      }
+      .detail .note code {
+        color: var(--ink-2);
+      }
+      .detail .last-error {
+        margin: 8px 0 0;
+        color: var(--bad);
+        font-size: 13px;
+      }
+      .detail h3 {
+        margin: 20px 0 8px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.005em;
+      }
+      .detail .empty {
+        margin: 0;
+        color: var(--ink-3);
+        font-size: 13px;
+      }
+      .attempt-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .attempt-row {
+        display: grid;
+        grid-template-columns: 64px 80px 64px minmax(0, 1fr);
+        align-items: center;
+        gap: 12px;
+        padding: 7px 0;
+        font-size: 13px;
+        border-top: 1px solid var(--line);
+      }
+      .attempt-row:first-child {
+        border-top: 0;
+      }
+      .attempt-row.replayed {
+        margin-top: 10px;
+        padding-top: 30px;
+        position: relative;
+      }
+      .replay-mark {
+        position: absolute;
+        top: 8px;
+        left: 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ink-3);
+      }
+      .attempt-row .n {
+        color: var(--ink);
+      }
+      .attempt-row .ms {
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .attempt-row .resp {
+        color: var(--ink-2);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      @media (max-width: 600px) {
+        .attempt-row {
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          row-gap: 4px;
+        }
+        .attempt-row .resp {
+          grid-column: 1 / -1;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+      }
+      .requests {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .code {
+        background: var(--code-bg);
+        color: var(--code-ink);
+        border-radius: 12px;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .code .bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 8px;
+        padding: 9px 12px 9px 16px;
+        border-bottom: 1px solid var(--code-line);
+        font: 12px/1.4 var(--mono);
+        letter-spacing: 0;
+        color: var(--code-dim);
+      }
+      .code .bar .path {
+        margin-right: auto;
+      }
+      summary.bar {
+        cursor: pointer;
+        list-style: none;
+        padding-left: 12px;
+        border-bottom-color: transparent;
+        transition: color 150ms ease;
+      }
+      summary.bar::-webkit-details-marker {
+        display: none;
+      }
+      .code[open] > summary.bar {
+        border-bottom-color: var(--code-line);
+      }
+      summary.bar:focus-visible {
+        outline-color: var(--code-key);
+        outline-offset: -2px;
+        border-radius: 12px;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        summary.bar:hover {
+          color: var(--code-ink);
+        }
+      }
+      .disclosure {
+        width: 14px;
+        height: 14px;
+        color: var(--code-dim);
+        transition: transform 200ms var(--ease-out);
+      }
+      .code[open] .disclosure {
+        transform: rotate(90deg);
+      }
+      .code .attempt {
+        background: color-mix(in oklch, currentColor 14%, transparent);
+      }
+      .code .attempt.ok {
+        color: var(--code-str);
+      }
+      .code .attempt.warn {
+        color: var(--code-warn);
+      }
+      .code .attempt.bad {
+        color: var(--code-bad);
+      }
+      .code pre {
+        margin: 0;
+        padding: 14px 16px 16px;
+        overflow-x: auto;
+        font: 12.5px/1.65 var(--mono);
+        letter-spacing: 0;
+        tab-size: 2;
+      }
+      .code pre::-webkit-scrollbar {
+        height: 8px;
+      }
+      .code pre::-webkit-scrollbar-thumb {
+        background: oklch(100% 0 0 / 0.18);
+        border-radius: 4px;
+      }
+      .k {
+        color: var(--code-key);
+      }
+      .c {
+        color: var(--code-dim);
+      }
+
+      /* Reset */
+      .reset-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 4px;
+        font-size: 13px;
+        color: var(--ink-3);
+      }
+      .reset-row p {
+        margin: 0;
+        text-wrap: pretty;
+      }
+
+      /* These set a display of their own, which would beat [hidden]. */
+      .error[hidden],
+      .detail-head .pill[hidden] {
+        display: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to win over every component's transition */
+          animation: none !important;
+          /* biome-ignore lint/complexity/noImportantStyles: as above */
+          transition: none !important;
+        }
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Hookgres playground</h1>
-      <p>
-        Send events to tenant <code>acme</code> and watch Hookgres deliver them
-        to three fake customer endpoints running in this process. Retries here
-        happen after <span id="schedule">2s, 5s, 10s</span> so you can see the
-        whole lifecycle quickly. The defaults are 5s, 5m, 30m, 2h, 5h, 10h, 10h.
-      </p>
+    <header class="nav">
+      <div class="wrap">
+        <span class="brand">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#163a5f" />
+            <path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+            <path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Hookgres <span class="crumb">Playground</span>
+        </span>
+        <div class="nav-end">
+          <span class="live" id="live" role="status">Connecting…</span>
+          <a class="docs" href="https://hookgres.dev/docs/playground">Docs</a>
+        </div>
+      </div>
     </header>
-    <main>
-      <div>
-        <section aria-labelledby="send-title">
+
+    <main class="wrap">
+      <div class="intro">
+        <h1>Watch a webhook live.</h1>
+        <p class="lede">
+          Send events to tenant <code>acme</code> and watch Hookgres deliver them to three
+          endpoints running in this process. Retries here happen after
+          <span class="schedule" id="schedule">2s, 5s, 10s</span>, so a whole lifecycle fits
+          in under a minute. The production defaults are 5s, 5m, 30m, 2h, 5h, 10h and 10h.
+        </p>
+      </div>
+
+      <div class="app">
+        <section class="card send-card" aria-labelledby="send-title">
           <h2 id="send-title">Send an event</h2>
-          <form id="send">
-            <label for="eventType">Event type</label>
-            <select id="eventType">
-              <option>invoice.paid</option>
-              <option>invoice.refunded</option>
-              <option>customer.created</option>
-            </select>
-            <label for="payload">Payload (JSON)</label>
-            <textarea id="payload" spellcheck="false">
+          <p class="hint">Each subscribed endpoint gets its own delivery.</p>
+          <form id="send" novalidate>
+            <div class="field">
+              <label for="eventType">Event type</label>
+              <div class="select">
+                <select class="control" id="eventType">
+                  <option>invoice.paid</option>
+                  <option>invoice.refunded</option>
+                  <option>customer.created</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label for="payload">Payload (JSON)</label>
+                <kbd id="shortcut" aria-hidden="true"></kbd>
+              </div>
+              <textarea class="control" id="payload" spellcheck="false" autocomplete="off" autocapitalize="off">
 { "invoiceId": "in_123", "amount": 4200, "currency": "eur" }</textarea
-            >
-            <label for="idempotencyKey">Idempotency key (optional)</label>
-            <input id="idempotencyKey" autocomplete="off" placeholder="e.g. invoice.paid:in_123" />
-            <button class="primary" type="submit">Send</button>
-            <p class="note" id="send-result" role="status" aria-live="polite"></p>
+              >
+              <p class="error" id="payload-error" hidden>
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5" />
+                  <path d="M8 4.75v3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                  <circle cx="8" cy="11.1" r="0.9" fill="currentColor" />
+                </svg>
+                <span id="payload-error-text"></span>
+              </p>
+            </div>
+            <div class="field">
+              <label for="idempotencyKey">Idempotency key <span class="optional">(optional)</span></label>
+              <input
+                class="control"
+                id="idempotencyKey"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-1p-ignore
+                data-lpignore="true"
+                placeholder="e.g. invoice.paid:in_123"
+              />
+            </div>
+            <button class="pill primary send" id="send-button" type="submit" data-state="idle">
+              <span class="idle" id="send-label">Send event</span>
+              <span class="sent" aria-hidden="true">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M5 10.5l3.2 3.2L15 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Queued
+              </span>
+            </button>
+            <p class="result" id="send-result" role="status" aria-live="polite"></p>
           </form>
         </section>
-        <section aria-labelledby="endpoints-title">
-          <h2 id="endpoints-title">Endpoints</h2>
-          <div id="endpoints"></div>
-        </section>
-        <section>
-          <button type="button" id="reset">Reset playground</button>
-          <p class="note">
-            Drops the <code>hookgres_playground</code> schema and starts over.
-          </p>
-        </section>
-      </div>
-      <div>
-        <section aria-labelledby="deliveries-title">
-          <h2 id="deliveries-title">Deliveries</h2>
-          <div class="stats" id="stats"></div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Event</th>
-                  <th>Endpoint</th>
-                  <th>Status</th>
-                  <th>Attempts</th>
-                  <th>Next attempt</th>
-                  <th>Last error</th>
-                </tr>
-              </thead>
-              <tbody id="deliveries"></tbody>
-            </table>
+
+        <section class="log-section" aria-labelledby="log-title">
+          <div class="log-head">
+            <h2 id="log-title">Delivery log</h2>
+            <ul class="counts" id="counts" aria-label="Deliveries by status">
+              <li style="--c: var(--ink-3)"><b data-count="pending">0</b> pending</li>
+              <li style="--c: var(--accent)"><b data-count="delivering">0</b> sending</li>
+              <li style="--c: var(--ok)"><b data-count="succeeded">0</b> succeeded</li>
+              <li style="--c: var(--bad)"><b data-count="failed">0</b> failed</li>
+            </ul>
           </div>
-          <p class="empty" id="no-deliveries">No deliveries yet. Send an event.</p>
+          <div class="window empty-log" id="log-empty">
+            <h3>No events yet</h3>
+            <p>
+              Send one and it shows up here with a row per endpoint. Every attempt appears as it
+              happens, so you can watch the flaky endpoint recover and the down one give up.
+            </p>
+          </div>
+          <ul class="messages" id="messages"></ul>
         </section>
-        <section aria-labelledby="detail-title" id="detail-section" hidden>
-          <h2 id="detail-title">Delivery</h2>
-          <div id="detail"></div>
+        <section class="card endpoints-card" aria-labelledby="endpoints-title">
+          <h2 id="endpoints-title">Endpoints</h2>
+          <p class="hint">Fake customer servers. Each one checks the signature first.</p>
+          <ul class="endpoints" id="endpoints"></ul>
         </section>
+
+        <div class="reset-row">
+          <p>Start over with an empty <code>hookgres_playground</code> schema.</p>
+          <button class="pill quiet small" type="button" id="reset">Reset</button>
+        </div>
       </div>
     </main>
+
     <script>
       const $ = (id) => document.getElementById(id);
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      const EASE_OUT = "cubic-bezier(0.32, 0.72, 0, 1)";
+      const RECEIVER_ORDER = ["healthy", "flaky", "down"];
+
+      let state = null;
       let selected = null;
-      let lastState = null;
+      // Nodes created on the first render are the page itself, not news.
+      let hydrated = false;
+      let endpointsByName = new Map();
+
+      // ------------------------------------------------------------ dom helpers
+      // Server data only ever reaches the page as text nodes or attribute values.
 
       function el(tag, props = {}, ...children) {
         const node = document.createElement(tag);
         for (const [key, value] of Object.entries(props)) {
+          if (value == null || value === false) continue;
           if (key === "class") node.className = value;
-          else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
           else node.setAttribute(key, value);
         }
         for (const child of children.flat()) {
           if (child == null || child === false) continue;
-          node.append(typeof child === "string" || typeof child === "number" ? String(child) : child);
+          node.append(child instanceof Node ? child : String(child));
         }
         return node;
       }
 
-      const statusClass = { succeeded: "ok", pending: "warn", delivering: "warn", failed: "bad" };
-      const ago = (iso) => {
-        const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
-        if (Math.abs(s) < 1) return "now";
-        return s > 0 ? `in ${s}s` : `${-s}s ago`;
-      };
+      function svg(viewBox, d, className) {
+        const ns = "http://www.w3.org/2000/svg";
+        const node = document.createElementNS(ns, "svg");
+        node.setAttribute("viewBox", viewBox);
+        node.setAttribute("aria-hidden", "true");
+        if (className) node.setAttribute("class", className);
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", d);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", "1.75");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        node.append(path);
+        return node;
+      }
+
+      function setText(node, value) {
+        const text = String(value ?? "");
+        if (node.textContent !== text) node.textContent = text;
+      }
+
+      function setAttr(node, name, value) {
+        if (value == null) node.removeAttribute(name);
+        else if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+      }
+
+      function setClass(node, value) {
+        if (node.className !== value) node.className = value;
+      }
+
+      const motionOK = () => hydrated && !reducedMotion.matches;
+
+      function enter(node, { y = 4, scale = 0.95, duration = 240 } = {}) {
+        if (!motionOK()) return;
+        node.animate(
+          [
+            { opacity: 0, transform: `translateY(${y}px) scale(${scale})` },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration, easing: EASE_OUT },
+        );
+      }
+
+      /**
+       * Keeps parent's children in step with items, keyed by id. Existing nodes
+       * are updated in place (so focus and running transitions survive the poll),
+       * new ones are created and, when `animate` is set, animated in.
+       */
+      function reconcile(parent, items, cache, keyOf, create, update, animate) {
+        const keys = new Set(items.map(keyOf));
+        for (const [key, node] of cache) {
+          if (!keys.has(key)) {
+            node.remove();
+            cache.delete(key);
+          }
+        }
+        const fresh = [];
+        let prev = null;
+        items.forEach((item, index) => {
+          const key = keyOf(item);
+          let node = cache.get(key);
+          const isNew = !node;
+          if (isNew) {
+            node = create(item);
+            cache.set(key, node);
+            fresh.push(node);
+          }
+          update(node, item, isNew, index);
+          const want = prev ? prev.nextElementSibling : parent.firstElementChild;
+          if (want !== node) parent.insertBefore(node, want);
+          prev = node;
+        });
+        if (animate) for (const node of fresh) enter(node, animate);
+        return fresh;
+      }
+
+      /** Slides siblings to their new place when something is inserted above them. */
+      function flip(nodes, mutate) {
+        if (!motionOK()) return mutate();
+        const before = nodes.map((node) => [node, node.getBoundingClientRect().top]);
+        mutate();
+        for (const [node, top] of before) {
+          if (!node.isConnected) continue;
+          const dy = top - node.getBoundingClientRect().top;
+          if (Math.abs(dy) < 1) continue;
+          node.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], {
+            duration: 280,
+            easing: EASE_OUT,
+          });
+        }
+      }
+
+      // ------------------------------------------------------------- formatting
+
+      function relative(iso) {
+        const s = Math.round((Date.parse(iso) - Date.now()) / 1000);
+        const abs = Math.abs(s);
+        if (abs < 1) return "now";
+        const value =
+          abs < 60 ? `${abs}s` : abs < 3600 ? `${Math.floor(abs / 60)}m` : `${Math.floor(abs / 3600)}h`;
+        return s > 0 ? `in ${value}` : `${value} ago`;
+      }
+
+      const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+      function tone(code) {
+        if (code >= 200 && code < 300) return "ok";
+        if (code === 503 || code === 429 || code === 408) return "warn";
+        return "bad";
+      }
+
+      function scope(eventTypes) {
+        if (!eventTypes) return "every event";
+        if (eventTypes.length === 1) return eventTypes[0];
+        return plural(eventTypes.length, "event type");
+      }
+
+      function statusOf(d) {
+        if (d.status === "succeeded") return ["Succeeded", "ok"];
+        if (d.status === "failed") return ["Failed", "bad"];
+        if (d.status === "delivering") return ["Sending", "info"];
+        return d.attemptCount > 0 ? ["Retrying", "warn"] : ["Queued", ""];
+      }
+
+      // -------------------------------------------------------------------- api
 
       async function api(method, path, body) {
         const res = await fetch(path, {
@@ -349,220 +1430,589 @@
         return data;
       }
 
-      function renderEndpoints(endpoints) {
-        $("endpoints").replaceChildren(
-          ...endpoints.map((e) => {
-            const status = e.disabled
-              ? el("span", { class: "pill bad" }, "disabled")
-              : e.failingSince
-                ? el("span", { class: "pill warn" }, `failing since ${ago(e.failingSince)}`)
-                : el("span", { class: "pill ok" }, "healthy");
-            return el(
-              "div",
-              { class: "endpoint" },
-              el("div", { class: "row" }, el("strong", {}, e.name), status),
-              el("p", {}, e.description),
-              el(
-                "div",
-                { class: "muted mono" },
-                `events: ${e.eventTypes ? e.eventTypes.join(", ") : "all"}`,
-              ),
-              el("div", { class: "muted mono" }, `secret: ${e.secretPreview}`),
-              e.disabledReason && el("div", { class: "bad" }, e.disabledReason),
-              el(
-                "div",
-                { class: "row", style: "margin-top:8px" },
-                el(
-                  "button",
-                  {
-                    type: "button",
-                    onclick: () => act(`/api/endpoints/${e.id}/${e.disabled ? "enable" : "disable"}`),
-                  },
-                  e.disabled ? "Re-enable" : "Disable",
-                ),
-                el(
-                  "button",
-                  { type: "button", onclick: () => act(`/api/endpoints/${e.id}/rotate`) },
-                  "Rotate secret",
-                ),
-              ),
-            );
-          }),
+      // -------------------------------------------------------------- endpoints
+
+      const endpointNodes = new Map();
+      const parts = new WeakMap();
+
+      function createEndpoint(e) {
+        const name = el("span", { class: "ep-name" });
+        const badge = el("span", { class: "attempt badge" });
+        const desc = el("p", { class: "ep-desc" });
+        const events = el("dd");
+        const secret = el("dd");
+        const reason = el("p", { class: "reason" });
+        const toggle = el("button", { type: "button", class: "pill ghost small" });
+        const rotate = el("button", { type: "button", class: "pill ghost small" }, "Rotate secret");
+        const node = el(
+          "li",
+          { class: "ep" },
+          el("div", { class: "ep-head" }, name, badge),
+          desc,
+          el("dl", {}, el("dt", {}, "Events"), events, el("dt", {}, "Secret"), secret),
+          reason,
+          el("div", { class: "actions" }, toggle, rotate),
+        );
+        toggle.addEventListener("click", () => {
+          const current = state?.endpoints.find((x) => x.id === e.id);
+          act(toggle, `/api/endpoints/${e.id}/${current?.disabled ? "enable" : "disable"}`);
+        });
+        rotate.addEventListener("click", () => act(rotate, `/api/endpoints/${e.id}/rotate`));
+        parts.set(node, { name, badge, desc, events, secret, reason, toggle });
+        return node;
+      }
+
+      function updateEndpoint(node, e, isNew) {
+        const p = parts.get(node);
+        setText(p.name, e.name);
+        if (e.disabled) {
+          setClass(p.badge, "attempt badge bad");
+          setText(p.badge, "Disabled");
+        } else if (e.failingSince) {
+          setClass(p.badge, "attempt badge warn");
+          setText(p.badge, `Failing for ${relative(e.failingSince).replace(" ago", "")}`);
+        } else {
+          setClass(p.badge, "attempt badge ok");
+          setText(p.badge, "Healthy");
+        }
+        setText(p.desc, e.description);
+        setText(p.events, e.eventTypes ? e.eventTypes.join(", ") : "All event types");
+        const secretChanged = p.secret.textContent !== e.secretPreview;
+        setText(p.secret, e.secretPreview);
+        if (secretChanged && !isNew) enter(p.secret, { y: 3, scale: 1, duration: 220 });
+        p.reason.hidden = !e.disabledReason;
+        setText(p.reason, e.disabledReason);
+        setText(p.toggle, e.disabled ? "Re-enable" : "Disable");
+      }
+
+      function renderEndpoints() {
+        reconcile(
+          $("endpoints"),
+          state.endpoints,
+          endpointNodes,
+          (e) => e.id,
+          createEndpoint,
+          updateEndpoint,
+          { y: 4, scale: 0.98 },
         );
       }
 
-      function renderDeliveries(state) {
-        const counts = state.counts;
-        $("stats").replaceChildren(
-          ...["pending", "delivering", "succeeded", "failed"].map((s) =>
-            el("div", {}, el("b", { class: statusClass[s] }, counts[s] || 0), s),
-          ),
+      // ------------------------------------------------------------ delivery log
+
+      const messageNodes = new Map();
+
+      function groupByMessage(deliveries) {
+        const messages = new Map();
+        for (const d of deliveries) {
+          let m = messages.get(d.messageId);
+          if (!m) {
+            m = {
+              id: d.messageId,
+              eventType: d.eventType,
+              idempotencyKey: d.idempotencyKey,
+              createdAt: d.createdAt,
+              deliveries: [],
+            };
+            messages.set(d.messageId, m);
+          }
+          m.deliveries.push(d);
+          if (d.createdAt < m.createdAt) m.createdAt = d.createdAt;
+        }
+        const rank = (name) => {
+          const i = RECEIVER_ORDER.indexOf(name);
+          return i === -1 ? RECEIVER_ORDER.length : i;
+        };
+        for (const m of messages.values()) {
+          m.deliveries.sort((a, b) => rank(a.endpoint) - rank(b.endpoint));
+        }
+        return [...messages.values()];
+      }
+
+      function createMessage() {
+        const title = el("span", { class: "title" });
+        const key = el("span", { class: "key" });
+        const id = el("span", { class: "msg-id" });
+        const time = el("span");
+        const log = el("ul", { class: "log" });
+        const node = el(
+          "li",
+          { class: "window message" },
+          el("div", { class: "window-bar" }, title, key, el("span", { class: "meta" }, id, time)),
+          log,
         );
-        $("no-deliveries").hidden = state.deliveries.length > 0;
-        $("deliveries").replaceChildren(
-          ...state.deliveries.map((d) =>
-            el(
-              "tr",
-              {
-                tabindex: "0",
-                "aria-selected": String(d.id === selected),
-                onclick: () => select(d.id),
-                onkeydown: (event) => event.key === "Enter" && select(d.id),
-              },
-              el("td", { class: "mono" }, d.eventType),
-              el("td", {}, d.endpoint),
-              el("td", {}, el("span", { class: `pill ${statusClass[d.status]}` }, d.status)),
-              el("td", {}, d.attemptCount),
-              el("td", { class: "muted" }, d.status === "pending" ? ago(d.nextAttemptAt) : "–"),
-              el("td", { class: "muted" }, d.lastError || ""),
-            ),
-          ),
+        parts.set(node, { title, key, id, time, log, rows: new Map() });
+        return node;
+      }
+
+      function updateMessage(node, m, isNew) {
+        const p = parts.get(node);
+        setText(p.title, m.eventType);
+        p.key.hidden = !m.idempotencyKey;
+        setText(p.key, m.idempotencyKey ? `key ${m.idempotencyKey}` : "");
+        setAttr(p.key, "title", m.idempotencyKey ? `Idempotency key: ${m.idempotencyKey}` : null);
+        setText(p.id, m.id);
+        setText(p.time, relative(m.createdAt));
+        setAttr(node, "aria-label", `${m.eventType}, message ${m.id}`);
+        reconcile(
+          p.log,
+          m.deliveries,
+          p.rows,
+          (d) => d.id,
+          createRow,
+          updateRow,
+          !isNew && { y: 4, scale: 0.98 },
         );
       }
 
-      async function renderDetail() {
-        const delivery = lastState?.deliveries.find((d) => d.id === selected);
-        $("detail-section").hidden = !delivery;
-        if (!delivery) return;
-        const attempts = await api("GET", `/api/deliveries/${delivery.id}/attempts`);
-        const requests = lastState.received.filter(
-          (r) => r.webhookId === delivery.messageId && r.receiver === delivery.endpoint,
+      function createRow(d) {
+        const name = el("b");
+        const sub = el("small");
+        const slots = el("span", { class: "slots" });
+        const label = el("span");
+        const statusSub = el("small");
+        const status = el("span", { class: "status" }, label, statusSub);
+        const button = el(
+          "button",
+          {
+            type: "button",
+            class: "log-row",
+            "aria-expanded": "false",
+            "data-id": d.id,
+          },
+          el("span", { class: "endpoint" }, name, sub),
+          slots,
+          status,
+          svg("0 0 16 16", "M6 3.5L10.5 8 6 12.5", "chev"),
         );
-        const finished = delivery.status === "succeeded" || delivery.status === "failed";
-        $("detail").replaceChildren(
-          el(
-            "div",
-            { class: "row" },
-            el("span", { class: "mono" }, delivery.id),
-            el("span", { class: `pill ${statusClass[delivery.status]}` }, delivery.status),
-            finished &&
-              el(
-                "button",
-                { type: "button", onclick: () => act(`/api/deliveries/${delivery.id}/replay`) },
-                "Replay",
-              ),
-          ),
+        button.addEventListener("click", () => select(selected === d.id ? null : d.id, true));
+        const node = el("li", { class: "delivery" }, button);
+        parts.set(node, { button, name, sub, slots, status, label, statusSub, chips: new Map() });
+        return node;
+      }
+
+      function updateRow(node, d, isNew) {
+        const p = parts.get(node);
+        setText(p.name, d.endpoint);
+        setText(p.sub, scope(endpointsByName.get(d.endpoint)?.eventTypes ?? null));
+        const [label, cls] = statusOf(d);
+        setText(p.label, label);
+        setClass(p.status, `status ${cls}`.trim());
+        setText(
+          p.statusSub,
+          d.attemptCount === 0 && d.status === "pending" ? "not sent yet" : plural(d.attemptCount, "attempt"),
+        );
+        setAttr(p.button, "aria-expanded", String(d.id === selected));
+        setAttr(p.button, "aria-controls", d.id === selected ? "detail" : null);
+
+        const chips = d.attempts.map((a, index) => ({
+          ...a,
+          replayed: index > 0 && a.attemptNumber === 1,
+        }));
+        if (d.status === "pending" || d.status === "delivering") chips.push({ id: "next", d });
+        reconcile(p.slots, chips, p.chips, (c) => c.id, createChip, updateChip, !isNew && {});
+      }
+
+      function createChip(c) {
+        if (c.id === "next") return el("span", { class: "attempt next" });
+        const code = c.statusCode;
+        return el(
+          "span",
+          {
+            class: `attempt ${tone(code)}${c.replayed ? " replayed" : ""}`,
+            title: c.replayed ? "First attempt after a replay" : null,
+          },
+          code ?? "ERR",
+        );
+      }
+
+      function updateChip(node, c) {
+        if (c.id !== "next") return;
+        setText(node, c.d.status === "delivering" ? "sending" : relative(c.d.nextAttemptAt));
+      }
+
+      function renderLog() {
+        const messages = groupByMessage(state.deliveries);
+        $("log-empty").hidden = messages.length > 0;
+        const list = $("messages");
+        const update = () =>
+          reconcile(list, messages, messageNodes, (m) => m.id, createMessage, updateMessage, {
+            y: -6,
+            scale: 0.97,
+            duration: 260,
+          });
+        if (messages.some((m) => !messageNodes.has(m.id))) flip([...messageNodes.values()], update);
+        else update();
+      }
+
+      function renderCounts() {
+        for (const node of document.querySelectorAll("[data-count]")) {
+          setText(node, state.counts[node.dataset.count] || 0);
+        }
+      }
+
+      // ------------------------------------------------------------------ detail
+
+      const detail = buildDetail();
+      let detailFor = null;
+      let attemptsSig = null;
+      let attemptsData = null;
+      let attemptsRequest = 0;
+
+      function buildDetail() {
+        const id = el("span", { class: "id" });
+        const replay = el("button", { type: "button", class: "pill ghost small" }, "Replay");
+        const message = el("code");
+        const lastError = el("p", { class: "last-error" });
+        const attempts = el("ol", { class: "attempt-list" });
+        const noAttempts = el("p", { class: "empty" }, "No attempts yet. The first one goes out right away.");
+        const requests = el("div", { class: "requests" });
+        const noRequests = el("p", { class: "empty" }, "Nothing received yet.");
+        const node = el(
+          "div",
+          { class: "detail", id: "detail", role: "region", "aria-label": "Delivery details" },
+          el("div", { class: "detail-head" }, el("span", { class: "id-wrap" }, id), replay),
           el(
             "p",
             { class: "note" },
-            `Message ${delivery.messageId}. Its webhook-id header is the same on every attempt, so receivers can deduplicate.`,
+            "Message ",
+            message,
+            ". Its webhook-id header is the same on every attempt, so receivers can deduplicate.",
           ),
-          el("h2", { style: "margin-top:16px" }, "Attempts"),
-          attempts.length === 0
-            ? el("p", { class: "empty" }, "No attempts yet.")
-            : el(
-                "div",
-                { class: "table-wrap" },
-                el(
-                  "table",
-                  {},
-                  el(
-                    "thead",
-                    {},
-                    el("tr", {}, el("th", {}, "#"), el("th", {}, "Status"), el("th", {}, "Duration"), el("th", {}, "Response or error")),
-                  ),
-                  el(
-                    "tbody",
-                    {},
-                    attempts.map((a) =>
-                      el(
-                        "tr",
-                        {},
-                        el("td", {}, a.attemptNumber),
-                        el(
-                          "td",
-                          { class: a.statusCode >= 200 && a.statusCode < 300 ? "ok" : "bad" },
-                          a.statusCode ?? "–",
-                        ),
-                        el("td", {}, `${a.durationMs}ms`),
-                        el("td", { class: "muted" }, a.error || a.responseBody || ""),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          el("h2", { style: "margin-top:16px" }, "What the receiver got"),
-          requests.length === 0
-            ? el("p", { class: "empty" }, "Nothing received yet.")
-            : requests
-                .slice(0, 3)
-                .map((r) =>
-                  el(
-                    "pre",
-                    {},
-                    `POST /receivers/${r.receiver}  →  ${r.status}\n` +
-                      `webhook-id: ${r.webhookId}\n` +
-                      `webhook-timestamp: ${r.timestamp}\n` +
-                      `webhook-signature: ${r.signature}\n` +
-                      `signature ${r.verified ? "verified ✓" : `rejected: ${r.verifyError}`}\n\n` +
-                      JSON.stringify(JSON.parse(r.body), null, 2),
-                  ),
-                ),
+          lastError,
+          el("h3", {}, "Attempts"),
+          attempts,
+          noAttempts,
+          el("h3", {}, "What the receiver got"),
+          requests,
+          noRequests,
+        );
+        replay.addEventListener("click", () => act(replay, `/api/deliveries/${detailFor}/replay`));
+        parts.set(node, {
+          id,
+          replay,
+          message,
+          lastError,
+          attempts,
+          noAttempts,
+          requests,
+          noRequests,
+          attemptRows: new Map(),
+          requestNodes: new Map(),
+        });
+        return node;
+      }
+
+      async function loadAttempts(delivery) {
+        const sig = `${delivery.id}:${delivery.attempts.length}:${delivery.status}`;
+        if (sig === attemptsSig) return;
+        const request = ++attemptsRequest;
+        const data = await api("GET", `/api/deliveries/${delivery.id}/attempts`);
+        // A newer request (a later poll or click) owns the result.
+        if (request !== attemptsRequest || selected !== delivery.id) return;
+        attemptsSig = sig;
+        attemptsData = data;
+      }
+
+      function createAttemptRow(a) {
+        const ok = a.statusCode >= 200 && a.statusCode < 300;
+        const text = a.error || a.responseBody || (ok ? "No content" : "");
+        return el(
+          "li",
+          { class: a.replayed ? "attempt-row replayed" : "attempt-row" },
+          a.replayed && el("span", { class: "replay-mark" }, "Replayed"),
+          el("span", {}, el("span", { class: `attempt ${tone(a.statusCode)}` }, a.statusCode ?? "ERR")),
+          el("span", { class: "n" }, `Attempt ${a.attemptNumber}`),
+          el("span", { class: "ms" }, `${a.durationMs} ms`),
+          el("span", { class: "resp", title: text || null }, text),
         );
       }
 
-      function select(id) {
-        selected = id;
-        if (lastState) renderDeliveries(lastState);
-        renderDetail();
-      }
-
-      async function refresh() {
+      function prettyBody(body) {
         try {
-          lastState = await api("GET", "/api/state");
-          $("schedule").textContent = lastState.settings.retrySchedule
-            .map((ms) => `${ms / 1000}s`)
-            .join(", ");
-          renderEndpoints(lastState.endpoints);
-          renderDeliveries(lastState);
-          if (selected) await renderDetail();
-        } catch (error) {
-          $("send-result").textContent = `Lost connection: ${error.message}`;
-        }
-      }
-
-      async function act(path) {
-        try {
-          await api("POST", path);
-        } catch (error) {
-          $("send-result").textContent = error.message;
-        }
-        await refresh();
-      }
-
-      $("send").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        let payload;
-        try {
-          payload = JSON.parse($("payload").value);
+          return JSON.stringify(JSON.parse(body), null, 2);
         } catch {
-          $("send-result").textContent = "Payload must be valid JSON.";
+          return body;
+        }
+      }
+
+      function createRequest(r, open) {
+        const header = (name, value) => [el("span", { class: "k" }, `${name}:`), ` ${value}\n`];
+        return el(
+          "details",
+          { class: "code", open: open ? "" : null },
+          el(
+            "summary",
+            { class: "bar" },
+            svg("0 0 16 16", "M6 3.5L10.5 8 6 12.5", "disclosure"),
+            el("span", { class: "path" }, `POST /receivers/${r.receiver}`),
+            el(
+              "span",
+              { class: `attempt badge ${r.verified ? "ok" : "bad"}` },
+              r.verified ? "Signature verified" : "Signature rejected",
+            ),
+            el("span", { class: `attempt ${tone(r.status)}` }, r.status),
+          ),
+          el(
+            "pre",
+            {},
+            header("webhook-id", r.webhookId),
+            header("webhook-timestamp", r.timestamp),
+            header("webhook-signature", r.signature),
+            r.verified ? "" : el("span", { class: "c" }, `\n# ${r.verifyError}\n`),
+            "\n",
+            prettyBody(r.body),
+          ),
+        );
+      }
+
+      async function renderDetail(fromClick = false) {
+        for (const button of document.querySelectorAll(".log-row")) {
+          setAttr(button, "aria-expanded", String(button.dataset.id === selected));
+          setAttr(button, "aria-controls", button.dataset.id === selected ? "detail" : null);
+        }
+        const delivery = state?.deliveries.find((d) => d.id === selected);
+        if (!delivery) {
+          selected = null;
+          detailFor = null;
+          detail.remove();
           return;
         }
         try {
+          await loadAttempts(delivery);
+        } catch {
+          // The next poll tries again.
+        }
+        if (selected !== delivery.id) return;
+
+        const p = parts.get(detail);
+        const switched = detailFor !== delivery.id;
+        if (switched) {
+          detailFor = delivery.id;
+          p.attemptRows.clear();
+          p.requestNodes.clear();
+          p.attempts.replaceChildren();
+          p.requests.replaceChildren();
+        }
+        setText(p.id, delivery.id);
+        setText(p.message, delivery.messageId);
+        const finished = delivery.status === "succeeded" || delivery.status === "failed";
+        if (!finished && document.activeElement === p.replay) {
+          document.querySelector(`.log-row[data-id="${CSS.escape(delivery.id)}"]`)?.focus();
+        }
+        p.replay.hidden = !finished;
+        p.lastError.hidden = !delivery.lastError;
+        setText(p.lastError, delivery.lastError ? `Last error: ${delivery.lastError}` : "");
+
+        const loaded = attemptsData && attemptsSig?.startsWith(`${delivery.id}:`) ? attemptsData : [];
+        const attempts = loaded.map((a, index) => ({ ...a, replayed: index > 0 && a.attemptNumber === 1 }));
+        reconcile(p.attempts, attempts, p.attemptRows, (a) => a.id, createAttemptRow, () => {}, !switched && {});
+        p.noAttempts.hidden = attempts.length > 0;
+
+        const requests = state.received
+          .filter((r) => r.webhookId === delivery.messageId && r.receiver === delivery.endpoint)
+          .slice(0, 3);
+        reconcile(
+          p.requests,
+          requests,
+          p.requestNodes,
+          (r) => `${r.at}|${r.signature}`,
+          (r) => createRequest(r, r === requests[0]),
+          () => {},
+          !switched && { y: -4, scale: 0.98 },
+        );
+        p.noRequests.hidden = requests.length > 0;
+
+        const row = document.querySelector(`.log-row[data-id="${CSS.escape(delivery.id)}"]`)?.parentElement;
+        if (row && detail.parentElement !== row) {
+          row.append(detail);
+          enter(detail, { y: -4, scale: 0.98, duration: 220 });
+        }
+        if (fromClick && row) {
+          detail.scrollIntoView({ block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
+        }
+      }
+
+      function select(id, fromClick = false) {
+        selected = id;
+        renderDetail(fromClick);
+      }
+
+      // ---------------------------------------------------------------- refresh
+
+      let inflight = null;
+
+      function refresh() {
+        inflight ??= (async () => {
+          try {
+            state = await api("GET", "/api/state");
+          } catch {
+            setLive(false);
+            return;
+          }
+          setLive(true);
+          setText(
+            $("schedule"),
+            state.settings.retrySchedule.map((ms) => `${ms / 1000}s`).join(", "),
+          );
+          endpointsByName = new Map(state.endpoints.map((e) => [e.name, e]));
+          renderEndpoints();
+          renderCounts();
+          renderLog();
+          await renderDetail();
+          hydrated = true;
+        })().finally(() => {
+          inflight = null;
+        });
+        return inflight;
+      }
+
+      /** After an action: wait out a poll already in flight, then fetch again. */
+      async function refreshAfterAction() {
+        await inflight?.catch(() => {});
+        await refresh();
+      }
+
+      function setLive(ok) {
+        const live = $("live");
+        setAttr(live, "data-state", ok ? "live" : "lost");
+        setText(live, ok ? "Live" : "Reconnecting…");
+      }
+
+      async function poll() {
+        try {
+          if (!document.hidden) await refresh();
+        } finally {
+          setTimeout(poll, 1000);
+        }
+      }
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) refresh();
+      });
+
+      // ---------------------------------------------------------------- actions
+
+      async function act(button, path) {
+        if (button.dataset.busy) return;
+        button.dataset.busy = "";
+        setAttr(button, "aria-disabled", "true");
+        try {
+          await api("POST", path);
+        } catch (error) {
+          showResult(error.message, "bad");
+        } finally {
+          delete button.dataset.busy;
+          button.removeAttribute("aria-disabled");
+        }
+        await refreshAfterAction();
+      }
+
+      function showResult(text, tone) {
+        const result = $("send-result");
+        setAttr(result, "data-tone", tone ?? null);
+        setText(result, text);
+      }
+
+      const form = $("send");
+      const payload = $("payload");
+      const sendButton = $("send-button");
+      let sending = false;
+      let sentTimer = 0;
+
+      function validatePayload() {
+        try {
+          const value = JSON.parse(payload.value);
+          payload.removeAttribute("aria-invalid");
+          payload.removeAttribute("aria-describedby");
+          $("payload-error").hidden = true;
+          return { value };
+        } catch (error) {
+          payload.setAttribute("aria-invalid", "true");
+          payload.setAttribute("aria-describedby", "payload-error");
+          setText($("payload-error-text"), `Payload isn't valid JSON. ${error.message}`);
+          $("payload-error").hidden = false;
+          return null;
+        }
+      }
+
+      // Reward early: once an error shows, it clears the moment the JSON is fixed.
+      payload.addEventListener("input", () => {
+        if (payload.hasAttribute("aria-invalid")) validatePayload();
+      });
+
+      payload.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+      });
+
+      const isMac = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform);
+      setText($("shortcut"), isMac ? "⌘ Return to send" : "Ctrl Enter to send");
+      payload.setAttribute("aria-keyshortcuts", isMac ? "Meta+Enter" : "Control+Enter");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (sending) return;
+        const parsed = validatePayload();
+        if (!parsed) {
+          payload.focus();
+          return;
+        }
+        sending = true;
+        setAttr(sendButton, "aria-disabled", "true");
+        setText($("send-label"), "Sending…");
+        try {
           const result = await api("POST", "/api/send", {
             eventType: $("eventType").value,
-            payload,
+            payload: parsed.value,
             idempotencyKey: $("idempotencyKey").value.trim() || undefined,
           });
-          $("send-result").textContent = result.deduplicated
-            ? `Deduplicated: ${result.message.id} already exists for this idempotency key.`
-            : `Queued ${result.message.id} for ${result.deliveryCount} endpoint(s).`;
+          showResult(
+            result.deduplicated
+              ? `Already sent: ${result.message.id} has this idempotency key, so nothing new was queued.`
+              : `Queued ${result.message.id} for ${plural(result.deliveryCount, "endpoint")}.`,
+          );
+          if (!result.deduplicated) {
+            sendButton.dataset.state = "sent";
+            clearTimeout(sentTimer);
+            sentTimer = setTimeout(() => {
+              sendButton.dataset.state = "idle";
+            }, 1400);
+          }
         } catch (error) {
-          $("send-result").textContent = error.message;
+          showResult(error.message, "bad");
+        } finally {
+          sending = false;
+          sendButton.removeAttribute("aria-disabled");
+          setText($("send-label"), "Send event");
         }
-        await refresh();
+        await refreshAfterAction();
       });
 
-      $("reset").addEventListener("click", async () => {
+      $("reset").addEventListener("click", async (event) => {
+        const ok = confirm(
+          "Reset the playground? This drops the hookgres_playground schema, with every event and delivery in it.",
+        );
+        if (!ok) return;
         selected = null;
-        $("reset").disabled = true;
-        await act("/api/reset");
-        $("reset").disabled = false;
+        const button = event.currentTarget;
+        setText(button, "Resetting…");
+        await act(button, "/api/reset");
+        setText(button, "Reset");
+        showResult("");
       });
 
-      refresh();
-      setInterval(refresh, 1000);
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !selected || !detail.isConnected) return;
+        const row = document.querySelector(`.log-row[data-id="${CSS.escape(selected)}"]`);
+        // Only when focus is on this delivery, so Escape in the form stays the form's.
+        if (document.activeElement !== row && !detail.contains(document.activeElement)) return;
+        select(null);
+        row?.focus();
+      });
+
+      poll();
     </script>
   </body>
 </html>
