@@ -383,7 +383,7 @@ hookgres.start();
         status.textContent = "Copied to clipboard";
         button.dataset.copied = "";
       } catch {
-        button.textContent = "Copy failed";
+        button.textContent = "Failed";
         status.textContent = "Copy failed";
       }
       setTimeout(() => {
