@@ -19,15 +19,15 @@
     --surface: oklch(100% 0 0);
     --ink: oklch(21% 0.005 286);
     --ink-2: oklch(49% 0.008 286);
-    --ink-3: oklch(62% 0.008 286);
+    --ink-3: oklch(52% 0.008 286);
     --line: oklch(90.5% 0.004 286);
     /* Postgres blue */
     --accent: oklch(49% 0.095 248);
     --accent-hover: oklch(44% 0.095 248);
     --accent-ink: oklch(100% 0 0);
     --ok: oklch(52% 0.13 152);
-    --warn: oklch(60% 0.14 65);
-    --bad: oklch(55% 0.18 27);
+    --warn: oklch(52% 0.13 60);
+    --bad: oklch(50% 0.18 27);
     --code-bg: oklch(19% 0.008 270);
     --code-line: oklch(28% 0.01 270);
     --code-ink: oklch(92% 0.005 270);
@@ -48,7 +48,7 @@
       --surface: oklch(19% 0.005 286);
       --ink: oklch(96.5% 0.003 286);
       --ink-2: oklch(72% 0.008 286);
-      --ink-3: oklch(58% 0.008 286);
+      --ink-3: oklch(66% 0.008 286);
       --line: oklch(28% 0.006 286);
       --accent: oklch(72% 0.11 245);
       --accent-hover: oklch(78% 0.1 245);
@@ -105,7 +105,8 @@
   .pill:active { transform: scale(0.97); }
   .pill.small { height: 28px; padding: 0 13px; font-size: 13px; background: var(--accent); color: var(--accent-ink); }
   .pill.small:hover { background: var(--accent-hover); }
-  @media (max-width: 560px) { .nav nav .wide { display: none; } .nav nav { gap: 18px; } }
+  @media (max-width: 560px) { .nav nav .wide { display: none; } .nav nav { gap: 18px; } .nav .wrap { gap: 16px; } }
+  @media (max-width: 400px) { .nav nav .github { display: none; } }
 
   /* Hero */
   .hero { text-align: center; padding: clamp(64px, 11vw, 132px) 0 0; }
@@ -234,6 +235,7 @@
   }
   .code .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 20px; border-bottom: 1px solid var(--code-line); font-size: 12.5px; color: var(--code-dim); }
   .code .copy { color: var(--code-dim); }
+  .code .copy:focus-visible { outline-color: var(--code-key); }
   @media (hover: hover) { .code .copy:hover { background: oklch(100% 0 0 / 0.08); color: var(--code-ink); } }
   .code pre { margin: 0; padding: 20px 22px 24px; overflow-x: auto; font: 13.5px/1.7 var(--mono); letter-spacing: 0; tab-size: 2; }
   .k { color: var(--code-key); }
@@ -280,7 +282,7 @@
   .footer-links { display: flex; flex-wrap: wrap; gap: 22px; }
   .footer-links a, .footer-inner a { color: var(--ink-2); }
 
-  /* The intro is skipped for reduced motion in the script above. */
+  /* The hero intro is already skipped for reduced motion by its script. */
   @media (prefers-reduced-motion: reduce) { .pill, .copy { transition: none; } }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
@@ -295,7 +297,7 @@
     <nav aria-label="Main">
       <a href="/docs/">Docs</a>
       <a class="wide" href="/docs/playground">Playground</a>
-      <a href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
+      <a class="github" href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
       <a class="pill small" href="/docs/getting-started">Get started</a>
     </nav>
   </div>
