@@ -154,12 +154,6 @@
   .hero .actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center; margin-top: 36px; }
   .pill.large { height: 48px; padding: 0 26px; font-size: 17px; background: var(--accent); color: var(--accent-ink); }
   .pill.large:hover { background: var(--accent-hover); }
-  .install {
-    display: inline-flex; align-items: center; gap: 4px; height: 48px; padding: 0 6px 0 20px;
-    border-radius: 999px; background: var(--bg-alt); border: 1px solid var(--line);
-    font-family: var(--mono); font-size: 14.5px; letter-spacing: 0; color: var(--ink);
-  }
-  .install .dollar { color: var(--ink-3); user-select: none; }
   .copy {
     font: 500 12.5px/1 var(--sans); letter-spacing: 0;
     border: 0; border-radius: 999px; padding: 8px 12px; margin-left: 8px; cursor: pointer;
@@ -229,6 +223,146 @@
     .slot:empty { display: none; }
   }
   @media (min-width: 761px) { .log-row .slots { display: contents; } }
+
+
+  /* Installer: AI prompt or npm */
+  .installer { max-width: 720px; margin: 36px auto 0; text-align: left; }
+  .seg {
+    position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    padding: 3px; border-radius: 999px; background: var(--bg-alt); border: 1px solid var(--line);
+    --i: 0; --n: 2;
+  }
+  .installer .seg { display: grid; width: min(100%, 380px); margin: 0 auto 14px; }
+  .seg button {
+    position: relative; z-index: 1; border: 0; background: none; cursor: pointer;
+    font: 500 14px/1 var(--sans); letter-spacing: -0.01em; color: var(--ink-2);
+    padding: 10px 16px; border-radius: 999px; white-space: nowrap;
+    transition: color 200ms var(--ease);
+  }
+  .seg button[aria-selected="true"], .seg button[aria-pressed="true"] { color: var(--ink); }
+  .seg-thumb {
+    position: absolute; top: 3px; bottom: 3px; left: 3px;
+    width: calc((100% - 6px) / var(--n)); border-radius: 999px;
+    background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 2px 8px oklch(0% 0 0 / 0.06);
+    transform: translateX(calc(var(--i) * 100%));
+    transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  fieldset.seg { margin: 0; min-inline-size: 0; }
+  .seg.small button { font-size: 13.5px; padding: 9px 16px; }
+  .panels { display: grid; }
+  .panel {
+    grid-area: 1 / 1; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow);
+    padding: 22px 22px 16px; animation: panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .panel[hidden] { display: none; }
+  @keyframes panel-in { from { opacity: 0; transform: translateY(4px); } }
+  .prompt { margin: 0; font-size: 15.5px; line-height: 1.6; color: var(--ink); letter-spacing: -0.008em; }
+  .cmd { margin: 0; font: 16px/1.5 var(--mono); letter-spacing: 0; padding: 6px 0 4px; }
+  .dollar { color: var(--ink-3); user-select: none; }
+  .panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+  .copy.strong { background: var(--accent); color: var(--accent-ink); padding: 9px 16px; min-width: 0; }
+  @media (hover: hover) { .copy.strong:hover { background: var(--accent-hover); color: var(--accent-ink); } }
+  .copy.strong[data-copied] { color: var(--accent-ink); }
+  @media (max-width: 560px) { .panel-foot { flex-direction: column; align-items: stretch; } .copy.strong { margin-left: 0; height: 40px; } }
+
+  /* Interactive demos */
+  .demo { min-width: 0; }
+  .pill.action {
+    height: 40px; padding: 0 20px; font-size: 15px; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); font-family: var(--sans);
+  }
+  @media (hover: hover) { .pill.action:hover { background: var(--accent-hover); } }
+  .pill.action.quiet { background: var(--bg-alt); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  section.alt .pill.action.quiet { background: var(--surface); }
+  @media (hover: hover) { .pill.action.quiet:hover { background: color-mix(in oklch, var(--ink) 6%, var(--surface)); } }
+
+  .bar-hint { color: var(--code-dim); }
+  .tx-demo pre { white-space: pre-wrap; word-break: break-word; }
+  .ln { display: block; padding: 0 6px; margin: 0 -6px; border-radius: 6px; transition: background-color 240ms var(--ease), opacity 240ms var(--ease); }
+  .tx-demo[data-state="commit"] .tx-end { background: oklch(76% 0.15 152 / 0.16); }
+  .tx-demo[data-state="rollback"] .tx-end { background: oklch(70% 0.17 27 / 0.18); }
+  .tx-demo[data-state="rollback"] .ln:not(.tx-end) { opacity: 0.38; }
+  .flow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 22px 4px 0; }
+  .node b { display: block; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .node small { display: block; font-size: 12.5px; color: var(--ink-3); transition: color 200ms var(--ease); }
+  .node:last-child { text-align: right; }
+  .track { position: relative; height: 26px; }
+  .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1.5px dashed var(--line); }
+  .packet {
+    position: absolute; left: 0; top: 0; height: 26px; display: inline-flex; align-items: center;
+    padding: 0 10px; border-radius: 8px; font: 500 12px/1 var(--mono); letter-spacing: 0;
+    background: var(--accent); color: var(--accent-ink);
+    opacity: 0; transform: translateX(0) scale(0.95);
+  }
+  .packet.go { animation: travel 900ms cubic-bezier(0.65, 0, 0.35, 1) forwards; }
+  .packet.drop { animation: drop 420ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+  @keyframes travel {
+    0% { opacity: 0; transform: translateX(0) scale(0.95); }
+    15% { opacity: 1; transform: translateX(0) scale(1); }
+    85% { opacity: 1; transform: translateX(var(--dist)) scale(1); }
+    100% { opacity: 0; transform: translateX(var(--dist)) scale(0.95); }
+  }
+  @keyframes drop {
+    0% { opacity: 1; transform: translateX(0) scale(1); }
+    100% { opacity: 0; transform: translateX(0) translateY(10px) scale(0.92); }
+  }
+  .tx-rx.ok { color: var(--ok); }
+  .tx-db.bad { color: var(--bad); }
+  .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 22px; }
+  .demo-status { margin: 0 0 0 6px; font-size: 14px; color: var(--ink-2); flex: 1 1 200px; }
+
+  .sim { max-width: 1000px; margin: 56px auto 0; }
+  .sim-controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; margin-bottom: 22px; }
+  .sim-controls .seg { --n: 3; }
+  .sim-track { position: relative; padding: 30px 24px 18px; }
+  .sim-line { position: absolute; left: 24px; right: 24px; top: 52px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .sim-progress { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+  .sim-slots { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+  .sim-slot { display: grid; justify-items: center; gap: 10px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .sim-slot .chip-wrap { height: 24px; display: flex; align-items: center; }
+  .sim-slot .attempt { animation: chip-in 260ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+  @keyframes chip-in { from { opacity: 0; transform: translateY(4px) scale(0.95); } }
+  .sim-status { margin: 0; padding: 14px 24px 18px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); min-height: 52px; }
+  .sim-status b { font-weight: 600; }
+  .sim-status .ok { color: var(--ok); }
+  .sim-status .bad { color: var(--bad); }
+  @media (max-width: 640px) {
+    .sim-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 18px; }
+    .sim-line { display: none; }
+    .sim-track { padding-top: 18px; }
+  }
+
+  .sig-label { display: block; font-size: 14px; color: var(--ink-2); margin: 0 0 8px; }
+  .sig textarea {
+    width: 100%; min-height: 64px; resize: vertical; margin: 0 0 14px;
+    font: 16px/1.5 var(--mono); letter-spacing: 0; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    transition: border-color 150ms var(--ease);
+  }
+  .sig textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px oklch(49% 0.095 248 / 0.18); }
+  .sig pre { white-space: pre-wrap; word-break: break-all; }
+  .sig-value { transition: opacity 150ms var(--ease); }
+  .sig-value.fresh { animation: flash 420ms var(--ease); }
+  @keyframes flash { from { opacity: 0.35; } }
+  .sig-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+  .switch { display: inline-flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch-ui { position: relative; width: 40px; height: 24px; border-radius: 999px; background: var(--line); transition: background-color 200ms var(--ease); flex: none; }
+  .switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: oklch(100% 0 0); box-shadow: 0 1px 3px oklch(0% 0 0 / 0.2); transition: transform 240ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .switch input:checked + .switch-ui { background: var(--bad); }
+  .switch input:checked + .switch-ui::after { transform: translateX(16px); }
+  .switch input:focus-visible + .switch-ui { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; background: color-mix(in oklch, currentColor 11%, transparent); color: var(--ink-2); transition: color 200ms var(--ease), background-color 200ms var(--ease); }
+  .verdict::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .verdict.ok { color: var(--ok); }
+  .verdict.bad { color: var(--bad); }
+  .sig-secret { margin: 14px 0 0; font-size: 13px; color: var(--ink-3); word-break: break-all; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
+    .panel, .packet.go, .packet.drop, .sim-slot .attempt, .sig-value.fresh { animation: none; }
+    .packet.go { opacity: 0; }
+  }
 
   /* Sections */
   section { padding: clamp(88px, 12vw, 148px) 0; }
@@ -329,11 +463,27 @@
   <div class="wrap hero">
     <h1>Webhooks from the Postgres you already run.</h1>
     <p class="lede">Hookgres signs, sends, retries and logs the webhooks your customers subscribe to. It's an open-source TypeScript library, so there are no extra servers, no queue to operate and no per-message bill.</p>
-    <div class="actions">
-      <a class="pill large" href="/docs/getting-started">Get started</a>
-      <div class="install">
-        <span><span class="dollar">$ </span>npm i hookgres pg</span>
-        <button class="copy" type="button" data-copy="npm i hookgres pg" aria-label="Copy install command">Copy</button>
+    <div class="installer">
+      <div class="seg" role="tablist" aria-label="How to install">
+        <span class="seg-thumb" aria-hidden="true"></span>
+        <button type="button" role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="true">Ask your AI agent</button>
+        <button type="button" role="tab" id="tab-npm" aria-controls="panel-npm" aria-selected="false" tabindex="-1">Install with npm</button>
+      </div>
+      <div class="panels">
+        <div class="panel" id="panel-ai" role="tabpanel" aria-labelledby="tab-ai">
+          <p class="prompt" id="ai-prompt">Add Hookgres (https://hookgres.dev) to this project so we can send signed webhooks to our customers. First read https://hookgres.dev/llms.txt. Then install hookgres and pg, run migrate() on startup, start the delivery worker with a graceful shutdown, add API routes for customers to manage their webhook endpoints scoped to their tenant, and call send() inside our existing database transactions where events happen. Block private network addresses as the production guide describes.</p>
+          <div class="panel-foot">
+            <span>Paste into Claude Code, Codex, Gemini CLI or Cursor.</span>
+            <button class="copy strong" type="button" data-copy-from="ai-prompt" data-label="Copy prompt" aria-label="Copy the prompt for your AI agent">Copy prompt</button>
+          </div>
+        </div>
+        <div class="panel" id="panel-npm" role="tabpanel" aria-labelledby="tab-npm" hidden>
+          <p class="cmd"><span class="dollar">$ </span>npm install hookgres pg</p>
+          <div class="panel-foot">
+            <span>Node.js 22.12+ and Postgres 14+. Then <a href="/docs/getting-started">get started</a>.</span>
+            <button class="copy strong" type="button" data-copy="npm install hookgres pg" data-label="Copy" aria-label="Copy install command">Copy</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -424,23 +574,55 @@ hookgres.start();
         <p class="sub">A hosted service sits outside your database, so a webhook can go out for an order that later rolled back. Hookgres writes the webhook in the same transaction as your data.</p>
         <p class="sub">Workers claim deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like.</p>
       </div>
-      <div class="code">
-        <div class="bar"><span>billing.ts</span><button class="copy" type="button" data-copy-from="tx-code" aria-label="Copy billing.ts">Copy</button></div>
-<pre id="tx-code"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);
-<span class="k">await</span> client.query(
-  <span class="s">"UPDATE invoices SET status = 'paid' WHERE id = $1"</span>,
-  [id],
-);
-<span class="k">await</span> hookgres.send(
-  { tenantId, eventType: <span class="s">"invoice.paid"</span>, payload: { id } },
-  { client },
-);
-<span class="k">await</span> client.query(<span class="s">"COMMIT"</span>); <span class="c">// no commit, no webhook</span></pre>
+      <div class="demo tx-demo" data-state="idle">
+        <div class="code">
+          <div class="bar"><span>billing.ts</span><span class="bar-hint">Choose how the transaction ends</span></div>
+<pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(<span class="s">"UPDATE invoices SET status = 'paid' WHERE id = $1"</span>, [id]);</span><span class="ln tx-send"><span class="k">await</span> hookgres.send({ tenantId, eventType: <span class="s">"invoice.paid"</span>, payload: { id } }, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word">"COMMIT"</span>);</span></pre>
+        </div>
+        <div class="flow" aria-hidden="true">
+          <div class="node"><b>Postgres</b><small class="tx-db">waiting</small></div>
+          <div class="track"><span class="packet">invoice.paid</span></div>
+          <div class="node"><b>acme.com</b><small class="tx-rx">nothing yet</small></div>
+        </div>
+        <div class="demo-controls">
+          <button type="button" class="pill action" data-tx="commit">Commit</button>
+          <button type="button" class="pill action quiet" data-tx="rollback">Roll back</button>
+          <p class="demo-status" role="status" aria-live="polite">Nothing is sent until the transaction commits.</p>
+        </div>
       </div>
     </div>
   </section>
 
   <section>
+    <div class="wrap">
+      <div class="center">
+        <h2>Watch it retry.</h2>
+        <p class="sub">Pick how your customer's server behaves and send an event. This runs the default schedule, with 28 hours squeezed into a few seconds.</p>
+      </div>
+      <div class="demo sim">
+        <div class="sim-controls">
+          <fieldset class="seg small">
+            <legend class="sr-only">Receiver behaviour</legend>
+            <span class="seg-thumb" aria-hidden="true"></span>
+            <button type="button" aria-pressed="true" data-mode="healthy">Healthy</button>
+            <button type="button" aria-pressed="false" data-mode="flaky">Flaky</button>
+            <button type="button" aria-pressed="false" data-mode="down">Down</button>
+          </fieldset>
+          <button type="button" class="pill action" id="sim-send">Send event</button>
+        </div>
+        <div class="window sim-window">
+          <div class="window-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
+          <div class="sim-track" aria-hidden="true">
+            <div class="sim-line"><span class="sim-progress"></span></div>
+            <div class="sim-slots"></div>
+          </div>
+          <p class="sim-status" role="status" aria-live="polite">Press Send event.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
     <div class="wrap">
       <div class="center">
         <h2>Sensible defaults, all configurable.</h2>
@@ -465,7 +647,7 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="alt">
+  <section>
     <div class="wrap split">
       <div>
         <h2>What your customers receive.</h2>
@@ -473,22 +655,27 @@ hookgres.start();
         <p class="langs"><b>Verify in any language</b> with the official Standard Webhooks libraries: JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir.</p>
         <p class="more"><a href="/docs/guides/verifying">Verifying webhooks</a></p>
       </div>
-      <div class="code">
-        <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="rx-code" aria-label="Copy the example request">Copy</button></div>
-<pre id="rx-code"><span class="k">webhook-id:</span> msg_01m6yb1bw7xncca4sw5028556c
-<span class="k">webhook-timestamp:</span> 1794149011
-<span class="k">webhook-signature:</span> v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+      <div class="demo sig">
+        <label class="sig-label" for="sig-payload">Edit the payload. The signature is computed in your browser.</label>
+        <textarea id="sig-payload" spellcheck="false" autocomplete="off">{ "invoiceId": "in_123", "amount": 4200 }</textarea>
+        <div class="code">
+          <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="sig-out" data-label="Copy" aria-label="Copy the signed request">Copy</button></div>
+<pre id="sig-out"><span class="k">webhook-id:</span> <span id="sig-id">msg_…</span>
+<span class="k">webhook-timestamp:</span> <span id="sig-ts">…</span>
+<span class="k">webhook-signature:</span> <span id="sig-sig" class="sig-value">v1,…</span>
 
-{
-  <span class="s">"type"</span>: <span class="s">"invoice.paid"</span>,
-  <span class="s">"timestamp"</span>: <span class="s">"2026-11-08T14:03:31.000Z"</span>,
-  <span class="s">"data"</span>: { <span class="s">"invoiceId"</span>: <span class="s">"in_123"</span>, <span class="s">"amount"</span>: 4200 }
-}</pre>
+<span id="sig-body">…</span></pre>
+        </div>
+        <div class="sig-foot">
+          <label class="switch"><input type="checkbox" id="sig-tamper"><span class="switch-ui" aria-hidden="true"></span>Tamper with the body in transit</label>
+          <span class="verdict" id="sig-verdict" role="status" aria-live="polite">Checking…</span>
+        </div>
+        <p class="sig-secret">Demo secret <code id="sig-secret">whsec_…</code>, generated for this page.</p>
       </div>
     </div>
   </section>
 
-  <section>
+  <section class="alt">
     <div class="wrap split flip">
       <div>
         <h2>Try it in two minutes.</h2>
@@ -504,7 +691,7 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="alt">
+  <section>
     <div class="wrap">
       <div class="center">
         <h2>A library, not a service.</h2>
@@ -543,6 +730,7 @@ hookgres.start();
       <a href="/docs/faq">FAQ</a>
       <a href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
       <a href="https://www.npmjs.com/package/hookgres">npm</a>
+      <a href="/llms.txt">llms.txt</a>
       <a href="mailto:nickolasbenele@gmail.com">Contact</a>
     </nav>
   </div>
@@ -550,7 +738,12 @@ hookgres.start();
 
 <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
 <script>
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (selector, root = document) => root.querySelector(selector);
+
+  // Copy buttons
   for (const button of document.querySelectorAll(".copy")) {
+    const label = button.dataset.label || button.textContent;
     button.addEventListener("click", async () => {
       const from = button.dataset.copyFrom;
       const text = from ? document.getElementById(from).textContent : button.dataset.copy;
@@ -565,10 +758,208 @@ hookgres.start();
         status.textContent = "Copy failed";
       }
       setTimeout(() => {
-        button.textContent = "Copy";
+        button.textContent = label;
         delete button.dataset.copied;
       }, 1600);
     });
+  }
+
+  // Segmented controls: tabs (installer) and radios (simulator), with arrow keys.
+  function segmented(seg, onChange) {
+    const buttons = [...seg.querySelectorAll("button")];
+    const tabs = buttons[0].getAttribute("role") === "tab";
+    const attr = tabs ? "aria-selected" : "aria-pressed";
+    seg.style.setProperty("--n", buttons.length);
+    const select = (index, focus) => {
+      buttons.forEach((b, i) => {
+        b.setAttribute(attr, String(i === index));
+        if (tabs) b.tabIndex = i === index ? 0 : -1;
+      });
+      seg.style.setProperty("--i", index);
+      if (focus) buttons[index].focus();
+      onChange(buttons[index], index);
+    };
+    buttons.forEach((b, i) => {
+      b.addEventListener("click", () => select(i, false));
+      b.addEventListener("keydown", (event) => {
+        if (!tabs) return;
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        select((i + step + buttons.length) % buttons.length, true);
+      });
+    });
+  }
+
+  segmented($(".installer .seg"), (button) => {
+    for (const panel of document.querySelectorAll(".installer .panel")) {
+      panel.hidden = panel.id !== button.getAttribute("aria-controls");
+    }
+  });
+
+  // Transaction demo
+  {
+    const demo = $(".tx-demo");
+    const packet = $(".packet", demo);
+    const word = $(".tx-word", demo);
+    const db = $(".tx-db", demo);
+    const rx = $(".tx-rx", demo);
+    const status = $(".demo-status", demo);
+    let timer;
+    for (const button of demo.querySelectorAll("[data-tx]")) {
+      button.addEventListener("click", () => {
+        const commit = button.dataset.tx === "commit";
+        clearTimeout(timer);
+        demo.dataset.state = commit ? "commit" : "rollback";
+        word.textContent = commit ? '"COMMIT"' : '"ROLLBACK"';
+        packet.className = "packet";
+        void packet.offsetWidth; // restart the animation
+        rx.className = "tx-rx";
+        db.className = "tx-db";
+        if (commit) {
+          const track = $(".track", demo);
+          packet.style.setProperty("--dist", `${track.clientWidth - packet.offsetWidth}px`);
+          db.textContent = "committed";
+          rx.textContent = "…";
+          status.textContent = "Committed: the webhook was queued with your change, and the worker sends it.";
+          packet.classList.add("go");
+          timer = setTimeout(() => {
+            rx.textContent = "204 · invoice.paid";
+            rx.classList.add("ok");
+          }, reduceMotion ? 0 : 780);
+        } else {
+          db.textContent = "rolled back";
+          db.classList.add("bad");
+          rx.textContent = "nothing sent";
+          status.textContent = "Rolled back: the invoice update and the webhook were discarded together.";
+          packet.classList.add("drop");
+        }
+      });
+    }
+  }
+
+  // Retry simulator: the default schedule, compressed.
+  {
+    const labels = ["0s", "5s", "5m", "35m", "2.6h", "7.6h", "18h", "28h"];
+    const outcomes = {
+      healthy: [204],
+      flaky: [503, 503, 204],
+      down: [500, 500, 500, 500, 500, 500, 500, 500],
+    };
+    const slots = $(".sim-slots");
+    const progress = $(".sim-progress");
+    const clock = $(".sim-clock");
+    const status = $(".sim-status");
+    const sendButton = $("#sim-send");
+    let mode = "healthy";
+    let run = 0;
+    slots.replaceChildren(
+      ...labels.map((label) => {
+        const slot = document.createElement("div");
+        slot.className = "sim-slot";
+        const wrap = document.createElement("div");
+        wrap.className = "chip-wrap";
+        slot.append(wrap, label);
+        return slot;
+      }),
+    );
+    const wraps = [...slots.querySelectorAll(".chip-wrap")];
+    const setProgress = (fraction, animate) => {
+      progress.style.transition = animate && !reduceMotion ? "transform 420ms cubic-bezier(0.65, 0, 0.35, 1)" : "none";
+      progress.style.transform = `scaleX(${fraction})`;
+    };
+    const say = (html) => {
+      status.replaceChildren();
+      for (const part of html) status.append(part);
+    };
+    const strong = (text, cls) => {
+      const b = document.createElement("b");
+      b.textContent = text;
+      if (cls) b.className = cls;
+      return b;
+    };
+    segmented($(".sim .seg"), (button) => {
+      mode = button.dataset.mode;
+    });
+    sendButton.addEventListener("click", async () => {
+      const id = ++run;
+      const codes = outcomes[mode];
+      for (const w of wraps) w.replaceChildren();
+      setProgress(0, false);
+      clock.textContent = "t = 0s";
+      say(["Sending…"]);
+      const step = reduceMotion ? 0 : 520;
+      for (let i = 0; i < codes.length; i++) {
+        if (i > 0) await new Promise((resolve) => setTimeout(resolve, step));
+        if (id !== run) return;
+        const code = codes[i];
+        const chip = document.createElement("span");
+        chip.className = `attempt ${code < 300 ? "ok" : code >= 500 && mode === "down" ? "bad" : "warn"}`;
+        chip.textContent = code;
+        wraps[i].append(chip);
+        setProgress(i / (labels.length - 1), true);
+        clock.textContent = `t = ${labels[i]}`;
+        say([`Attempt ${i + 1}: HTTP ${code}`]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, reduceMotion ? 0 : 300));
+      if (id !== run) return;
+      const n = codes.length;
+      if (codes[n - 1] < 300) {
+        say([strong("Succeeded", "ok"), ` after ${n} attempt${n > 1 ? "s" : ""}. Every attempt is stored in the delivery log.`]);
+      } else {
+        say([strong("Failed", "bad"), " after 8 attempts over about 28 hours. If an endpoint keeps failing for 5 days, Hookgres disables it."]);
+      }
+    });
+  }
+
+  // Live signature demo: Standard Webhooks HMAC-SHA256 with WebCrypto.
+  {
+    const payload = $("#sig-payload");
+    const tamper = $("#sig-tamper");
+    const verdict = $("#sig-verdict");
+    const out = { id: $("#sig-id"), ts: $("#sig-ts"), sig: $("#sig-sig"), body: $("#sig-body") };
+    const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+    const keyBytes = crypto.getRandomValues(new Uint8Array(24));
+    const secret = `whsec_${b64(keyBytes)}`;
+    $("#sig-secret").textContent = secret;
+    const random = crypto.getRandomValues(new Uint8Array(13));
+    const msgId = `msg_${[...random].map((x) => "0123456789abcdefghjkmnpqrstvwxyz"[x % 32]).join("")}`;
+    const keyPromise = crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const hmac = async (content) => b64(await crypto.subtle.sign("HMAC", await keyPromise, new TextEncoder().encode(content)));
+    let version = 0;
+    const update = async () => {
+      const mine = ++version;
+      let data;
+      try {
+        data = JSON.parse(payload.value);
+        payload.removeAttribute("aria-invalid");
+      } catch {
+        payload.setAttribute("aria-invalid", "true");
+        verdict.className = "verdict";
+        verdict.textContent = "Payload must be valid JSON";
+        return;
+      }
+      const ts = Math.floor(Date.now() / 1000);
+      const body = JSON.stringify({ type: "invoice.paid", timestamp: new Date().toISOString(), data });
+      const signature = `v1,${await hmac(`${msgId}.${ts}.${body}`)}`;
+      // What arrives: optionally altered on the way.
+      const received = tamper.checked ? body.replace(/}$/, ',"tampered":true}') : body;
+      const expected = `v1,${await hmac(`${msgId}.${ts}.${received}`)}`;
+      if (mine !== version) return;
+      out.id.textContent = msgId;
+      out.ts.textContent = ts;
+      out.sig.textContent = signature;
+      out.sig.classList.remove("fresh");
+      void out.sig.offsetWidth;
+      out.sig.classList.add("fresh");
+      out.body.textContent = JSON.stringify(JSON.parse(received), null, 2);
+      const ok = expected === signature;
+      verdict.className = `verdict ${ok ? "ok" : "bad"}`;
+      verdict.textContent = ok ? "Signature verified" : "Rejected: signature doesn't match";
+    };
+    payload.addEventListener("input", update);
+    tamper.addEventListener("change", update);
+    update();
   }
 </script>
 </body>
