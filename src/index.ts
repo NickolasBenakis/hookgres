@@ -4,6 +4,7 @@ export {
   type HookwireOptions,
 } from "./hookwire.js";
 export {
+  assertSecret,
   generateSecret,
   type HeaderBag,
   sign,

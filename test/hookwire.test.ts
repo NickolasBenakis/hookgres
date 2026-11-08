@@ -512,3 +512,140 @@ describe("replay", () => {
     expect(await hw.replayDelivery(pending?.id ?? "")).toBeNull();
   });
 });
+
+describe("review regressions", () => {
+  it("stores binary response bodies containing NUL without looping", async () => {
+    const hw = ctx.create({
+      fetch: async () =>
+        new Response(new Uint8Array([0x47, 0x49, 0x46, 0x00, 0x01]), {
+          status: 200,
+        }),
+    });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+
+    await drain(hw);
+
+    const [delivery] = await hw.listDeliveries({ messageId: message.id });
+    expect(delivery?.status).toBe("succeeded");
+    const [attempt] = await hw.listAttempts(delivery?.id ?? "");
+    expect(attempt?.responseBody).toBe("GIF\u0001");
+  });
+
+  it("rejects payloads Postgres cannot store with a clear error", async () => {
+    const hw = ctx.create();
+    await expect(
+      hw.send({ tenantId: "acme", eventType: "e", payload: { s: "a\u0000b" } }),
+    ).rejects.toThrow(/NUL character/);
+  });
+
+  it("fails a reclaimed delivery that already used its last attempt", async () => {
+    const hw = ctx.create({ retrySchedule: [0] });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    // A worker died during attempt 2 of 2.
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries
+       SET status = 'delivering', attempt_count = 2, locked_until = now() - interval '1 second'`,
+    );
+
+    await drain(hw);
+
+    const [delivery] = await hw.listDeliveries({ messageId: message.id });
+    expect(delivery?.status).toBe("failed");
+    expect(delivery?.lastError).toMatch(/Exceeded max attempts/);
+    expect(receiver.requests).toHaveLength(0);
+  });
+
+  it("ignores the result of a stale worker whose claim was taken over", async () => {
+    let releaseStale: (() => void) | undefined;
+    const staleFetch: typeof fetch = async () => {
+      await new Promise<void>((resolve) => {
+        releaseStale = resolve;
+      });
+      return new Response("stale", { status: 500 });
+    };
+    const stale = ctx.create({ fetch: staleFetch, retrySchedule: [0, 0] });
+    const fresh = ctx.create();
+    await stale.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const { message } = await stale.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+
+    const staleRun = stale.runOnce();
+    await waitFor(() => releaseStale !== undefined);
+    // The stale worker's lock expires; another worker takes over and succeeds.
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries SET locked_until = now() - interval '1 second'`,
+    );
+    await drain(fresh);
+    // Even after a replay resets attempt_count, the stale result must not land.
+    const [done] = await fresh.listDeliveries({ messageId: message.id });
+    await fresh.replayDelivery(done?.id ?? "");
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries SET status = 'delivering', attempt_count = 1,
+         lock_token = gen_random_uuid(), locked_until = now() + interval '1 minute'`,
+    );
+    releaseStale?.();
+    await staleRun;
+
+    const [after] = await fresh.listDeliveries({ messageId: message.id });
+    expect(after?.status).toBe("delivering");
+    expect(after?.lastError).toBeNull();
+    const attempts = await fresh.listAttempts(after?.id ?? "");
+    expect(attempts.map((a) => a.statusCode)).toEqual([200]);
+  });
+
+  it("rejects malformed custom secrets up front", async () => {
+    const hw = ctx.create();
+    for (const secret of ["mysecret", "whsec_!!", "whsec_c2hvcnQ="]) {
+      await expect(
+        hw.createEndpoint({ tenantId: "acme", url: receiver.url, secret }),
+      ).rejects.toThrow(/Invalid webhook secret/);
+    }
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await expect(
+      hw.rotateEndpointSecret(ep.id, { secret: "nope" }),
+    ).rejects.toThrow(/Invalid webhook secret/);
+  });
+
+  it("survives stop() followed immediately by start()", async () => {
+    const hw = ctx.create();
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    hw.start();
+    const stopping = hw.stop();
+    hw.start();
+    await stopping;
+
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await waitFor(() => receiver.requests.length === 1, 2000);
+    await hw.stop();
+  });
+
+  it("wakes the worker when send() lands during an active pass", async () => {
+    const hw = ctx.create({ pollIntervalMs: 60_000, concurrency: 5 });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    let sent = false;
+    receiver.respond = async () => {
+      if (!sent) {
+        sent = true;
+        // Arrives while the worker is mid-pass, not sleeping.
+        await hw.send({ tenantId: "acme", eventType: "second", payload: {} });
+      }
+      return 200;
+    };
+    hw.start();
+    await hw.send({ tenantId: "acme", eventType: "first", payload: {} });
+    await waitFor(() => receiver.requests.length === 2, 2000);
+  });
+});

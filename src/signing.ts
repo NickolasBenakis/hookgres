@@ -13,6 +13,26 @@ export function generateSecret(): string {
   return SECRET_PREFIX + randomBytes(24).toString("base64");
 }
 
+/**
+ * Checks a user-supplied secret is a Standard Webhooks secret: `whsec_` plus
+ * strict base64 of 24 to 64 random bytes. Returns it unchanged.
+ */
+export function assertSecret(secret: string): string {
+  const raw = secret.startsWith(SECRET_PREFIX)
+    ? secret.slice(SECRET_PREFIX.length)
+    : null;
+  const bytes =
+    raw !== null && raw.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(raw)
+      ? Buffer.from(raw, "base64").length
+      : 0;
+  if (bytes < 24 || bytes > 64) {
+    throw new Error(
+      "Invalid webhook secret: expected whsec_ followed by base64 of 24-64 bytes",
+    );
+  }
+  return secret;
+}
+
 function secretKey(secret: string): Buffer {
   const raw = secret.startsWith(SECRET_PREFIX)
     ? secret.slice(SECRET_PREFIX.length)
@@ -25,7 +45,7 @@ function secretKey(secret: string): Buffer {
 function hmac(
   secret: string,
   id: string,
-  timestamp: number,
+  timestamp: number | string,
   body: string | Buffer,
 ): Buffer {
   return createHmac("sha256", secretKey(secret))
@@ -86,6 +106,11 @@ function readHeader(headers: HeaderBag, name: string): string | undefined {
  */
 export function verifyWebhook<T = unknown>(options: VerifyOptions): T {
   const { headers, body, toleranceSeconds = 300 } = options;
+  if (typeof body !== "string" && !Buffer.isBuffer(body)) {
+    throw new WebhookVerificationError(
+      "Webhook body must be the raw request body (string or Buffer), not parsed JSON",
+    );
+  }
   const id = readHeader(headers, "webhook-id");
   const timestampHeader = readHeader(headers, "webhook-timestamp");
   const signatureHeader = readHeader(headers, "webhook-signature");
@@ -112,7 +137,13 @@ export function verifyWebhook<T = unknown>(options: VerifyOptions): T {
     ? options.secret
     : [options.secret];
   for (const secret of secrets) {
-    const expected = hmac(secret, id, timestamp, body);
+    let expected: Buffer;
+    try {
+      // Sign the header exactly as sent, not a re-serialised number.
+      expected = hmac(secret, id, timestampHeader, body);
+    } catch {
+      throw new WebhookVerificationError("Invalid webhook secret");
+    }
     for (const candidate of candidates) {
       if (
         candidate.length === expected.length &&

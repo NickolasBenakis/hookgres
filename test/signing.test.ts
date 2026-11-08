@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertSecret,
   generateSecret,
   sign,
   verifyWebhook,
@@ -97,5 +98,43 @@ describe("signing", () => {
     expect(() => verifyWebhook({ secret, headers: {}, body, now })).toThrow(
       /Missing required webhook headers/,
     );
+  });
+});
+
+describe("verifyWebhook input errors", () => {
+  const secret = generateSecret();
+  const now = Date.now();
+  const ts = String(Math.floor(now / 1000));
+  const body = "{}";
+
+  it("throws WebhookVerificationError for a parsed body or bad secret", () => {
+    const headers = {
+      "webhook-id": "msg_1",
+      "webhook-timestamp": ts,
+      "webhook-signature": sign(secret, "msg_1", Number(ts), body),
+    };
+    expect(() =>
+      verifyWebhook({ secret, headers, body: {} as unknown as string, now }),
+    ).toThrow(WebhookVerificationError);
+    expect(() =>
+      verifyWebhook({ secret: "whsec_", headers, body, now }),
+    ).toThrow(WebhookVerificationError);
+  });
+
+  it("rejects when none of several signatures match", () => {
+    const other = generateSecret();
+    const headers = {
+      "webhook-id": "msg_1",
+      "webhook-timestamp": ts,
+      "webhook-signature": `${sign(other, "msg_1", Number(ts), body)} v1,AAAA v2,zzz`,
+    };
+    expect(() => verifyWebhook({ secret, headers, body, now })).toThrow(
+      /No matching/,
+    );
+  });
+
+  it("validates secrets with assertSecret", () => {
+    expect(assertSecret(secret)).toBe(secret);
+    expect(() => assertSecret("whsec_c2hvcnQ=")).toThrow();
   });
 });

@@ -46,6 +46,7 @@ CREATE TABLE {{schema}}.deliveries (
   attempt_count integer NOT NULL DEFAULT 0,
   next_attempt_at timestamptz NOT NULL DEFAULT now(),
   locked_until timestamptz,
+  lock_token uuid,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
