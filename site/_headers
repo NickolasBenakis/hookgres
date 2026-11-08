@@ -1,0 +1,29 @@
+# Cloudflare Pages headers. Rules that match the same path are merged.
+
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# The landing page has one inline script and one inline style block, and loads
+# nothing from other origins. Scoped to the landing page so the docs under
+# /docs/ can set their own policy.
+/
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# VitePress emits content-hashed files here.
+/docs/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Static, unhashed images: cache for a day, revalidate after.
+/og.png
+  Cache-Control: public, max-age=86400
+/favicon.svg
+  Cache-Control: public, max-age=86400
+/favicon-32.png
+  Cache-Control: public, max-age=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400

@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Source for og.png (1200x630). Re-render from the repo root with:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+    --force-device-scale-factor=1 --window-size=1200,630 \
+    --screenshot="$PWD/site/og.png" "file://$PWD/site/og-source.html"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Hookgres social image</title>
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden; box-sizing: border-box;
+    padding: 72px 80px; display: flex; flex-direction: column; justify-content: space-between;
+    background: oklch(17% 0.015 250); color: oklch(94% 0.008 250);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .brand { display: flex; align-items: center; gap: 18px; font-size: 36px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand svg { width: 56px; height: 56px; }
+  h1 { margin: 0; font-size: 68px; line-height: 1.06; letter-spacing: -0.03em; font-weight: 700; max-width: 1000px; text-wrap: balance; }
+  .code {
+    font: 26px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: oklch(92% 0.01 250);
+    background: oklch(13.5% 0.015 250); border: 1px solid oklch(30% 0.02 250); border-radius: 16px;
+    padding: 20px 28px; align-self: flex-start; white-space: nowrap;
+  }
+  .k { color: oklch(80% 0.09 220); }
+  .foot { display: flex; justify-content: space-between; font: 24px/1 ui-monospace, "SF Mono", Menlo, monospace; color: oklch(70% 0.015 250); }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#163a5f"/><path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Hookgres
+  </div>
+  <h1>Webhooks for your customers, from the Postgres you already run.</h1>
+  <div class="code"><span class="k">await</span> hookgres.send(event, { client }); <span style="color:oklch(68% 0.02 250)">// in your transaction</span></div>
+  <div class="foot"><span>Signed · Retried · Logged · MIT</span><span>hookgres.dev</span></div>
+</body>
+</html>

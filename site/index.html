@@ -5,14 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hookgres: Postgres webhooks for TypeScript</title>
 <meta name="description" content="Send signed, retried, logged webhooks to your customers from the Postgres you already run. A TypeScript library: no extra servers, queues or per-message bills.">
+<link rel="canonical" href="https://hookgres.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hookgres">
+<meta property="og:url" content="https://hookgres.dev/">
 <meta property="og:title" content="Hookgres: Postgres webhooks for TypeScript">
 <meta property="og:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
-<meta property="og:url" content="https://hookgres.dev">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://hookgres.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Hookgres: webhooks for your customers, from the Postgres you already run.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hookgres: Postgres webhooks for TypeScript">
+<meta name="twitter:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
+<meta name="twitter:image" content="https://hookgres.dev/og.png">
 <meta name="color-scheme" content="light dark">
-<link rel="canonical" href="https://hookgres.dev">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23163a5f'/%3E%3Cpath d='M11 7v11a5 5 0 0 0 10 0v-3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M18 14l3-3 3 3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafd">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a1016">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
   :root {
     --bg: oklch(98.5% 0.004 240);
@@ -45,7 +57,7 @@
     }
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0;
     background: var(--bg);
@@ -53,8 +65,9 @@
     font: 16px/1.6 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
+  a, button { touch-action: manipulation; }
+  button { user-select: none; -webkit-user-select: none; }
   a { color: var(--accent); text-underline-offset: 3px; }
-  a:hover { text-decoration-thickness: 2px; }
   footer .wrap a { color: var(--muted); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
   .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
@@ -66,9 +79,9 @@
   }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
   .brand svg { width: 28px; height: 28px; }
-  nav.links { display: flex; gap: 20px; font-size: 15px; }
-  nav.links a { color: var(--muted); text-decoration: none; }
-  nav.links a:hover { color: var(--ink); }
+  nav.links { display: flex; gap: 4px; font-size: 15px; margin-right: -10px; }
+  nav.links a { color: var(--muted); text-decoration: none; padding: 10px; border-radius: 8px; }
+  nav.links a:active { color: var(--ink); }
 
   .hero { display: grid; gap: 48px; grid-template-columns: minmax(0, 1fr); padding-block: 56px 72px; align-items: center; }
   @media (min-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); } }
@@ -98,7 +111,7 @@
     font: 600 12px/1 var(--sans); min-height: 32px; min-width: 64px; padding: 0 10px;
     border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer;
   }
-  .copy:hover { color: var(--ink); }
+  .copy:active { color: var(--ink); }
   .copy[data-copied] { color: var(--ok); border-color: currentColor; }
 
   .code {
@@ -111,11 +124,12 @@
     font: 12px/1 var(--mono); color: var(--code-dim);
   }
   .code .copy { border-color: oklch(100% 0 0 / 0.15); color: var(--code-dim); }
-  .code .copy:hover { color: var(--code-ink); }
+  .code .copy:active { color: var(--code-ink); }
   pre { margin: 0; padding: 18px 20px; overflow-x: auto; font: 13.5px/1.65 var(--mono); tab-size: 2; }
   .c { color: var(--code-dim); }
   .k { color: var(--code-key); }
   .s { color: var(--code-str); }
+  .p { color: var(--code-dim); user-select: none; -webkit-user-select: none; }
 
   section { padding-block: 64px; border-top: 1px solid var(--line); }
   h2 { font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; }
@@ -145,14 +159,24 @@
   .stat .num { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .stat .label { color: var(--muted); font-size: 14px; }
   .note { color: var(--muted); font-size: 14px; margin-top: 16px; }
+  .more { font-weight: 600; margin: 0; }
 
   .cta { text-align: center; padding-block: 80px; }
   .cta .actions { justify-content: center; }
   footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--muted); font-size: 14px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 
+  @media (hover: hover) and (pointer: fine) {
+    a:hover { text-decoration-thickness: 2px; }
+    nav.links a:hover { color: var(--ink); }
+    .copy:hover { color: var(--ink); }
+    .code .copy:hover { color: var(--code-ink); }
+    footer .wrap a:hover { color: var(--ink); }
+  }
+
+  @media (max-width: 440px) { nav.links .wide { display: none; } }
   @media (max-width: 560px) {
-    nav.links a:not(:last-child) { display: none; }
     .install { width: 100%; justify-content: space-between; }
     .actions .btn { flex: 1; }
   }
@@ -166,10 +190,10 @@
     Hookgres
   </a>
   <nav class="links" aria-label="Main">
-    <a href="#how">How it works</a>
-    <a href="#features">Features</a>
-    <a href="#compare">Compare</a>
+    <a href="/docs/">Docs</a>
+    <a class="wide" href="/docs/playground">Playground</a>
     <a href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
+    <a href="https://www.npmjs.com/package/hookgres">npm</a>
   </nav>
 </header>
 
@@ -184,12 +208,12 @@
           <span><span class="dollar">$ </span>npm i hookgres pg</span>
           <button class="copy" type="button" data-copy="npm i hookgres pg" aria-label="Copy install command">Copy</button>
         </div>
-        <a class="btn primary" href="https://github.com/NickolasBenakis/hookgres#quick-start">Read the docs</a>
+        <a class="btn primary" href="/docs/getting-started">Get started</a>
       </div>
     </div>
 
     <div class="code">
-      <div class="bar"><span>app.ts</span><button class="copy" type="button" data-copy-from="hero-code">Copy</button></div>
+      <div class="bar"><span>app.ts</span><button class="copy" type="button" data-copy-from="hero-code" aria-label="Copy app.ts">Copy</button></div>
 <pre id="hero-code"><span class="k">import</span> { Hookgres } <span class="k">from</span> <span class="s">"hookgres"</span>;
 
 <span class="k">const</span> hookgres = <span class="k">new</span> Hookgres({ pool });
@@ -220,7 +244,7 @@ hookgres.start();
         <p class="sub">A worker in your app then claims due deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like and no two workers send the same delivery at once.</p>
       </div>
       <div class="code">
-        <div class="bar"><span>billing.ts</span><button class="copy" type="button" data-copy-from="tx-code">Copy</button></div>
+        <div class="bar"><span>billing.ts</span><button class="copy" type="button" data-copy-from="tx-code" aria-label="Copy billing.ts">Copy</button></div>
 <pre id="tx-code"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);
 <span class="k">await</span> client.query(
   <span class="s">"UPDATE invoices SET status = 'paid' WHERE id = $1"</span>,
@@ -257,7 +281,7 @@ hookgres.start();
         <p class="sub">A JSON envelope with the Standard Webhooks headers. <code>webhook-id</code> stays the same across retries. Delivery is at least once (a worker crash right after a response can repeat a send), so receivers should deduplicate on it. Hookgres also ships <code>verifyWebhook</code> for receivers on Node.</p>
       </div>
       <div class="code">
-        <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="rx-code">Copy</button></div>
+        <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="rx-code" aria-label="Copy the example request">Copy</button></div>
 <pre id="rx-code"><span class="k">webhook-id:</span> msg_01m6xs138msp5xzb0vak5n971j
 <span class="k">webhook-timestamp:</span> 1794149011
 <span class="k">webhook-signature:</span> v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
@@ -267,6 +291,22 @@ hookgres.start();
   <span class="s">"timestamp"</span>: <span class="s">"2026-11-08T14:03:31.000Z"</span>,
   <span class="s">"data"</span>: { <span class="s">"invoiceId"</span>: <span class="s">"in_123"</span>, <span class="s">"amount"</span>: 4200 }
 }</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="try">
+    <div class="wrap split">
+      <div>
+        <h2>Try it in 2 minutes</h2>
+        <p class="sub">The playground runs Hookgres and Postgres with Docker Compose. Clone the repo, start it, then open <a href="http://localhost:3000">localhost:3000</a>.</p>
+        <p class="more"><a href="/docs/playground">Read the playground guide</a></p>
+      </div>
+      <div class="code">
+        <div class="bar"><span>Terminal</span><button class="copy" type="button" data-copy="git clone https://github.com/NickolasBenakis/hookgres &amp;&amp; cd hookgres &amp;&amp; docker compose up" aria-label="Copy playground commands">Copy</button></div>
+<pre><span class="p">$ </span>git clone https://github.com/NickolasBenakis/hookgres
+<span class="p">$ </span>cd hookgres
+<span class="p">$ </span>docker compose up</pre>
       </div>
     </div>
   </section>
@@ -310,7 +350,7 @@ hookgres.start();
       <h2>Ship webhooks this afternoon</h2>
       <p class="sub" style="margin-inline:auto">Add the package, run <code>migrate()</code>, and start sending.</p>
       <div class="actions">
-        <a class="btn primary" href="https://github.com/NickolasBenakis/hookgres#quick-start">Get started</a>
+        <a class="btn primary" href="/docs/getting-started">Get started</a>
         <a class="btn ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
       </div>
     </div>
@@ -320,7 +360,13 @@ hookgres.start();
 <footer>
   <div class="wrap">
     <span>Hookgres · MIT License · © 2026 Nikos Benakis</span>
-    <span><a href="https://github.com/NickolasBenakis/hookgres">GitHub</a> · <a href="mailto:nickolasbenele@gmail.com">Contact</a></span>
+    <nav aria-label="Footer">
+      <a href="/docs/">Docs</a>
+      <a href="/docs/faq">FAQ</a>
+      <a href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
+      <a href="https://www.npmjs.com/package/hookgres">npm</a>
+      <a href="mailto:nickolasbenele@gmail.com">Contact</a>
+    </nav>
   </div>
 </footer>
 
@@ -330,13 +376,15 @@ hookgres.start();
     button.addEventListener("click", async () => {
       const from = button.dataset.copyFrom;
       const text = from ? document.getElementById(from).textContent : button.dataset.copy;
+      const status = document.getElementById("copy-status");
       try {
         await navigator.clipboard.writeText(text);
         button.textContent = "Copied";
-        document.getElementById("copy-status").textContent = "Copied to clipboard";
+        status.textContent = "Copied to clipboard";
         button.dataset.copied = "";
       } catch {
         button.textContent = "Copy failed";
+        status.textContent = "Copy failed";
       }
       setTimeout(() => {
         button.textContent = "Copy";
