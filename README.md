@@ -27,7 +27,7 @@ Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
 npm install hookgres pg
 ```
 
-Requires Node 22+ and Postgres 14+.
+Requires Node 22.12+ and Postgres 14+. Works with both `import` and `require()`.
 
 ## Quick start
 

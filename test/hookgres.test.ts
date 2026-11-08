@@ -729,7 +729,10 @@ describe("configuration and edge cases", () => {
     await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
     await drain(hw);
     const [delivery] = await hw.listDeliveries();
-    expect(delivery?.lastError).toBe("fetch failed: ENOTFOUND");
+    // EAI_AGAIN on machines without a resolver.
+    expect(delivery?.lastError).toMatch(
+      /^fetch failed: (ENOTFOUND|EAI_AGAIN)$/,
+    );
   });
 
   it("surfaces errors from runOnce when onError rethrows", async () => {

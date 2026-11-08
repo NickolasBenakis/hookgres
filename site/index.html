@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hookgres: Postgres webhooks for TypeScript</title>
+<meta name="description" content="Send signed, retried, logged webhooks to your customers from the Postgres you already run. A TypeScript library: no extra servers, queues or per-message bills.">
+<meta property="og:title" content="Hookgres: Postgres webhooks for TypeScript">
+<meta property="og:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
+<meta property="og:url" content="https://hookgres.dev">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://hookgres.dev">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23163a5f'/%3E%3Cpath d='M11 7v11a5 5 0 0 0 10 0v-3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M18 14l3-3 3 3' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: oklch(98.5% 0.004 240);
+    --surface: oklch(100% 0 0);
+    --ink: oklch(22% 0.03 250);
+    --muted: oklch(48% 0.02 250);
+    --line: oklch(90% 0.01 250);
+    --accent: oklch(42% 0.09 245);
+    --accent-ink: oklch(99% 0 0);
+    --code-bg: oklch(23% 0.03 250);
+    --code-ink: oklch(92% 0.01 250);
+    --code-dim: oklch(68% 0.02 250);
+    --code-key: oklch(80% 0.09 220);
+    --code-str: oklch(82% 0.1 145);
+    --ok: oklch(52% 0.12 150);
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: oklch(17% 0.015 250);
+      --surface: oklch(20.5% 0.018 250);
+      --ink: oklch(94% 0.008 250);
+      --muted: oklch(70% 0.015 250);
+      --line: oklch(30% 0.02 250);
+      --accent: oklch(75% 0.1 235);
+      --accent-ink: oklch(18% 0.02 250);
+      --code-bg: oklch(13.5% 0.015 250);
+      --ok: oklch(75% 0.13 150);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { text-decoration-thickness: 2px; }
+  footer .wrap a { color: var(--muted); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 600px) { .wrap { padding: 0 24px; } }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-block: 20px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+  .brand svg { width: 28px; height: 28px; }
+  nav.links { display: flex; gap: 20px; font-size: 15px; }
+  nav.links a { color: var(--muted); text-decoration: none; }
+  nav.links a:hover { color: var(--ink); }
+
+  .hero { display: grid; gap: 48px; grid-template-columns: minmax(0, 1fr); padding-block: 56px 72px; align-items: center; }
+  @media (min-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); } }
+  .eyebrow { font: 500 13px/1 var(--mono); color: var(--muted); letter-spacing: 0.02em; margin: 0 0 18px; }
+  h1 {
+    font-size: clamp(36px, 5.4vw, 54px); line-height: 1.06; letter-spacing: -0.03em;
+    margin: 0 0 20px; font-weight: 700; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 34em; text-wrap: pretty; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .install {
+    display: inline-flex; align-items: center; gap: 12px;
+    font: 15px/1 var(--mono); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px 6px 6px 14px; color: var(--ink);
+  }
+  .install .dollar { color: var(--muted); user-select: none; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 15px;
+    text-decoration: none; border: 1px solid transparent; cursor: pointer;
+    transition: transform 120ms ease-out, background-color 150ms ease;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.ghost { border-color: var(--line); color: var(--ink); background: transparent; }
+  .copy {
+    font: 600 12px/1 var(--sans); min-height: 32px; min-width: 64px; padding: 0 10px;
+    border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .copy:hover { color: var(--ink); }
+  .copy[data-copied] { color: var(--ok); border-color: currentColor; }
+
+  .code {
+    position: relative; background: var(--code-bg); color: var(--code-ink);
+    border-radius: 14px; overflow: hidden; border: 1px solid oklch(100% 0 0 / 0.06);
+  }
+  .code .bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 10px 8px 16px; border-bottom: 1px solid oklch(100% 0 0 / 0.08);
+    font: 12px/1 var(--mono); color: var(--code-dim);
+  }
+  .code .copy { border-color: oklch(100% 0 0 / 0.15); color: var(--code-dim); }
+  .code .copy:hover { color: var(--code-ink); }
+  pre { margin: 0; padding: 18px 20px; overflow-x: auto; font: 13.5px/1.65 var(--mono); tab-size: 2; }
+  .c { color: var(--code-dim); }
+  .k { color: var(--code-key); }
+  .s { color: var(--code-str); }
+
+  section { padding-block: 64px; border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 36px; max-width: 40em; font-size: 17px; }
+
+  .split { display: grid; gap: 40px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 900px) { .split { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+
+  .features { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; grid-template-columns: 1fr; }
+  @media (min-width: 700px) { .features { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1000px) { .features { grid-template-columns: 1fr 1fr 1fr; } }
+  .feature { background: var(--surface); padding: 24px; }
+  .feature h3 { margin: 0 0 6px; font-size: 16px; letter-spacing: -0.01em; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+  :where(.feature, p, td) code { font: 0.9em var(--mono); background: color-mix(in oklch, var(--line) 55%, transparent); padding: 1px 5px; border-radius: 5px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td:first-child { font-weight: 550; }
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  .table-scroll table tr:last-child td { border-bottom: 0; }
+  .yes { color: var(--ok); font-weight: 600; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+  .stat { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: var(--surface); }
+  .stat .num { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat .label { color: var(--muted); font-size: 14px; }
+  .note { color: var(--muted); font-size: 14px; margin-top: 16px; }
+
+  .cta { text-align: center; padding-block: 80px; }
+  .cta .actions { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+
+  @media (max-width: 560px) {
+    nav.links a:not(:last-child) { display: none; }
+    .install { width: 100%; justify-content: space-between; }
+    .actions .btn { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
+</style>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="/" aria-label="Hookgres home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#163a5f"/><path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Hookgres
+  </a>
+  <nav class="links" aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#compare">Compare</a>
+    <a href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <p class="eyebrow">Open source · MIT · TypeScript</p>
+      <h1>Webhooks for your customers, from the Postgres you already run.</h1>
+      <p class="lede">Hookgres signs, sends, retries and logs your outbound webhooks. It's a library, not a service: no extra servers, no queue to operate, and no per-message bill.</p>
+      <div class="actions">
+        <div class="install">
+          <span><span class="dollar">$ </span>npm i hookgres pg</span>
+          <button class="copy" type="button" data-copy="npm i hookgres pg" aria-label="Copy install command">Copy</button>
+        </div>
+        <a class="btn primary" href="https://github.com/NickolasBenakis/hookgres#quick-start">Read the docs</a>
+      </div>
+    </div>
+
+    <div class="code">
+      <div class="bar"><span>app.ts</span><button class="copy" type="button" data-copy-from="hero-code">Copy</button></div>
+<pre id="hero-code"><span class="k">import</span> { Hookgres } <span class="k">from</span> <span class="s">"hookgres"</span>;
+
+<span class="k">const</span> hookgres = <span class="k">new</span> Hookgres({ pool });
+<span class="k">await</span> hookgres.migrate();
+hookgres.start();
+
+<span class="c">// Your customer registers an endpoint</span>
+<span class="k">await</span> hookgres.createEndpoint({
+  tenantId: <span class="s">"acme"</span>,
+  url: <span class="s">"https://acme.com/webhooks"</span>,
+  eventTypes: [<span class="s">"invoice.paid"</span>],
+});
+
+<span class="c">// Anywhere in your app</span>
+<span class="k">await</span> hookgres.send({
+  tenantId: <span class="s">"acme"</span>,
+  eventType: <span class="s">"invoice.paid"</span>,
+  payload: { invoiceId: <span class="s">"in_123"</span>, amount: 4200 },
+});</pre>
+    </div>
+  </div>
+
+  <section id="how">
+    <div class="wrap split">
+      <div>
+        <h2>Queued in your transaction. Sent only if it commits.</h2>
+        <p class="sub">Hosted webhook services sit outside your database, so a webhook can go out for an order that later rolled back, or never go out for one that saved. Hookgres writes the webhook in the same transaction as your data.</p>
+        <p class="sub">A worker in your app then claims due deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like and no two workers send the same delivery at once.</p>
+      </div>
+      <div class="code">
+        <div class="bar"><span>billing.ts</span><button class="copy" type="button" data-copy-from="tx-code">Copy</button></div>
+<pre id="tx-code"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);
+<span class="k">await</span> client.query(
+  <span class="s">"UPDATE invoices SET status = 'paid' WHERE id = $1"</span>,
+  [id],
+);
+<span class="k">await</span> hookgres.send(
+  { tenantId, eventType: <span class="s">"invoice.paid"</span>, payload: { id } },
+  { client },
+);
+<span class="k">await</span> client.query(<span class="s">"COMMIT"</span>); <span class="c">// no commit, no webhook</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>The sending essentials, built in</h2>
+      <p class="sub">The parts every SaaS rebuilds when customers ask for webhooks, tested against real Postgres on every commit.</p>
+      <div class="features">
+        <div class="feature"><h3>Standard Webhooks signatures</h3><p>HMAC-SHA256 per the <a href="https://www.standardwebhooks.com">Standard Webhooks</a> spec, tested against the official library. Receivers verify in any language.</p></div>
+        <div class="feature"><h3>Durable retries</h3><p>8 attempts over about 28 hours by default, fully configurable. Every attempt's status, response and timing is stored.</p></div>
+        <div class="feature"><h3>Endpoint health</h3><p>Endpoints failing for 5 days are disabled automatically, and re-enabled with one call when the customer fixes them.</p></div>
+        <div class="feature"><h3>Secret rotation</h3><p>Rotate a signing secret and Hookgres signs with both secrets for a grace period, so receivers roll over without dropping events.</p></div>
+        <div class="feature"><h3>Multi-tenant fan-out</h3><p>Each event goes only to the matching endpoints of one tenant, filtered by event type. Idempotency keys stop duplicates.</p></div>
+        <div class="feature"><h3>Replay and crash recovery</h3><p>Re-send any finished delivery. If a worker dies mid-request, its claim expires after a timeout (45s by default) and another worker retries it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="receivers">
+    <div class="wrap split">
+      <div>
+        <h2>What your customers receive</h2>
+        <p class="sub">A JSON envelope with the Standard Webhooks headers. <code>webhook-id</code> stays the same across retries. Delivery is at least once (a worker crash right after a response can repeat a send), so receivers should deduplicate on it. Hookgres also ships <code>verifyWebhook</code> for receivers on Node.</p>
+      </div>
+      <div class="code">
+        <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="rx-code">Copy</button></div>
+<pre id="rx-code"><span class="k">webhook-id:</span> msg_01m6xs138msp5xzb0vak5n971j
+<span class="k">webhook-timestamp:</span> 1794149011
+<span class="k">webhook-signature:</span> v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+
+{
+  <span class="s">"type"</span>: <span class="s">"invoice.paid"</span>,
+  <span class="s">"timestamp"</span>: <span class="s">"2026-11-08T14:03:31.000Z"</span>,
+  <span class="s">"data"</span>: { <span class="s">"invoiceId"</span>: <span class="s">"in_123"</span>, <span class="s">"amount"</span>: 4200 }
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="wrap">
+      <h2>Library or hosted service?</h2>
+      <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th></th><th>Hookgres</th><th>Hosted webhook service</th></tr></thead>
+          <tbody>
+            <tr><td>Where it runs</td><td>In your app, on your Postgres</td><td>Their cloud, via API</td></tr>
+            <tr><td>Queue with your transaction</td><td class="yes">Yes</td><td>No: a separate API call</td></tr>
+            <tr><td>Pricing</td><td>Free (MIT)</td><td>Usually per message or tier</td></tr>
+            <tr><td>Payloads leave your infrastructure</td><td>Only to your customers' endpoints</td><td>Also to the provider</td></tr>
+            <tr><td>Signing standard</td><td>Standard Webhooks</td><td>Varies (Svix: Standard Webhooks)</td></tr>
+            <tr><td>Customer-facing portal</td><td>Build with the delivery-log API</td><td>Often included</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="performance">
+    <div class="wrap">
+      <h2>Fast enough that Postgres isn't the bottleneck</h2>
+      <p class="sub">A load test of 20,000 webhooks with 4 competing workers, run on one laptop. In production, throughput depends mostly on how quickly receivers respond.</p>
+      <div class="stats">
+        <div class="stat"><div class="num">~13,000/s</div><div class="label">messages queued with <code>send()</code></div></div>
+        <div class="stat"><div class="num">~5,500/s</div><div class="label">webhooks delivered</div></div>
+        <div class="stat"><div class="num">0</div><div class="label">lost or duplicated in the load test</div></div>
+        <div class="stat"><div class="num">14–18</div><div class="label">Postgres versions tested in CI</div></div>
+      </div>
+      <p class="note">Reproduce it with <code>pnpm bench</code>. Apple Silicon laptop, Postgres 16 in Docker, local receiver.</p>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <h2>Ship webhooks this afternoon</h2>
+      <p class="sub" style="margin-inline:auto">Add the package, run <code>migrate()</code>, and start sending.</p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/NickolasBenakis/hookgres#quick-start">Get started</a>
+        <a class="btn ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Hookgres · MIT License · © 2026 Nikos Benakis</span>
+    <span><a href="https://github.com/NickolasBenakis/hookgres">GitHub</a> · <a href="mailto:nickolasbenele@gmail.com">Contact</a></span>
+  </div>
+</footer>
+
+<div id="copy-status" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"></div>
+<script>
+  for (const button of document.querySelectorAll(".copy")) {
+    button.addEventListener("click", async () => {
+      const from = button.dataset.copyFrom;
+      const text = from ? document.getElementById(from).textContent : button.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = "Copied";
+        document.getElementById("copy-status").textContent = "Copied to clipboard";
+        button.dataset.copied = "";
+      } catch {
+        button.textContent = "Copy failed";
+      }
+      setTimeout(() => {
+        button.textContent = "Copy";
+        delete button.dataset.copied;
+      }, 1600);
+    });
+  }
+</script>
+</body>
+</html>

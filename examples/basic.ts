@@ -4,7 +4,7 @@
  *
  *   DATABASE_URL=postgres://... node examples/basic.ts
  *
- * (Node 22.18+ runs TypeScript directly. Build first with `pnpm build`.)
+ * (Node 22.18+ runs TypeScript files directly. Build first with `pnpm build`.)
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";

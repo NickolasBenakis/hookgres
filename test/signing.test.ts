@@ -151,9 +151,11 @@ describe("verifyWebhook header and secret formats", () => {
     const headers = {
       "webhook-id": "msg_1",
       "webhook-timestamp": String(ts),
-      "webhook-signature": sign(bare, "msg_1", ts, body),
+      "webhook-signature": signature,
     };
-    expect(verifyWebhook({ secret, headers, body, now })).toEqual({ ok: true });
+    expect(verifyWebhook({ secret: bare, headers, body, now })).toEqual({
+      ok: true,
+    });
   });
 
   it("reads array header values and get()-style header objects", () => {
@@ -165,11 +167,17 @@ describe("verifyWebhook header and secret formats", () => {
     expect(() =>
       verifyWebhook({ secret, headers: arrays, body, now }),
     ).not.toThrow();
+
     const map = new Map<string, string>([
       ["webhook-id", "msg_1"],
       ["webhook-timestamp", String(ts)],
+      ["webhook-signature", signature],
     ]);
     const getter = { get: (name: string) => map.get(name) ?? null };
+    expect(verifyWebhook({ secret, headers: getter, body, now })).toEqual({
+      ok: true,
+    });
+    map.delete("webhook-signature");
     expect(() => verifyWebhook({ secret, headers: getter, body, now })).toThrow(
       /Missing required webhook headers/,
     );

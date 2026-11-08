@@ -62,8 +62,12 @@ jobs:
         run: pnpm test
 
   package:
-    name: Package smoke & load test
+    name: Package smoke & load test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     services:
       postgres:
         image: postgres:18-alpine
@@ -83,11 +87,12 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm smoke
       - run: pnpm bench
         env:
           LOAD_N: 5000
-      - run: npm publish --dry-run
+      - name: Check tarball contents
+        run: npm pack --dry-run
