@@ -1,0 +1,9 @@
+DECISIONS.md
+node_modules
+dist
+.site-dist
+coverage
+docs/.vitepress/dist
+docs/.vitepress/cache
+.env.local
+.vercel

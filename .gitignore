@@ -7,3 +7,5 @@ coverage
 docs/.vitepress/dist
 docs/.vitepress/cache
 DECISIONS.md
+.vercel
+.env*

@@ -1,7 +1,7 @@
 // Builds the deployable hookgres.dev site into .site-dist/:
 //   /         the static landing page from site/
 //   /docs/    the VitePress docs from docs/
-// Cloudflare Pages: build command `pnpm site:build`, output directory `.site-dist`.
+// Deployed on Vercel; see vercel.json (build command and output directory).
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
