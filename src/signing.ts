@@ -9,6 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const SECRET_PREFIX = "whsec_";
 
+/** Returns a new `whsec_` secret with 24 random bytes. */
 export function generateSecret(): string {
   return SECRET_PREFIX + randomBytes(24).toString("base64");
 }
@@ -64,6 +65,7 @@ export function sign(
   return `v1,${hmac(secret, id, timestamp, body).toString("base64")}`;
 }
 
+/** Thrown by `verifyWebhook` when a webhook is missing headers, too old, or not signed with the secret. */
 export class WebhookVerificationError extends Error {
   override name = "WebhookVerificationError";
 }

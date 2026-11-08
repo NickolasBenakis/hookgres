@@ -53,6 +53,9 @@
     "bench": "pnpm build && node scripts/load-test.ts",
     "examples": "pnpm build && node scripts/check-examples.mjs",
     "playground": "pnpm build && node examples/playground/server.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "site:build": "node scripts/build-site.mjs",
     "prepublishOnly": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"
   },
   "peerDependencies": {
@@ -68,6 +71,7 @@
     "standardwebhooks": "^1.1.1",
     "testcontainers": "^12.2.1",
     "typescript": "^7.0.2",
+    "vitepress": "1.6.4",
     "vitest": "^5.1.0"
   },
   "packageManager": "pnpm@10.33.3",
