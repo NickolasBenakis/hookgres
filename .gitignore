@@ -6,3 +6,4 @@ coverage
 .site-dist
 docs/.vitepress/dist
 docs/.vitepress/cache
+DECISIONS.md
