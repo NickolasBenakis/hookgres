@@ -12,7 +12,7 @@ export default defineConfig({
   lastUpdated: true,
   sitemap: { hostname: "https://hookgres.dev/docs/" },
   head: [
-    ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/docs/logo.svg" }],
     ["meta", { property: "og:image", content: "https://hookgres.dev/og.png" }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],

@@ -10,7 +10,7 @@ a vendor:
 - **Durable retries** over about 28 hours, with any number of workers sharing
   the queue.
 - **Endpoint health**: endpoints that keep failing are disabled automatically.
-- **Secret rotation** with a grace period, and **replay** of any delivery.
+- **Secret rotation** with a grace period, and **replay** of finished deliveries.
 - **A delivery log** of every attempt: status code, response body, error and
   timing.
 - **Transactional sends**: queue a webhook inside your own transaction, so it
@@ -26,8 +26,9 @@ await hookgres.send({
 
 ## How it works
 
-1. `migrate()` creates four tables in their own schema (`hookgres` by
-   default): endpoints, messages, deliveries and attempts.
+1. `migrate()` creates its tables in their own schema (`hookgres` by
+   default): endpoints, messages, deliveries and attempts, plus a table that
+   tracks migrations.
 2. Your customers register **endpoints**: a URL, the event types they want,
    and a signing secret. Each endpoint belongs to a **tenant**, which is your
    customer's id.

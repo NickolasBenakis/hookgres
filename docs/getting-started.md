@@ -48,8 +48,11 @@ await hookgres.migrate();
 
 `migrate()` creates the `hookgres` schema and its tables, or upgrades them. It
 is safe to call on every boot and from several processes at once, because it
-takes an advisory lock. The database user needs permission to create a
-schema the first time.
+takes an advisory lock. It runs `CREATE SCHEMA IF NOT EXISTS` each time, and
+Postgres checks the `CREATE` privilege even when the schema exists, so the
+database user needs `CREATE` on the database and on the schema. If your app's role can only read
+and write rows, run `migrate()` from a deploy step with a more privileged role
+instead.
 
 ## 2. Start a worker
 

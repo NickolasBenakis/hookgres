@@ -170,7 +170,7 @@ Hookgres sends requests to URLs your users provide. In production, stop
 endpoints from reaching your internal network (SSRF): pass a `fetch` that
 blocks private IP ranges, or route deliveries through an egress proxy. The
 [production guide](https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf)
-has a tested example.
+has an example.
 
 ## Performance
 

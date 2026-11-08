@@ -13,7 +13,12 @@ Before you launch, make sure you:
 ## Migrations
 
 `migrate()` creates or upgrades Hookgres's tables. It takes an advisory lock,
-so calling it from every instance at boot is safe. A deploy step works too.
+so calling it from every instance at boot is safe, as long as the app's
+database role has `CREATE` on the database and on the Hookgres schema.
+Postgres checks that privilege even when nothing needs creating. If your app
+runs with a role that can only read and write rows, run `migrate()` from a
+deploy step with a more privileged role, and grant the app role `USAGE` on the
+schema plus `SELECT, INSERT, UPDATE, DELETE` on its tables.
 Migrations only ever add to the schema. Upgrading Hookgres never requires you
 to edit the tables yourself.
 
@@ -109,7 +114,8 @@ const hookgres = new Hookgres({ pool, fetch: safeFetch });
 ```
 
 Blocked attempts fail like any other network error, with
-`fetch failed: Blocked internal address ...` in the attempt log. Add any other
+`Blocked internal address ...` in the attempt's error (prefixed with
+`fetch failed: ` when the address came from DNS). Add any other
 ranges your network uses. It's also worth validating URLs when customers
 create endpoints, so they get an error straight away.
 
@@ -146,7 +152,9 @@ WHERE updated_at > now() - interval '1 hour'
 GROUP BY status;
 ```
 
-**Endpoints disabled in the last day**:
+**Disabled endpoints changed in the last day** (there's no separate
+"disabled at" column, so this also lists older disabled endpoints that were
+updated since):
 
 ```sql
 SELECT id, tenant_id, url, disabled_reason

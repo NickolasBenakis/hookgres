@@ -21,7 +21,7 @@ const hookgres = new Hookgres({
 | ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `pool`                   | —                             | A `pg.Pool`. Hookgres never closes a pool it didn't create.                                                                         |
 | `connectionString`       | —                             | Used to create a pool when `pool` isn't given. `close()` ends it.                                                                   |
-| `schema`                 | `"hookgres"`                  | Postgres schema for the tables. Lowercase letters, digits and underscores, up to 63 characters.                                     |
+| `schema`                 | `"hookgres"`                  | Postgres schema for the tables. Lowercase letters, digits and underscores, not starting with a digit, up to 63 characters.          |
 | `retrySchedule`          | 5s, 5m, 30m, 2h, 5h, 10h, 10h | Waits between attempts, in milliseconds. Attempts = length + 1.                                                                     |
 | `requestTimeoutMs`       | `15000`                       | How long to wait for a response before the attempt counts as failed.                                                                |
 | `disableEndpointAfterMs` | 5 days                        | Disable an endpoint after it has failed this long with no success. `null` never disables.                                           |
@@ -34,8 +34,8 @@ const hookgres = new Hookgres({
 | `onError`                | `console.error`               | Called with unexpected worker errors, like a lost database connection. Failed deliveries are not errors.                            |
 
 The constructor throws if neither `pool` nor `connectionString` is given, if
-`schema` is invalid, or if `lockTimeoutMs` isn't greater than
-`requestTimeoutMs`.
+`schema` is invalid, if `retrySchedule` contains a negative or non-finite
+number, or if `lockTimeoutMs` isn't greater than `requestTimeoutMs`.
 
 ## Several instances
 
