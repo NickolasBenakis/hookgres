@@ -208,6 +208,30 @@ async function state() {
   const { rows: counts } = await pool.query<{ status: string; n: number }>(
     `SELECT status, count(*)::int AS n FROM ${SCHEMA}.deliveries GROUP BY status`,
   );
+  // One status code per attempt, so the delivery log can draw them as chips.
+  const { rows: attempts } = await pool.query<{
+    id: string;
+    delivery_id: string;
+    attempt_number: number;
+    status_code: number | null;
+  }>(
+    `SELECT id, delivery_id, attempt_number, status_code FROM ${SCHEMA}.attempts
+     WHERE delivery_id = ANY ($1) ORDER BY created_at, attempt_number`,
+    [deliveries.map((d) => d.id)],
+  );
+  const attemptsByDelivery = new Map<
+    string,
+    { id: string; attemptNumber: number; statusCode: number | null }[]
+  >();
+  for (const a of attempts) {
+    const list = attemptsByDelivery.get(a.delivery_id) ?? [];
+    list.push({
+      id: a.id,
+      attemptNumber: a.attempt_number,
+      statusCode: a.status_code,
+    });
+    attemptsByDelivery.set(a.delivery_id, list);
+  }
   const byId = new Map(messages.map((m) => [m.id, m]));
   const names = new Map(
     endpoints.map((e) => [e.id, e.metadata.receiver as string]),
@@ -223,6 +247,7 @@ async function state() {
       endpoint: names.get(d.endpointId) ?? d.endpointId,
       eventType: byId.get(d.messageId)?.event_type ?? "?",
       idempotencyKey: byId.get(d.messageId)?.idempotency_key ?? null,
+      attempts: attemptsByDelivery.get(d.id) ?? [],
     })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
     received: received.slice(0, 50),
