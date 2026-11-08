@@ -1,0 +1,31 @@
+# `docker compose up` starts Postgres and the playground at http://localhost:3000.
+# `docker compose up -d postgres` starts only Postgres, for the examples and tests.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  playground:
+    build:
+      context: .
+      dockerfile: examples/playground/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+    ports:
+      - "${PLAYGROUND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/state"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
