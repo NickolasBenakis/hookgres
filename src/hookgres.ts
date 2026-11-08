@@ -94,6 +94,18 @@ interface AttemptOutcome {
   durationMs: number;
 }
 
+/**
+ * Sends signed webhooks from Postgres, with retries, endpoint health, secret
+ * rotation and replay.
+ *
+ * @example
+ * const hookgres = new Hookgres({ pool });
+ * await hookgres.migrate();
+ * hookgres.start();
+ * await hookgres.send({ tenantId: "acme", eventType: "invoice.paid", payload });
+ *
+ * @see https://hookgres.dev/docs/
+ */
 export class Hookgres {
   readonly pool: pg.Pool;
   private readonly ownsPool: boolean;
@@ -212,6 +224,11 @@ export class Hookgres {
 
   // ------------------------------------------------------------- endpoints
 
+  /**
+   * Registers a URL to receive a tenant's webhooks. Generates a `whsec_`
+   * secret unless `input.secret` is given; show it to the tenant once.
+   * @see https://hookgres.dev/docs/guides/endpoints
+   */
   async createEndpoint(input: CreateEndpointInput): Promise<Endpoint> {
     assertUrl(input.url);
     const { rows } = await this.pool.query(
@@ -234,6 +251,7 @@ export class Hookgres {
     return toEndpoint(rows[0]);
   }
 
+  /** Returns the endpoint, or `null`. Includes its secret: check the tenant before returning it. */
   async getEndpoint(id: string): Promise<Endpoint | null> {
     const { rows } = await this.pool.query(
       `SELECT * FROM ${this.t.endpoints} WHERE id = $1`,
@@ -242,6 +260,7 @@ export class Hookgres {
     return rows[0] ? toEndpoint(rows[0]) : null;
   }
 
+  /** Returns all of a tenant's endpoints, oldest first. */
   async listEndpoints(tenantId: string): Promise<Endpoint[]> {
     const { rows } = await this.pool.query(
       `SELECT * FROM ${this.t.endpoints} WHERE tenant_id = $1 ORDER BY created_at, id`,
@@ -250,6 +269,10 @@ export class Hookgres {
     return rows.map(toEndpoint);
   }
 
+  /**
+   * Changes only the fields given. `disabled: false` re-enables an endpoint
+   * and clears its failure state. Returns `null` if it doesn't exist.
+   */
   async updateEndpoint(
     id: string,
     patch: UpdateEndpointInput,
@@ -393,6 +416,7 @@ export class Hookgres {
     };
   }
 
+  /** Returns the message, or `null`. */
   async getMessage(id: string): Promise<Message | null> {
     const { rows } = await this.pool.query(
       `SELECT * FROM ${this.t.messages} WHERE id = $1`,
@@ -403,6 +427,7 @@ export class Hookgres {
 
   // ------------------------------------------------------------ deliveries
 
+  /** Returns the delivery (one message to one endpoint), or `null`. */
   async getDelivery(id: string): Promise<Delivery | null> {
     const { rows } = await this.pool.query(
       `SELECT * FROM ${this.t.deliveries} WHERE id = $1`,
@@ -411,6 +436,10 @@ export class Hookgres {
     return rows[0] ? toDelivery(rows[0]) : null;
   }
 
+  /**
+   * Lists deliveries newest first, filtered by message, endpoint or status.
+   * `limit` defaults to 50 and is capped at 500.
+   */
   async listDeliveries(input: ListDeliveriesInput = {}): Promise<Delivery[]> {
     const where: string[] = [];
     const values: unknown[] = [];
@@ -432,6 +461,7 @@ export class Hookgres {
     return rows.map(toDelivery);
   }
 
+  /** Lists every HTTP attempt of a delivery, oldest first. */
   async listAttempts(deliveryId: string): Promise<Attempt[]> {
     const { rows } = await this.pool.query(
       `SELECT * FROM ${this.t.attempts} WHERE delivery_id = $1 ORDER BY created_at, attempt_number`,

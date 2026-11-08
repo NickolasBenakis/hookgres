@@ -1,0 +1,14 @@
+/* Brand colours shared with the landing page (site/index.html). */
+:root {
+  --vp-c-brand-1: oklch(42% 0.09 245);
+  --vp-c-brand-2: oklch(48% 0.1 245);
+  --vp-c-brand-3: oklch(42% 0.09 245);
+  --vp-c-brand-soft: oklch(42% 0.09 245 / 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: oklch(75% 0.1 235);
+  --vp-c-brand-2: oklch(68% 0.1 235);
+  --vp-c-brand-3: oklch(55% 0.1 240);
+  --vp-c-brand-soft: oklch(75% 0.1 235 / 0.16);
+}

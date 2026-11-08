@@ -21,6 +21,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck:examples
+      - name: Build site (fails on dead links)
+        run: pnpm site:build
 
   test:
     name: Test (Postgres ${{ matrix.postgres }}, Node ${{ matrix.node }})
