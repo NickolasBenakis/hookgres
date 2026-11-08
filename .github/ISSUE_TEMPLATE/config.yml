@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://hookgres.dev/docs/
+    about: Guides, API reference and FAQ.
+  - name: Report a security vulnerability
+    url: https://github.com/NickolasBenakis/hookgres/security/advisories/new
+    about: Please report security issues privately, not as public issues.
