@@ -2,17 +2,19 @@
  * End-to-end example: a receiver that verifies signatures, and an app that
  * sends it a webhook through Hookgres.
  *
- *   DATABASE_URL=postgres://... node examples/basic.ts
+ *   docker compose up -d postgres && pnpm build && node examples/basic.ts
  *
- * (Node 22.18+ runs TypeScript files directly. Build first with `pnpm build`.)
+ * Node 22.18+ runs TypeScript files directly. Set DATABASE_URL to use your
+ * own Postgres.
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Hookgres, verifyWebhook, type WebhookEnvelope } from "hookgres";
 import pg from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("Set DATABASE_URL");
+const databaseUrl =
+  process.env.DATABASE_URL ??
+  "postgres://postgres:postgres@localhost:5432/postgres";
 
 // --- The receiving side (your customer's server) ---------------------------
 
@@ -46,6 +48,7 @@ const { port } = server.address() as AddressInfo;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const hookgres = new Hookgres({ pool, schema: "hookgres_example" });
+await pool.query("DROP SCHEMA IF EXISTS hookgres_example CASCADE"); // a previous run may have crashed
 await hookgres.migrate();
 hookgres.start();
 

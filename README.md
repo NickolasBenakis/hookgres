@@ -183,20 +183,39 @@ Run it yourself with `pnpm bench` (`LOAD_N`, `LOAD_WORKERS` and
 `LOAD_CONCURRENCY` to tune). Real-world throughput depends mostly on how fast
 receivers respond.
 
-## Examples
+## Try it
 
-[`examples/basic.ts`](examples/basic.ts) is a complete sender and verifying
-receiver in one file:
+The playground runs Postgres and a small web app where you send events to
+three fake customer endpoints (one healthy, one flaky, one down) and watch
+deliveries succeed, retry, fail and get replayed:
 
 ```sh
-pnpm build && DATABASE_URL=postgres://... node examples/basic.ts
+git clone https://github.com/NickolasBenakis/hookgres && cd hookgres
+docker compose up    # then open http://localhost:3000
 ```
+
+## Examples
+
+Each example is a short runnable file (most share the tiny receiver in
+[`examples/receiver.ts`](examples/receiver.ts)). Start Postgres with
+`docker compose up -d postgres`, run `pnpm build`, then
+`node examples/<file>`. Set `DATABASE_URL` to use your own database.
+
+| Example                                                   | Shows                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------ |
+| [`basic.ts`](examples/basic.ts)                           | A sender and a verifying receiver in one file.         |
+| [`transactional.ts`](examples/transactional.ts)           | A rolled-back transaction sends nothing.               |
+| [`retries-and-replay.ts`](examples/retries-and-replay.ts) | Retries, the attempt log, and replaying a delivery.    |
+| [`serverless.ts`](examples/serverless.ts)                 | Draining the queue from a cron job with `runOnce()`.   |
+| [`secret-rotation.ts`](examples/secret-rotation.ts)       | Rotating a secret without breaking receivers.          |
+| [`playground/`](examples/playground)                      | The interactive playground behind `docker compose up`. |
 
 ## Development
 
 ```sh
 pnpm install
 pnpm test        # starts Postgres in Docker via testcontainers (or set DATABASE_URL)
+pnpm examples    # runs every example and checks the playground (needs DATABASE_URL or docker compose up -d postgres)
 pnpm coverage    # tests with coverage thresholds
 pnpm typecheck && pnpm lint
 pnpm smoke       # packs the library and runs the example from the tarball

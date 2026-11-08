@@ -20,6 +20,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm typecheck:examples
 
   test:
     name: Test (Postgres ${{ matrix.postgres }}, Node ${{ matrix.node }})
@@ -62,7 +63,7 @@ jobs:
         run: pnpm test
 
   package:
-    name: Package smoke & load test (Node ${{ matrix.node }})
+    name: Package, examples & load test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,8 +92,28 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm smoke
+      - run: pnpm examples
       - run: pnpm bench
         env:
           LOAD_N: 5000
       - name: Check tarball contents
         run: npm pack --dry-run
+
+  playground:
+    name: Playground (docker compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build --detach --wait
+      - name: Send an event and wait for delivery
+        run: |
+          curl -fsS -X POST localhost:3000/api/send -H 'content-type: application/json' \
+            -d '{"eventType":"invoice.paid","payload":{"ci":true}}'
+          for i in $(seq 1 60); do
+            curl -fsS localhost:3000/api/state | grep -q '"succeeded":' && exit 0
+            sleep 1
+          done
+          docker compose logs playground
+          exit 1
+      - if: always()
+        run: docker compose down --volumes

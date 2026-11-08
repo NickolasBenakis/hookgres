@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hookgres playground</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: oklch(98.5% 0.004 250);
+        --panel: oklch(100% 0 0);
+        --text: oklch(22% 0.02 250);
+        --muted: oklch(50% 0.02 250);
+        --line: oklch(91% 0.01 250);
+        --accent: oklch(55% 0.17 255);
+        --ok: oklch(55% 0.14 150);
+        --warn: oklch(62% 0.15 70);
+        --bad: oklch(56% 0.19 25);
+        --code: oklch(96% 0.006 250);
+        --on-accent: oklch(100% 0 0);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: oklch(17% 0.015 250);
+          --panel: oklch(21% 0.015 250);
+          --text: oklch(93% 0.01 250);
+          --muted: oklch(70% 0.02 250);
+          --line: oklch(30% 0.02 250);
+          --accent: oklch(72% 0.14 255);
+          --ok: oklch(74% 0.14 150);
+          --warn: oklch(80% 0.13 75);
+          --bad: oklch(70% 0.16 25);
+          --code: oklch(25% 0.015 250);
+          --on-accent: oklch(17% 0.015 250);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      code,
+      pre,
+      textarea,
+      .mono {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12.5px;
+      }
+      header {
+        padding: 20px 16px 8px;
+        max-width: 1280px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 72ch;
+      }
+      main {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 12px 16px 40px;
+        display: grid;
+        grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+        gap: 16px;
+      }
+      @media (max-width: 860px) {
+        main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+        min-width: 0;
+      }
+      label {
+        display: block;
+        font-weight: 500;
+        margin: 10px 0 4px;
+      }
+      select,
+      input,
+      textarea {
+        width: 100%;
+        font-size: 16px;
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      textarea {
+        min-height: 110px;
+        resize: vertical;
+        font-size: 13px;
+      }
+      button {
+        font: inherit;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+        width: 100%;
+        margin-top: 14px;
+        padding: 9px 12px;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      tr:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .endpoint {
+        border-top: 1px solid var(--line);
+        padding: 12px 0;
+      }
+      .endpoint:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+      .endpoint p {
+        margin: 2px 0 8px;
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 1px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .stats {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .stats b {
+        font-size: 20px;
+        font-variant-numeric: tabular-nums;
+        display: block;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 7px 8px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      th {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      tbody tr {
+        cursor: pointer;
+      }
+      tbody tr:hover,
+      tbody tr[aria-selected="true"] {
+        background: var(--code);
+      }
+      pre {
+        background: var(--code);
+        border-radius: 6px;
+        padding: 10px;
+        overflow-x: auto;
+        margin: 6px 0 12px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 16px 0;
+      }
+      .note {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Hookgres playground</h1>
+      <p>
+        Send events to tenant <code>acme</code> and watch Hookgres deliver them
+        to three fake customer endpoints running in this process. Retries here
+        happen after <span id="schedule">2s, 5s, 10s</span> so you can see the
+        whole lifecycle quickly. The defaults are 5s, 5m, 30m, 2h, 5h, 10h, 10h.
+      </p>
+    </header>
+    <main>
+      <div>
+        <section aria-labelledby="send-title">
+          <h2 id="send-title">Send an event</h2>
+          <form id="send">
+            <label for="eventType">Event type</label>
+            <select id="eventType">
+              <option>invoice.paid</option>
+              <option>invoice.refunded</option>
+              <option>customer.created</option>
+            </select>
+            <label for="payload">Payload (JSON)</label>
+            <textarea id="payload" spellcheck="false">
+{ "invoiceId": "in_123", "amount": 4200, "currency": "eur" }</textarea
+            >
+            <label for="idempotencyKey">Idempotency key (optional)</label>
+            <input id="idempotencyKey" autocomplete="off" placeholder="e.g. invoice.paid:in_123" />
+            <button class="primary" type="submit">Send</button>
+            <p class="note" id="send-result" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <section aria-labelledby="endpoints-title">
+          <h2 id="endpoints-title">Endpoints</h2>
+          <div id="endpoints"></div>
+        </section>
+        <section>
+          <button type="button" id="reset">Reset playground</button>
+          <p class="note">
+            Drops the <code>hookgres_playground</code> schema and starts over.
+          </p>
+        </section>
+      </div>
+      <div>
+        <section aria-labelledby="deliveries-title">
+          <h2 id="deliveries-title">Deliveries</h2>
+          <div class="stats" id="stats"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Endpoint</th>
+                  <th>Status</th>
+                  <th>Attempts</th>
+                  <th>Next attempt</th>
+                  <th>Last error</th>
+                </tr>
+              </thead>
+              <tbody id="deliveries"></tbody>
+            </table>
+          </div>
+          <p class="empty" id="no-deliveries">No deliveries yet. Send an event.</p>
+        </section>
+        <section aria-labelledby="detail-title" id="detail-section" hidden>
+          <h2 id="detail-title">Delivery</h2>
+          <div id="detail"></div>
+        </section>
+      </div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let selected = null;
+      let lastState = null;
+
+      function el(tag, props = {}, ...children) {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(props)) {
+          if (key === "class") node.className = value;
+          else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+          else node.setAttribute(key, value);
+        }
+        for (const child of children.flat()) {
+          if (child == null || child === false) continue;
+          node.append(typeof child === "string" || typeof child === "number" ? String(child) : child);
+        }
+        return node;
+      }
+
+      const statusClass = { succeeded: "ok", pending: "warn", delivering: "warn", failed: "bad" };
+      const ago = (iso) => {
+        const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+        if (Math.abs(s) < 1) return "now";
+        return s > 0 ? `in ${s}s` : `${-s}s ago`;
+      };
+
+      async function api(method, path, body) {
+        const res = await fetch(path, {
+          method,
+          headers: body ? { "content-type": "application/json" } : {},
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      function renderEndpoints(endpoints) {
+        $("endpoints").replaceChildren(
+          ...endpoints.map((e) => {
+            const status = e.disabled
+              ? el("span", { class: "pill bad" }, "disabled")
+              : e.failingSince
+                ? el("span", { class: "pill warn" }, `failing since ${ago(e.failingSince)}`)
+                : el("span", { class: "pill ok" }, "healthy");
+            return el(
+              "div",
+              { class: "endpoint" },
+              el("div", { class: "row" }, el("strong", {}, e.name), status),
+              el("p", {}, e.description),
+              el(
+                "div",
+                { class: "muted mono" },
+                `events: ${e.eventTypes ? e.eventTypes.join(", ") : "all"}`,
+              ),
+              el("div", { class: "muted mono" }, `secret: ${e.secretPreview}`),
+              e.disabledReason && el("div", { class: "bad" }, e.disabledReason),
+              el(
+                "div",
+                { class: "row", style: "margin-top:8px" },
+                el(
+                  "button",
+                  {
+                    type: "button",
+                    onclick: () => act(`/api/endpoints/${e.id}/${e.disabled ? "enable" : "disable"}`),
+                  },
+                  e.disabled ? "Re-enable" : "Disable",
+                ),
+                el(
+                  "button",
+                  { type: "button", onclick: () => act(`/api/endpoints/${e.id}/rotate`) },
+                  "Rotate secret",
+                ),
+              ),
+            );
+          }),
+        );
+      }
+
+      function renderDeliveries(state) {
+        const counts = state.counts;
+        $("stats").replaceChildren(
+          ...["pending", "delivering", "succeeded", "failed"].map((s) =>
+            el("div", {}, el("b", { class: statusClass[s] }, counts[s] || 0), s),
+          ),
+        );
+        $("no-deliveries").hidden = state.deliveries.length > 0;
+        $("deliveries").replaceChildren(
+          ...state.deliveries.map((d) =>
+            el(
+              "tr",
+              {
+                tabindex: "0",
+                "aria-selected": String(d.id === selected),
+                onclick: () => select(d.id),
+                onkeydown: (event) => event.key === "Enter" && select(d.id),
+              },
+              el("td", { class: "mono" }, d.eventType),
+              el("td", {}, d.endpoint),
+              el("td", {}, el("span", { class: `pill ${statusClass[d.status]}` }, d.status)),
+              el("td", {}, d.attemptCount),
+              el("td", { class: "muted" }, d.status === "pending" ? ago(d.nextAttemptAt) : "–"),
+              el("td", { class: "muted" }, d.lastError || ""),
+            ),
+          ),
+        );
+      }
+
+      async function renderDetail() {
+        const delivery = lastState?.deliveries.find((d) => d.id === selected);
+        $("detail-section").hidden = !delivery;
+        if (!delivery) return;
+        const attempts = await api("GET", `/api/deliveries/${delivery.id}/attempts`);
+        const requests = lastState.received.filter(
+          (r) => r.webhookId === delivery.messageId && r.receiver === delivery.endpoint,
+        );
+        const finished = delivery.status === "succeeded" || delivery.status === "failed";
+        $("detail").replaceChildren(
+          el(
+            "div",
+            { class: "row" },
+            el("span", { class: "mono" }, delivery.id),
+            el("span", { class: `pill ${statusClass[delivery.status]}` }, delivery.status),
+            finished &&
+              el(
+                "button",
+                { type: "button", onclick: () => act(`/api/deliveries/${delivery.id}/replay`) },
+                "Replay",
+              ),
+          ),
+          el(
+            "p",
+            { class: "note" },
+            `Message ${delivery.messageId}. Its webhook-id header is the same on every attempt, so receivers can deduplicate.`,
+          ),
+          el("h2", { style: "margin-top:16px" }, "Attempts"),
+          attempts.length === 0
+            ? el("p", { class: "empty" }, "No attempts yet.")
+            : el(
+                "div",
+                { class: "table-wrap" },
+                el(
+                  "table",
+                  {},
+                  el(
+                    "thead",
+                    {},
+                    el("tr", {}, el("th", {}, "#"), el("th", {}, "Status"), el("th", {}, "Duration"), el("th", {}, "Response or error")),
+                  ),
+                  el(
+                    "tbody",
+                    {},
+                    attempts.map((a) =>
+                      el(
+                        "tr",
+                        {},
+                        el("td", {}, a.attemptNumber),
+                        el(
+                          "td",
+                          { class: a.statusCode >= 200 && a.statusCode < 300 ? "ok" : "bad" },
+                          a.statusCode ?? "–",
+                        ),
+                        el("td", {}, `${a.durationMs}ms`),
+                        el("td", { class: "muted" }, a.error || a.responseBody || ""),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          el("h2", { style: "margin-top:16px" }, "What the receiver got"),
+          requests.length === 0
+            ? el("p", { class: "empty" }, "Nothing received yet.")
+            : requests
+                .slice(0, 3)
+                .map((r) =>
+                  el(
+                    "pre",
+                    {},
+                    `POST /receivers/${r.receiver}  →  ${r.status}\n` +
+                      `webhook-id: ${r.webhookId}\n` +
+                      `webhook-timestamp: ${r.timestamp}\n` +
+                      `webhook-signature: ${r.signature}\n` +
+                      `signature ${r.verified ? "verified ✓" : `rejected: ${r.verifyError}`}\n\n` +
+                      JSON.stringify(JSON.parse(r.body), null, 2),
+                  ),
+                ),
+        );
+      }
+
+      function select(id) {
+        selected = id;
+        if (lastState) renderDeliveries(lastState);
+        renderDetail();
+      }
+
+      async function refresh() {
+        try {
+          lastState = await api("GET", "/api/state");
+          $("schedule").textContent = lastState.settings.retrySchedule
+            .map((ms) => `${ms / 1000}s`)
+            .join(", ");
+          renderEndpoints(lastState.endpoints);
+          renderDeliveries(lastState);
+          if (selected) await renderDetail();
+        } catch (error) {
+          $("send-result").textContent = `Lost connection: ${error.message}`;
+        }
+      }
+
+      async function act(path) {
+        try {
+          await api("POST", path);
+        } catch (error) {
+          $("send-result").textContent = error.message;
+        }
+        await refresh();
+      }
+
+      $("send").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        let payload;
+        try {
+          payload = JSON.parse($("payload").value);
+        } catch {
+          $("send-result").textContent = "Payload must be valid JSON.";
+          return;
+        }
+        try {
+          const result = await api("POST", "/api/send", {
+            eventType: $("eventType").value,
+            payload,
+            idempotencyKey: $("idempotencyKey").value.trim() || undefined,
+          });
+          $("send-result").textContent = result.deduplicated
+            ? `Deduplicated: ${result.message.id} already exists for this idempotency key.`
+            : `Queued ${result.message.id} for ${result.deliveryCount} endpoint(s).`;
+        } catch (error) {
+          $("send-result").textContent = error.message;
+        }
+        await refresh();
+      });
+
+      $("reset").addEventListener("click", async () => {
+        selected = null;
+        $("reset").disabled = true;
+        await act("/api/reset");
+        $("reset").disabled = false;
+      });
+
+      refresh();
+      setInterval(refresh, 1000);
+    </script>
+  </body>
+</html>
