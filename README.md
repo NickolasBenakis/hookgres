@@ -196,7 +196,8 @@ docker compose up    # then open http://localhost:3000
 
 ## Examples
 
-Each example is one runnable file. Start Postgres with
+Each example is a short runnable file (most share the tiny receiver in
+[`examples/receiver.ts`](examples/receiver.ts)). Start Postgres with
 `docker compose up -d postgres`, run `pnpm build`, then
 `node examples/<file>`. Set `DATABASE_URL` to use your own database.
 

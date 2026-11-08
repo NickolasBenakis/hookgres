@@ -48,6 +48,7 @@ const { port } = server.address() as AddressInfo;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const hookgres = new Hookgres({ pool, schema: "hookgres_example" });
+await pool.query("DROP SCHEMA IF EXISTS hookgres_example CASCADE"); // a previous run may have crashed
 await hookgres.migrate();
 hookgres.start();
 

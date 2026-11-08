@@ -29,16 +29,18 @@ const HOST = process.env.HOST ?? "127.0.0.1";
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5432/postgres";
-const SCHEMA = "hookgres_playground";
+const SCHEMA = process.env.PLAYGROUND_SCHEMA ?? "hookgres_playground";
 const TENANT = "acme";
 
 /**
- * Short timings so you can watch the whole lifecycle in under a minute.
+ * Short timings so you can watch the whole lifecycle in under a minute: a
+ * single message to `down` fails for 17s (attempts at 0s, 2s, 7s and 17s),
+ * which is past the 15s disable threshold.
  * Production defaults: retries after 5s, 5m, 30m, 2h, 5h, 10h, 10h, and
  * endpoints are disabled after 5 days of failures.
  */
 const RETRY_SCHEDULE = [2_000, 5_000, 10_000];
-const DISABLE_AFTER_MS = 60_000;
+const DISABLE_AFTER_MS = 15_000;
 
 // ----------------------------------------------------------- receivers
 // Three fake customer servers. Each verifies the signature like a real
@@ -60,7 +62,7 @@ const RECEIVERS: Record<
   },
   down: {
     description:
-      "Always answers 500. After 60s of failures it is disabled automatically.",
+      "Always answers 500. After 15s of failures it is disabled automatically.",
     eventTypes: ["invoice.paid"],
   },
 };
@@ -152,10 +154,16 @@ async function setUp(): Promise<void> {
   await hookgres.migrate();
   const existing = await hookgres.listEndpoints(TENANT);
   for (const name of Object.keys(RECEIVERS) as ReceiverName[]) {
+    const url = `http://127.0.0.1:${PORT}/receivers/${name}`;
     let endpoint = existing.find((e) => e.metadata.receiver === name);
+    // Started on another port before: point the endpoint at this process.
+    if (endpoint && endpoint.url !== url) {
+      endpoint =
+        (await hookgres.updateEndpoint(endpoint.id, { url })) ?? undefined;
+    }
     endpoint ??= await hookgres.createEndpoint({
       tenantId: TENANT,
-      url: `http://127.0.0.1:${PORT}/receivers/${name}`,
+      url,
       description: RECEIVERS[name].description,
       eventTypes: RECEIVERS[name].eventTypes,
       metadata: { receiver: name },
@@ -165,7 +173,17 @@ async function setUp(): Promise<void> {
   hookgres.start();
 }
 
-async function reset(): Promise<void> {
+let resetting: Promise<void> | null = null;
+
+/** Serialised, so a double-click can't create two sets of endpoints. */
+function reset(): Promise<void> {
+  resetting ??= doReset().finally(() => {
+    resetting = null;
+  });
+  return resetting;
+}
+
+async function doReset(): Promise<void> {
   await hookgres.stop();
   await pool.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
   received.length = 0;
@@ -267,7 +285,8 @@ async function handleApi(
     /^\/api\/endpoints\/([\w-]+)\/(enable|disable|rotate)$/,
   );
   if (method === "POST" && endpoint?.[1]) {
-    const [, id, action] = endpoint;
+    const id = endpoint[1];
+    const action = endpoint[2];
     const updated =
       action === "rotate"
         ? await hookgres.rotateEndpointSecret(id)
@@ -289,6 +308,7 @@ const server = createServer(async (req, res) => {
   const method = req.method ?? "GET";
   const path = new URL(req.url ?? "/", "http://localhost").pathname;
   try {
+    if (resetting) await resetting;
     const receiver = path.match(/^\/receivers\/(healthy|flaky|down)$/);
     if (method === "POST" && receiver?.[1]) {
       await handleReceiver(receiver[1] as ReceiverName, req, res);

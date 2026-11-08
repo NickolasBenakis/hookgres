@@ -11,6 +11,7 @@ import { databaseUrl, startReceiver } from "./receiver.ts";
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const hookgres = new Hookgres({ pool, schema: "hookgres_ex_rotation" });
+await pool.query("DROP SCHEMA IF EXISTS hookgres_ex_rotation CASCADE"); // a previous run may have crashed
 await hookgres.migrate();
 
 // The receiver still has only the old secret.

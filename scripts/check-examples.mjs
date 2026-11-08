@@ -4,6 +4,7 @@
 // Expects `pnpm build` to have run.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import pg from "pg";
 
 const root = resolve(import.meta.dirname, "..");
 const examples = [
@@ -41,7 +42,11 @@ for (const example of examples) {
 
 console.log("\n▶ examples/playground/server.ts");
 const port = 3917;
-const playground = run("examples/playground/server.ts", { PORT: String(port) });
+// Its own schema, so it never touches a playground running in docker compose.
+const playground = run("examples/playground/server.ts", {
+  PORT: String(port),
+  PLAYGROUND_SCHEMA: "hookgres_playground_check",
+});
 const base = `http://127.0.0.1:${port}`;
 const api = async (method, path, body) => {
   const res = await fetch(base + path, {
@@ -95,9 +100,15 @@ try {
   if (!state.received.every((r) => r.verified)) {
     throw new Error("A playground receiver rejected a signature");
   }
-  await api("POST", "/api/reset");
 } finally {
   playground.child.kill("SIGTERM");
   await playground.done;
+  const pool = new pg.Pool({
+    connectionString:
+      process.env.DATABASE_URL ??
+      "postgres://postgres:postgres@localhost:5432/postgres",
+  });
+  await pool.query("DROP SCHEMA IF EXISTS hookgres_playground_check CASCADE");
+  await pool.end();
 }
 console.log("\nAll examples passed.");

@@ -10,6 +10,7 @@ import { databaseUrl, startReceiver } from "./receiver.ts";
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const hookgres = new Hookgres({ pool, schema: "hookgres_ex_serverless" });
+await pool.query("DROP SCHEMA IF EXISTS hookgres_ex_serverless CASCADE"); // a previous run may have crashed
 await hookgres.migrate();
 
 let secret = "";

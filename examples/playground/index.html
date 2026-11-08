@@ -556,7 +556,9 @@
 
       $("reset").addEventListener("click", async () => {
         selected = null;
+        $("reset").disabled = true;
         await act("/api/reset");
+        $("reset").disabled = false;
       });
 
       refresh();

@@ -9,6 +9,7 @@ import { databaseUrl, startReceiver } from "./receiver.ts";
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const hookgres = new Hookgres({ pool, schema: "hookgres_ex_transactional" });
+await pool.query("DROP SCHEMA IF EXISTS hookgres_ex_transactional CASCADE"); // a previous run may have crashed
 await hookgres.migrate();
 await pool.query(
   "CREATE TABLE IF NOT EXISTS hookgres_ex_transactional.invoices (id text PRIMARY KEY, status text NOT NULL)",
