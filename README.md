@@ -1,0 +1,177 @@
+# Hookwire
+
+**Outbound webhooks on the Postgres you already run.** Signed delivery, retries
+with backoff, endpoint health, secret rotation and replay, in one TypeScript
+library with no extra servers, queues or per-message bills.
+
+Hookwire is the webhook-sending half of Svix or Hookdeck, as a library:
+
+- **Standard Webhooks signatures.** Receivers can verify with Hookwire's
+  `verifyWebhook` or any [Standard Webhooks](https://www.standardwebhooks.com)
+  library, in any language.
+- **Transactional outbox.** Queue a webhook inside your own transaction; it
+  only sends if your transaction commits.
+- **Durable retries.** 8 attempts over about 28 hours by default, with
+  `FOR UPDATE SKIP LOCKED` so any number of workers can run at once without
+  sending a delivery twice.
+- **Endpoint health.** Endpoints that fail continuously for 5 days are disabled
+  automatically, and re-enabled with one call.
+- **Multi-tenant.** Every endpoint and message belongs to a `tenantId` (your
+  customer), and each event goes only to that tenant's endpoints.
+- **Full delivery log.** Every attempt's status code, response body, error and
+  timing is stored for your dashboard and support team.
+
+## Install
+
+```sh
+npm install hookwire pg
+```
+
+Requires Node 20+ and Postgres 13+.
+
+## Quick start
+
+```ts
+import pg from "pg";
+import { Hookwire } from "hookwire";
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const hookwire = new Hookwire({ pool });
+
+await hookwire.migrate(); // creates the "hookwire" schema; safe to run on every boot
+hookwire.start(); // background delivery worker
+
+// Your customer registers an endpoint (show them the secret once).
+const endpoint = await hookwire.createEndpoint({
+  tenantId: "acme",
+  url: "https://acme.example.com/webhooks",
+  eventTypes: ["invoice.paid", "invoice.refunded"], // omit for all events
+});
+
+// Anywhere in your app:
+await hookwire.send({
+  tenantId: "acme",
+  eventType: "invoice.paid",
+  payload: { invoiceId: "in_123", amount: 4200 },
+  idempotencyKey: "invoice.paid:in_123", // optional, dedupes per tenant
+});
+
+// On shutdown: finishes in-flight deliveries.
+await hookwire.stop();
+```
+
+### Send inside your transaction
+
+```ts
+const client = await pool.connect();
+try {
+  await client.query("BEGIN");
+  await client.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [id]);
+  await hookwire.send(
+    { tenantId, eventType: "invoice.paid", payload: { id } },
+    { client },
+  );
+  await client.query("COMMIT"); // webhook is queued only if this commits
+} catch (error) {
+  await client.query("ROLLBACK");
+  throw error;
+} finally {
+  client.release();
+}
+```
+
+### Serverless or cron instead of a long-running worker
+
+```ts
+// e.g. a cron route hit every minute
+let processed: number;
+do processed = await hookwire.runOnce();
+while (processed > 0);
+```
+
+## What receivers get
+
+A `POST` with a JSON envelope:
+
+```json
+{
+  "type": "invoice.paid",
+  "timestamp": "2026-11-08T15:04:05.000Z",
+  "data": { "invoiceId": "in_123", "amount": 4200 }
+}
+```
+
+and the Standard Webhooks headers `webhook-id` (the message id, identical
+across retries so receivers can deduplicate), `webhook-timestamp` and
+`webhook-signature`.
+
+Verifying on the receiving side (needs the raw body):
+
+```ts
+import { verifyWebhook } from "hookwire";
+
+app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
+  const event = verifyWebhook({
+    secret: process.env.WEBHOOK_SECRET!,
+    headers: req.headers,
+    body: req.body,
+  }); // throws WebhookVerificationError if invalid or older than 5 minutes
+  res.sendStatus(204);
+});
+```
+
+## Delivery semantics
+
+| Situation                                         | Behaviour                                                          |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| `2xx` response                                    | Succeeded.                                                         |
+| Non-`2xx`, redirect, timeout (15s), network error | Retried after 5s, 5m, 30m, 2h, 5h, 10h, 10h, then marked `failed`. |
+| Every attempt failing for 5 days                  | Endpoint disabled; its queued deliveries are marked `failed`.      |
+| Worker crashes mid-delivery                       | The lock expires and another worker retries it.                    |
+
+Delivery is **at least once**: a worker can crash after the receiver
+responds but before the result is saved, so receivers should deduplicate on
+`webhook-id`.
+
+## API
+
+| Method                                                                                                       | Purpose                                                                 |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `migrate()`                                                                                                  | Create or upgrade tables (advisory-locked).                             |
+| `createEndpoint`, `getEndpoint`, `listEndpoints(tenantId)`, `updateEndpoint`, `deleteEndpoint`               | Manage endpoints. `updateEndpoint(id, { disabled: false })` re-enables. |
+| `rotateEndpointSecret(id, { graceMs })`                                                                      | New secret; the old one also signs for `graceMs` (default 24h).         |
+| `send(input, { client })`                                                                                    | Queue a message for matching endpoints.                                 |
+| `getMessage`, `getDelivery`, `listDeliveries({ messageId, endpointId, status })`, `listAttempts(deliveryId)` | Delivery log.                                                           |
+| `replayDelivery(id)`                                                                                         | Re-send a succeeded or failed delivery.                                 |
+| `start()`, `stop()`, `runOnce()`, `close()`                                                                  | Worker lifecycle.                                                       |
+| `verifyWebhook`, `sign`, `generateSecret`                                                                    | Signing helpers.                                                        |
+
+### Options
+
+```ts
+new Hookwire({
+  pool, // or connectionString
+  schema: "hookwire",
+  retrySchedule: [5_000, 300_000 /* ... */], // ms before each retry
+  requestTimeoutMs: 15_000,
+  disableEndpointAfterMs: 5 * 24 * 3600_000, // null to never disable
+  concurrency: 10, // parallel requests per worker
+  pollIntervalMs: 1_000,
+  fetch, // custom fetch, e.g. with an SSRF guard
+  onError: console.error,
+});
+```
+
+## Security note
+
+Hookwire sends requests to URLs your users provide. In production, stop
+endpoints from reaching your internal network (SSRF): pass a `fetch` that
+blocks private IP ranges, or route deliveries through an egress proxy.
+
+## Development
+
+```sh
+pnpm install
+pnpm test        # starts Postgres in Docker via testcontainers (or set DATABASE_URL)
+pnpm typecheck && pnpm lint
+```
