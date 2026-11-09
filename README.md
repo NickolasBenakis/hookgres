@@ -10,6 +10,7 @@
 
   <p>
     <a href="https://www.npmjs.com/package/hookgres"><img alt="npm version" src="https://img.shields.io/npm/v/hookgres?color=163a5f&label=npm"></a>
+    <a href="https://www.npmjs.com/package/hookgres"><img alt="npm downloads" src="https://img.shields.io/npm/dm/hookgres?color=163a5f"></a>
     <a href="https://www.npmjs.com/package/hookgres"><img alt="TypeScript types included" src="https://img.shields.io/npm/types/hookgres?color=163a5f"></a>
     <a href="https://github.com/NickolasBenakis/hookgres/actions/workflows/ci.yml?query=branch%3Amain"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/NickolasBenakis/hookgres/ci.yml?branch=main&label=CI"></a>
     <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/npm/l/hookgres?color=163a5f"></a>
