@@ -71,10 +71,21 @@ const index = [
 const full = [];
 for (const file of pages) {
   // Docs link to /guides/... relative to the VitePress base; make them absolute.
-  const markdown = readFileSync(join(docsDir, file), "utf8").replace(
-    /\]\(\/(?!\/)/g,
-    `](${site}/docs/`,
-  );
+  const markdown = readFileSync(join(docsDir, file), "utf8")
+    .replace(/\]\(\/(?!\/)/g, `](${site}/docs/`)
+    // The docs home renders this Vue component; agents get the same content.
+    .replace(
+      "<DocsHub />",
+      [
+        "Ask your AI agent: `Add Hookgres webhooks to this app: hookgres.dev/llms.txt`",
+        "",
+        "Or install it yourself: `npm install hookgres pg`",
+        "",
+        `- [Getting started](${site}/docs/getting-started.md)`,
+        `- [Playground](${site}/docs/playground.md)`,
+        `- [llms.txt](${site}/llms.txt)`,
+      ].join("\n"),
+    );
   const target = join(out, "docs", file === "index.md" ? "index.md" : file);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, markdown);

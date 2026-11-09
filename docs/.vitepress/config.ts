@@ -35,6 +35,9 @@ export default defineConfig({
   base: "/docs/",
   ignoreDeadLinks: "localhostLinks",
   cleanUrls: true,
+  // Follow the OS colour scheme like the landing page, ignoring any choice
+  // stored by older versions of these docs.
+  appearance: "force-auto",
   lastUpdated: true,
   sitemap: { hostname: "https://hookgres.dev/docs/" },
   head: [
