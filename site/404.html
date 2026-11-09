@@ -102,7 +102,7 @@
   .nav .wrap { display: flex; align-items: center; gap: 32px; height: 56px; }
   .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-weight: 600; font-size: 16px; letter-spacing: -0.02em; flex: none; }
   .brand:hover { text-decoration: none; }
-  .brand svg { width: 22px; height: 22px; border-radius: 6px; }
+  .brand svg { width: 22px; height: 22px; }
   .nav-links { display: flex; align-items: center; gap: 24px; font-size: 14px; }
   .nav-links a { color: var(--ink-2); transition: color 150ms var(--ease); }
   @media (hover: hover) and (pointer: fine) { .nav-links a:hover { color: var(--ink); text-decoration: none; } }
@@ -171,7 +171,7 @@
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="/" aria-label="Hookgres home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#034393"/><path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="hgst" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#317de9"/><stop offset="1" stop-color="#0058c4"/></linearGradient></defs><path d="M40 0c8.4 0 12.6 0 15.81 1.63a15 15 0 0 1 6.56 6.56c1.63 3.21 1.63 7.41 1.63 15.81L64 40c0 8.4 0 12.6 -1.63 15.81a15 15 0 0 1 -6.56 6.56c-3.21 1.63 -7.41 1.63 -15.81 1.63L24 64c-8.4 0 -12.6 0 -15.81 -1.63a15 15 0 0 1 -6.56 -6.56c-1.63 -3.21 -1.63 -7.41 -1.63 -15.81L0 24c0 -8.4 0 -12.6 1.63 -15.81a15 15 0 0 1 6.56 -6.56c3.21 -1.63 7.41 -1.63 15.81 -1.63Z" fill="url(#hgst)"/><circle cx="19" cy="15" r="5.5" fill="#fff"/><path d="M19 15v22a10 10 0 0 0 20 0V21M32 28l7-7 7 7" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Hookgres
     </a>
     <nav class="nav-links" aria-label="Main">

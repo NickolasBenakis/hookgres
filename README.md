@@ -2,7 +2,7 @@
   <a href="https://hookgres.dev">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
-      <img alt="Hookgres" src=".github/assets/logo-light.svg" width="310" height="64">
+      <img alt="Hookgres" src=".github/assets/logo-light.svg" width="302" height="64">
     </picture>
   </a>
 
