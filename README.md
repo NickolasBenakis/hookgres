@@ -156,6 +156,10 @@ No long-running process? Drain the queue from a cron job with
   `invoice.paid` or wildcards like `invoice.*`.
 - **Delivery log and replay.** Status code, response body, error and timing for
   every attempt, in tables you can query. `replayDelivery(id)` sends it again.
+- **Delivery hooks.** `onAttempt` and `onEndpointDisabled` feed your metrics
+  and alerts, for example OpenTelemetry.
+- **Instant wake-up.** With `notify: true`, workers in other processes start
+  sending as soon as a `send()` commits, using LISTEN/NOTIFY.
 - **Secret rotation.** After `rotateEndpointSecret`, the old secret keeps
   signing for a grace period, 24 hours by default.
 - **Idempotency keys.** Sending twice with the same key creates one message.

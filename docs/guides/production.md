@@ -7,7 +7,8 @@ Before you launch, make sure you:
 3. Block endpoints from reaching your internal network
    (`blockPrivateAddresses`).
 4. Send `onError` to your logger.
-5. Monitor the backlog and failing endpoints.
+5. Monitor the backlog and failing endpoints, and record metrics with
+   `onAttempt`.
 6. Delete old rows on a schedule.
 7. Tell receivers to deduplicate on `webhook-id`.
 
@@ -164,6 +165,65 @@ FROM hookgres.endpoints
 WHERE disabled AND updated_at > now() - interval '1 day';
 ```
 
+## Metrics and tracing
+
+Hookgres calls two optional hooks from the worker:
+
+- `onAttempt(event)` after every HTTP attempt, with the delivery, message
+  and endpoint ids, `tenantId`, `eventType`, `attemptNumber`, `outcome`
+  (`succeeded`, `retrying` or `failed`), `statusCode` or `error`,
+  `durationMs`, and `nextAttemptAt` when it will retry.
+- `onEndpointDisabled(event)` when an endpoint is disabled after failing for
+  `disableEndpointAfterMs`, with `endpointId`, `tenantId` and `reason`.
+  A good place to email the tenant.
+
+Hooks run inline in the worker, so keep them fast and hand slow work, like
+sending an email, to a queue. If a hook throws or returns a rejected promise,
+Hookgres catches it and emits a process warning with code
+`HOOKGRES_HOOK_ERROR`. The delivery is unaffected. A hook only fires for a
+result the worker actually saved: if another worker took over the delivery
+mid-attempt, that attempt isn't reported.
+
+Here is an OpenTelemetry setup with a counter and a duration histogram.
+Hookgres doesn't depend on OpenTelemetry; install `@opentelemetry/api` in
+your app and configure an SDK as usual.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { Hookgres } from "hookgres";
+
+const meter = metrics.getMeter("hookgres");
+const attempts = meter.createCounter("webhook.attempts", {
+  description: "Webhook delivery attempts",
+});
+const duration = meter.createHistogram("webhook.attempt.duration", {
+  description: "Webhook request duration",
+  unit: "ms",
+});
+const disabled = meter.createCounter("webhook.endpoints.disabled");
+
+const hookgres = new Hookgres({
+  pool,
+  onAttempt: (event) => {
+    // Keep attributes low-cardinality: no delivery or message ids.
+    const attributes = {
+      "webhook.event_type": event.eventType,
+      "webhook.outcome": event.outcome,
+      "http.response.status_code": event.statusCode ?? 0,
+    };
+    attempts.add(1, attributes);
+    duration.record(event.durationMs, attributes);
+  },
+  onEndpointDisabled: (event) => {
+    disabled.add(1);
+    logger.warn(event, "webhook endpoint disabled");
+  },
+});
+```
+
+Add `tenantId` as an attribute only if you have few tenants; every distinct
+value is a separate time series.
+
 ## Clean up old rows
 
 Hookgres keeps every message, delivery and attempt until you delete them. Pick
@@ -183,8 +243,23 @@ kept until they finish. It deletes in batches, one short transaction each,
 until nothing is left, and returns how many messages it deleted. Running it
 from several processes at once is safe.
 
-Deleting a message frees its idempotency key. On very large tables, an index
-on `messages (created_at)` makes each batch faster.
+Deleting a message frees its idempotency key. Each batch finds old messages
+with the `messages (created_at)` index, which `migrate()` creates as of 0.3.
+
+Building that index blocks inserts into `messages`, so `send()` waits while
+it runs. That takes moments on most tables. If yours has many millions of
+rows, build it without blocking before you deploy 0.3:
+
+```sql
+CREATE INDEX CONCURRENTLY messages_created_idx
+  ON hookgres.messages (created_at);
+```
+
+`migrate()` skips the index if `messages` already has a valid index that
+starts with `created_at`, whatever its name, so one you added yourself
+before 0.3 counts too. If a concurrent build fails, it leaves an invalid
+index behind; `migrate()` drops and rebuilds it (blocking inserts), so drop
+it and retry the concurrent build first.
 
 ## Database load
 

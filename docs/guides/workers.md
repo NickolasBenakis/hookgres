@@ -14,6 +14,42 @@ in parallel, records the results, and repeats. When there's nothing to do, it
 sleeps for `pollIntervalMs` (1 second by default). A `send()` from the same
 process wakes it immediately.
 
+### Instant wake-up with LISTEN/NOTIFY
+
+When your web servers send and separate processes deliver, a webhook waits up
+to `pollIntervalMs` before a worker notices it. Turn on `notify` to wake
+workers right away:
+
+```ts
+const hookgres = new Hookgres({ pool, notify: true });
+```
+
+Set it on the instances that call `send()` and on the ones that call
+`start()`. With it on:
+
+- `send()` also runs `pg_notify('<schema>_wake', '')` (`hookgres_wake` by
+  default) in the same statement as the insert. Postgres delivers the
+  notification when the transaction commits, so a `send()` inside your own
+  transaction wakes workers on commit, and a rollback wakes no one.
+  `replayDelivery()` notifies too.
+- Each worker started with `start()` holds one connection from the pool that
+  runs `LISTEN` and wakes the loop on every notification. Count it when you
+  size the pool; the constructor throws if the pool's `max` is below 2.
+  `stop()` closes it.
+- Polling keeps running as a fallback. If the listening connection drops,
+  the worker reports it to `onError` and reconnects, waiting 0.5 seconds at
+  first and doubling up to 30 seconds. Deliveries keep going out on the poll
+  interval in the meantime.
+
+Leave it off if you connect through PgBouncer in transaction mode or a proxy
+that doesn't support `LISTEN`. There `LISTEN` either fails or silently
+receives nothing; delivery still works, only without the faster wake-up.
+`runOnce()` doesn't listen.
+
+At very high send rates, polling can be the better choice. Postgres commits
+transactions that sent a notification one at a time, and every notification
+wakes every worker, so each `send()` costs one claim query per worker.
+
 You can run the loop in your web server process or in a separate worker
 process. Both work. A separate process keeps slow receivers from competing
 with your web requests for CPU and connections.

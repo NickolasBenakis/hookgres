@@ -1,3 +1,4 @@
+import pg from "pg";
 import {
   afterEach,
   beforeEach,
@@ -7,7 +8,14 @@ import {
   it,
   vi,
 } from "vitest";
-import { Hookgres, verifyWebhook, type WebhookEnvelope } from "../src/index.js";
+import {
+  type AttemptEvent,
+  type EndpointDisabledEvent,
+  Hookgres,
+  verifyWebhook,
+  type WebhookEnvelope,
+} from "../src/index.js";
+import { migrations } from "../src/migrations.js";
 import {
   closedPortUrl,
   drain,
@@ -34,7 +42,123 @@ describe("migrate", () => {
     const { rows } = await ctx.pool.query(
       `SELECT count(*)::int AS n FROM "${ctx.schema}".schema_migrations`,
     );
-    expect(rows[0].n).toBe(1);
+    expect(rows[0].n).toBe(migrations.length);
+  });
+
+  async function schemaState(schema: string) {
+    const versions = await ctx.pool.query(
+      `SELECT version FROM "${schema}".schema_migrations ORDER BY version`,
+    );
+    const index = await ctx.pool.query(
+      `SELECT indexdef FROM pg_indexes
+       WHERE schemaname = $1 AND indexname = 'messages_created_idx'`,
+      [schema],
+    );
+    return {
+      versions: versions.rows.map((r) => r.version),
+      index: index.rows[0]?.indexdef,
+    };
+  }
+
+  it("creates the messages (created_at) index on a fresh schema", async () => {
+    const schema = `${ctx.schema}_fresh`;
+    try {
+      await ctx.create({ schema }).migrate();
+      const state = await schemaState(schema);
+      expect(state.versions).toEqual([1, 2]);
+      expect(state.index).toMatch(/\(created_at\)/);
+    } finally {
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+
+  it("upgrades a schema created by the 0.2 migrations in place", async () => {
+    const schema = `${ctx.schema}_old`;
+    try {
+      // What migrate() left behind before migration 2 existed.
+      await ctx.pool.query(`CREATE SCHEMA "${schema}"`);
+      await ctx.pool.query(
+        `CREATE TABLE "${schema}".schema_migrations (
+           version integer PRIMARY KEY,
+           applied_at timestamptz NOT NULL DEFAULT now()
+         )`,
+      );
+      await ctx.pool.query(
+        (migrations[0] as { sql: string }).sql.replaceAll(
+          "{{schema}}",
+          `"${schema}"`,
+        ),
+      );
+      await ctx.pool.query(
+        `INSERT INTO "${schema}".schema_migrations (version) VALUES (1)`,
+      );
+
+      const hw = ctx.create({ schema });
+      await hw.migrate();
+      const state = await schemaState(schema);
+      expect(state.versions).toEqual([1, 2]);
+      expect(state.index).toMatch(/\(created_at\)/);
+      // The upgraded schema works.
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      await drain(hw);
+      expect(receiver.requests).toHaveLength(1);
+    } finally {
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+
+  async function createdAtIndexes(schema: string): Promise<string[]> {
+    const { rows } = await ctx.pool.query(
+      `SELECT indexname FROM pg_indexes
+       WHERE schemaname = $1 AND tablename = 'messages'
+         AND indexdef LIKE '%(created_at)'
+       ORDER BY indexname`,
+      [schema],
+    );
+    return rows.map((r) => r.indexname);
+  }
+
+  it("skips the index if one on created_at was already built by hand", async () => {
+    const schema = `${ctx.schema}_byhand`;
+    try {
+      const hw = ctx.create({ schema });
+      await hw.migrate();
+      // A 0.2 user who followed the old advice, with Postgres's default name.
+      await ctx.pool.query(
+        `DROP INDEX "${schema}".messages_created_idx;
+         DELETE FROM "${schema}".schema_migrations WHERE version = 2;
+         CREATE INDEX ON "${schema}".messages (created_at);`,
+      );
+      await hw.migrate();
+      expect((await schemaState(schema)).versions).toEqual([1, 2]);
+      expect(await createdAtIndexes(schema)).toEqual([
+        "messages_created_at_idx",
+      ]);
+    } finally {
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+
+  it("replaces an invalid index left by a failed concurrent build", async () => {
+    const schema = `${ctx.schema}_invalid`;
+    try {
+      const hw = ctx.create({ schema });
+      await hw.migrate();
+      await ctx.pool.query(
+        `DELETE FROM "${schema}".schema_migrations WHERE version = 2;
+         UPDATE pg_index SET indisvalid = false
+         WHERE indexrelid = '"${schema}".messages_created_idx'::regclass;`,
+      );
+      await hw.migrate();
+      const { rows } = await ctx.pool.query(
+        `SELECT indisvalid FROM pg_index
+         WHERE indexrelid = '"${schema}".messages_created_idx'::regclass`,
+      );
+      expect(rows).toEqual([{ indisvalid: true }]);
+    } finally {
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
   });
 
   it("rejects unsafe schema names", () => {
@@ -686,6 +810,11 @@ describe("configuration and edge cases", () => {
     expect(() =>
       ctx.create({ requestTimeoutMs: 10_000, lockTimeoutMs: 5_000 }),
     ).toThrow(/lockTimeoutMs/);
+    const tiny = new pg.Pool({ max: 1 });
+    expect(() => new Hookgres({ pool: tiny, notify: true })).toThrow(
+      /max of at least 2/,
+    );
+    expect(() => new Hookgres({ pool: tiny })).not.toThrow();
   });
 
   it("returns null or false for unknown ids", async () => {
@@ -965,5 +1094,374 @@ describe("wildcard event types", () => {
     await expect(
       hw.send({ tenantId: "acme", eventType: "invoice.*", payload: {} }),
     ).rejects.toThrow(/only allowed in an endpoint/);
+  });
+});
+
+describe("LISTEN/NOTIFY wake-up", () => {
+  const channel = () => `${ctx.schema}_wake`;
+  const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /** Backend pids of Hookgres listener connections for this schema. */
+  async function listenerPids(): Promise<number[]> {
+    const { rows } = await ctx.pool.query(
+      "SELECT pid FROM pg_stat_activity WHERE query = $1",
+      [`LISTEN "${channel()}"`],
+    );
+    return rows.map((r) => r.pid);
+  }
+
+  /** A raw connection that records notifications on the channel. */
+  async function rawListener() {
+    const client = new pg.Client({ connectionString: inject("databaseUrl") });
+    await client.connect();
+    const received: string[] = [];
+    client.on("notification", (n) => received.push(n.channel));
+    await client.query(`listen ${channel()}`);
+    return { received, end: () => client.end() };
+  }
+
+  /** A worker that only wakes on NOTIFY (or after a minute). */
+  async function startWorker(
+    options: Parameters<typeof ctx.create>[0] = {},
+  ): Promise<Hookgres> {
+    const worker = ctx.create({
+      notify: true,
+      pollIntervalMs: 60_000,
+      ...options,
+    });
+    worker.start();
+    await waitFor(async () => (await listenerPids()).length === 1);
+    // Let the catch-up pass that follows LISTEN finish.
+    await sleepMs(200);
+    return worker;
+  }
+
+  it("delivers a send from another process without waiting for the poll", async () => {
+    await startWorker();
+    // A separate instance, like a web process: its send() can't wake the
+    // worker in-process.
+    const sender = ctx.create({ notify: true });
+    await sender.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await sender.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await waitFor(() => receiver.requests.length === 1, 2000);
+  });
+
+  it("does not wake other processes when notify is off on the sender", async () => {
+    await startWorker();
+    const sender = ctx.create();
+    await sender.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await sender.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await sleepMs(500);
+    expect(receiver.requests).toHaveLength(0);
+  });
+
+  it("notifies on commit only, and never for a rolled-back send", async () => {
+    const listener = await rawListener();
+    try {
+      const hw = ctx.create({ notify: true });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      const client = await ctx.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await hw.send(
+          { tenantId: "acme", eventType: "e", payload: {} },
+          { client },
+        );
+        await client.query("ROLLBACK");
+        await sleepMs(200);
+        expect(listener.received).toEqual([]);
+
+        await client.query("BEGIN");
+        await hw.send(
+          { tenantId: "acme", eventType: "e", payload: {} },
+          { client },
+        );
+        await sleepMs(200);
+        expect(listener.received).toEqual([]);
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
+      await waitFor(() => listener.received.length === 1, 2000);
+      expect(listener.received).toEqual([channel()]);
+    } finally {
+      await listener.end();
+    }
+  });
+
+  it("notifies only when a delivery was queued, and on replay", async () => {
+    const listener = await rawListener();
+    try {
+      const hw = ctx.create({ notify: true });
+      await hw.send({ tenantId: "nobody", eventType: "e", payload: {} });
+      const plain = ctx.create();
+      await plain.createEndpoint({ tenantId: "acme", url: receiver.url });
+      const { message } = await plain.send({
+        tenantId: "acme",
+        eventType: "e",
+        payload: {},
+      });
+      await sleepMs(200);
+      expect(listener.received).toEqual([]);
+
+      await drain(plain);
+      const [delivery] = await plain.listDeliveries({ messageId: message.id });
+      expect(await hw.replayDelivery(delivery?.id ?? "")).toMatchObject({
+        status: "pending",
+      });
+      await waitFor(() => listener.received.length === 1, 2000);
+    } finally {
+      await listener.end();
+    }
+  });
+
+  it("releases the listener connection on stop()", async () => {
+    const worker = await startWorker();
+    const before = ctx.pool.totalCount;
+    await worker.stop();
+    await waitFor(async () => (await listenerPids()).length === 0);
+    expect(ctx.pool.totalCount).toBe(before - 1);
+    // start() again listens again.
+    worker.start();
+    await waitFor(async () => (await listenerPids()).length === 1);
+  });
+
+  it("reconnects after the listener connection is killed, and keeps delivering", async () => {
+    const errors: unknown[] = [];
+    const worker = await startWorker({
+      pollIntervalMs: 200,
+      onError: (error) => errors.push(error),
+    });
+    const [pid] = await listenerPids();
+    await ctx.pool.query("SELECT pg_terminate_backend($1)", [pid]);
+
+    // Polling still delivers while the listener is down.
+    await worker.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const sender = ctx.create({ notify: true });
+    await sender.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await waitFor(() => receiver.requests.length === 1, 2000);
+
+    await waitFor(async () => {
+      const pids = await listenerPids();
+      return pids.length === 1 && pids[0] !== pid;
+    });
+    expect(String((errors[0] as Error).message)).toMatch(
+      /LISTEN connection lost/,
+    );
+    await worker.stop();
+    await waitFor(async () => (await listenerPids()).length === 0);
+
+    // The new connection wakes a worker with a long poll interval.
+    await startWorker();
+    await sender.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await waitFor(() => receiver.requests.length === 2, 2000);
+  });
+
+  it("truncates the channel name to 63 bytes for long schema names", async () => {
+    const schema = `s${"x".repeat(62)}`;
+    const hw = ctx.create({ schema, notify: true });
+    const client = await ctx.pool.connect();
+    try {
+      await hw.migrate();
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      hw.start();
+      await waitFor(async () => {
+        const { rows } = await client.query(
+          "SELECT 1 FROM pg_stat_activity WHERE query = $1",
+          [`LISTEN "${`${schema}_wake`.slice(0, 63)}"`],
+        );
+        return rows.length === 1;
+      });
+      await hw.stop();
+    } finally {
+      client.release();
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+});
+
+describe("delivery hooks", () => {
+  function recorder() {
+    const attempts: AttemptEvent[] = [];
+    const disabled: EndpointDisabledEvent[] = [];
+    return {
+      attempts,
+      disabled,
+      onAttempt: (event: AttemptEvent) => {
+        attempts.push(event);
+      },
+      onEndpointDisabled: (event: EndpointDisabledEvent) => {
+        disabled.push(event);
+      },
+    };
+  }
+
+  it("reports a successful attempt", async () => {
+    const rec = recorder();
+    const hw = ctx.create(rec);
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "invoice.paid",
+      payload: {},
+    });
+    await drain(hw);
+
+    const [delivery] = await hw.listDeliveries({ messageId: message.id });
+    expect(rec.attempts).toEqual([
+      {
+        deliveryId: delivery?.id,
+        messageId: message.id,
+        endpointId: ep.id,
+        tenantId: "acme",
+        eventType: "invoice.paid",
+        attemptNumber: 1,
+        outcome: "succeeded",
+        statusCode: 200,
+        error: null,
+        durationMs: expect.any(Number),
+        nextAttemptAt: null,
+      },
+    ]);
+    expect(rec.disabled).toEqual([]);
+  });
+
+  it("reports retrying with the next attempt time, then failed", async () => {
+    const rec = recorder();
+    const hw = ctx.create({ ...rec, retrySchedule: [0] });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 503;
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    await drain(hw);
+
+    const [delivery] = await hw.listDeliveries({ messageId: message.id });
+    expect(rec.attempts.map((a) => [a.attemptNumber, a.outcome])).toEqual([
+      [1, "retrying"],
+      [2, "failed"],
+    ]);
+    const [first, last] = rec.attempts as [AttemptEvent, AttemptEvent];
+    expect(first).toMatchObject({ statusCode: 503, error: "HTTP 503" });
+    expect(first.nextAttemptAt).toBeInstanceOf(Date);
+    expect(last.nextAttemptAt).toBeNull();
+    expect(delivery?.status).toBe("failed");
+  });
+
+  it("reports network errors with a null status code", async () => {
+    const rec = recorder();
+    const hw = ctx.create({ ...rec, retrySchedule: [] });
+    await hw.createEndpoint({ tenantId: "acme", url: await closedPortUrl() });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await drain(hw);
+    expect(rec.attempts).toHaveLength(1);
+    expect(rec.attempts[0]).toMatchObject({
+      outcome: "failed",
+      statusCode: null,
+      error: expect.stringMatching(/ECONNREFUSED/),
+    });
+  });
+
+  it("reports an endpoint disabled automatically, once", async () => {
+    const rec = recorder();
+    const hw = ctx.create({
+      ...rec,
+      retrySchedule: [0],
+      disableEndpointAfterMs: 0,
+    });
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await drain(hw);
+
+    expect(rec.disabled).toEqual([
+      {
+        endpointId: ep.id,
+        tenantId: "acme",
+        reason: expect.stringMatching(/^Disabled automatically/),
+      },
+    ]);
+    expect((await hw.getEndpoint(ep.id))?.disabled).toBe(true);
+  });
+
+  it("does not report results discarded from a stale worker", async () => {
+    const rec = recorder();
+    const hw = ctx.create(rec);
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = async () => {
+      // Another worker takes over the claim while this request is in flight.
+      await ctx.pool.query(
+        `UPDATE "${ctx.schema}".deliveries SET lock_token = gen_random_uuid()`,
+      );
+      return 200;
+    };
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await hw.runOnce();
+    expect(receiver.requests).toHaveLength(1);
+    expect(rec.attempts).toEqual([]);
+  });
+
+  it("keeps delivering when a hook throws or rejects, and emits a warning", async () => {
+    const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    try {
+      const hw = ctx.create({
+        retrySchedule: [],
+        disableEndpointAfterMs: 0,
+        onAttempt: () => {
+          throw new Error("metrics down");
+        },
+        onEndpointDisabled: async () => {
+          throw new Error("pager down");
+        },
+      });
+      const ok = await hw.createEndpoint({ tenantId: "a", url: receiver.url });
+      await hw.createEndpoint({ tenantId: "b", url: await closedPortUrl() });
+      await hw.send({ tenantId: "a", eventType: "e", payload: {} });
+      await hw.send({ tenantId: "b", eventType: "e", payload: {} });
+      await drain(hw);
+
+      expect(receiver.requests).toHaveLength(1);
+      const [delivery] = await hw.listDeliveries({ endpointId: ok.id });
+      expect(delivery?.status).toBe("succeeded");
+      await waitFor(() => warn.mock.calls.length === 3);
+      const messages = warn.mock.calls.map((c) => String(c[0])).sort();
+      expect(messages).toEqual([
+        "Hookgres onAttempt hook threw: metrics down",
+        "Hookgres onAttempt hook threw: metrics down",
+        "Hookgres onEndpointDisabled hook threw: pager down",
+      ]);
+      for (const call of warn.mock.calls) {
+        expect(call[1]).toEqual({ code: "HOOKGRES_HOOK_ERROR" });
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("handles unprintable errors and non-native rejected thenables", async () => {
+    const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    try {
+      const hw = ctx.create({
+        onAttempt: () =>
+          ({
+            // biome-ignore lint/suspicious/noThenProperty: a custom thenable
+            then: (_: unknown, reject: (e: unknown) => void) =>
+              reject(Object.create(null)),
+          }) as unknown as undefined,
+      });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      await drain(hw);
+      expect(receiver.requests).toHaveLength(1);
+      await waitFor(() => warn.mock.calls.length === 1);
+      expect(String(warn.mock.calls[0]?.[0])).toBe(
+        "Hookgres onAttempt hook threw: unprintable error",
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
