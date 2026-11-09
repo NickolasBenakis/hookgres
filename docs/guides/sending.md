@@ -19,7 +19,8 @@ single statement, then returns:
 | `deduplicated`  | `true` if the idempotency key was used before and nothing new was queued. |
 
 An endpoint matches when it belongs to the same `tenantId`, is enabled, and
-either subscribes to `eventType` or to every event (`eventTypes: null`). If no
+either subscribes to `eventType`, to a wildcard that covers it (like
+`invoice.*`), or to every event (`eventTypes: null`). If no
 endpoint matches, the message is still stored and `deliveryCount` is `0`.
 Endpoints created later don't receive earlier messages.
 
@@ -83,9 +84,11 @@ become usable again.
 
 ## Event types
 
-Event types are free-form strings. A `resource.action` style such as
-`invoice.paid` is the usual convention. Endpoints list the exact types they
-want, or `null` for all of them. Wildcards like `invoice.*` aren't supported.
+Event types are free-form strings, except that they can't contain `*`. A
+`resource.action` style such as `invoice.paid` is the usual convention.
+Endpoints list the types they want, or `null` for all of them. An entry like
+`invoice.*` matches every event type under `invoice.`. See
+[Endpoints](/guides/endpoints#create).
 
 ## Payloads
 

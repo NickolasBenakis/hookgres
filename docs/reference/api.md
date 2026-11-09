@@ -36,14 +36,14 @@ concurrently, because it holds an advisory lock while it runs.
 
 ### `createEndpoint(input): Promise<Endpoint>`
 
-| Field         | Type                      | Notes                                                               |
-| ------------- | ------------------------- | ------------------------------------------------------------------- |
-| `tenantId`    | `string`                  | Required.                                                           |
-| `url`         | `string`                  | Required. `http:` or `https:`.                                      |
-| `description` | `string`                  | Optional.                                                           |
-| `eventTypes`  | `string[] \| null`        | Omit or `null` for every event. Can't be empty.                     |
-| `secret`      | `string`                  | Optional `whsec_...` secret with 24–64 bytes. Generated if omitted. |
-| `metadata`    | `Record<string, unknown>` | Optional. Defaults to `{}`.                                         |
+| Field         | Type                      | Notes                                                                                              |
+| ------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
+| `tenantId`    | `string`                  | Required.                                                                                          |
+| `url`         | `string`                  | Required. `http:` or `https:`.                                                                     |
+| `description` | `string`                  | Optional.                                                                                          |
+| `eventTypes`  | `string[] \| null`        | Omit or `null` for every event. Can't be empty. `"invoice.*"` matches every type under `invoice.`. |
+| `secret`      | `string`                  | Optional `whsec_...` secret with 24–64 bytes. Generated if omitted.                                |
+| `metadata`    | `Record<string, unknown>` | Optional. Defaults to `{}`.                                                                        |
 
 ### `getEndpoint(id): Promise<Endpoint | null>`
 
@@ -76,7 +76,7 @@ signing for `options.graceMs`, which defaults to `secretRotationGraceMs`
 | Field            | Type      | Notes                                  |
 | ---------------- | --------- | -------------------------------------- |
 | `tenantId`       | `string`  | Required.                              |
-| `eventType`      | `string`  | Required.                              |
+| `eventType`      | `string`  | Required. Can't contain `*`.           |
 | `payload`        | `unknown` | Required. Any JSON-serialisable value. |
 | `idempotencyKey` | `string`  | Optional. Unique per tenant.           |
 
@@ -85,6 +85,16 @@ your transaction. Returns `{ message, deliveryCount, deduplicated }`. See
 [Sending webhooks](/guides/sending).
 
 ### `getMessage(id): Promise<Message | null>`
+
+### `cleanup(options): Promise<number>`
+
+Deletes messages created before `options.olderThan` whose deliveries are all
+finished, together with their deliveries and attempts. Messages with a
+`pending` or `delivering` delivery are kept. `olderThan` is a `Date` or a
+number of milliseconds ago. `options.batchSize` (default 1000) is how many
+messages each `DELETE` removes; it repeats until none are left. Returns the
+number of messages deleted. See
+[Clean up old rows](/guides/production#clean-up-old-rows).
 
 ## Deliveries
 

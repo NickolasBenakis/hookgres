@@ -5,6 +5,7 @@ const hookgres = new Hookgres({
   pool, // or connectionString
   schema: "hookgres",
   retrySchedule: DEFAULT_RETRY_SCHEDULE,
+  retryJitter: 0.1,
   requestTimeoutMs: 15_000,
   disableEndpointAfterMs: 5 * 24 * 60 * 60 * 1000,
   concurrency: 10,
@@ -24,6 +25,7 @@ const hookgres = new Hookgres({
 | `connectionString`       | —                             | Used to create a pool when `pool` isn't given. `close()` ends it.                                                                                                                                                 |
 | `schema`                 | `"hookgres"`                  | Postgres schema for the tables. Lowercase letters, digits and underscores, not starting with a digit, up to 63 characters.                                                                                        |
 | `retrySchedule`          | 5s, 5m, 30m, 2h, 5h, 10h, 10h | Waits between attempts, in milliseconds. Attempts = length + 1.                                                                                                                                                   |
+| `retryJitter`            | `0.1`                         | Spreads each wait randomly by up to this fraction: `0.1` turns 60s into 54s to 66s. `0` turns it off. Between 0 and 1.                                                                                            |
 | `requestTimeoutMs`       | `15000`                       | How long to wait for a response before the attempt counts as failed.                                                                                                                                              |
 | `disableEndpointAfterMs` | 5 days                        | Disable an endpoint after it has failed this long with no success. `null` never disables.                                                                                                                         |
 | `concurrency`            | `10`                          | Deliveries each worker claims and sends at once. Also the batch size of `runOnce()`.                                                                                                                              |
@@ -37,7 +39,7 @@ const hookgres = new Hookgres({
 
 The constructor throws if neither `pool` nor `connectionString` is given, if
 `schema` is invalid, if `retrySchedule` contains a negative or non-finite
-number, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
+number, if `retryJitter` isn't between 0 and 1, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
 `blockPrivateAddresses.allow` entry isn't an IP address or CIDR.
 
 With `blockPrivateAddresses` on, it emits a process warning (once per

@@ -142,18 +142,23 @@ No long-running process? Drain the queue from a cron job with
 - **Standard Webhooks signatures.** Receivers verify with `verifyWebhook` or
   any Standard Webhooks library.
 - **Transactional outbox.** `send(input, { client })` joins your transaction.
-- **Durable retries.** 8 attempts over about 28 hours by default. Workers claim
+- **Durable retries.** 8 attempts over about 28 hours by default, with jitter
+  so failed deliveries don't all retry at once. Workers claim
   deliveries with `FOR UPDATE SKIP LOCKED`, so you can run as many as you like
   without sending a delivery twice.
 - **Endpoint health.** An endpoint that fails for 5 days straight is disabled.
   One call re-enables it.
 - **Multi-tenant.** Every endpoint and message belongs to a `tenantId`, and an
   event only goes to that tenant's endpoints.
+- **Event type filters.** Endpoints subscribe to exact types like
+  `invoice.paid` or wildcards like `invoice.*`.
 - **Delivery log and replay.** Status code, response body, error and timing for
   every attempt, in tables you can query. `replayDelivery(id)` sends it again.
 - **Secret rotation.** After `rotateEndpointSecret`, the old secret keeps
   signing for a grace period, 24 hours by default.
 - **Idempotency keys.** Sending twice with the same key creates one message.
+- **Cleanup.** `cleanup({ olderThan })` deletes old, finished messages in
+  batches.
 
 ## Delivery semantics
 

@@ -167,22 +167,24 @@ WHERE disabled AND updated_at > now() - interval '1 day';
 ## Clean up old rows
 
 Hookgres keeps every message, delivery and attempt until you delete them. Pick
-a retention period and run a cleanup job, for example daily. Deleting a
-message also deletes its deliveries and attempts. This query skips messages
-that still have deliveries in progress:
+a retention period and run `cleanup()` from a scheduled job, for example
+daily:
 
-```sql
-DELETE FROM hookgres.messages m
-WHERE m.created_at < now() - interval '30 days'
-  AND NOT EXISTS (
-    SELECT 1 FROM hookgres.deliveries d
-    WHERE d.message_id = m.id AND d.status IN ('pending', 'delivering')
-  );
+```ts
+const deleted = await hookgres.cleanup({
+  olderThan: 30 * 24 * 60 * 60 * 1000, // 30 days in ms, or a Date
+  batchSize: 1000, // optional, the default
+});
 ```
 
-On large tables, delete in batches (for example `AND m.id IN (SELECT id ...
-LIMIT 10000)` in a loop) to keep transactions short. Remember that deleting a
-message frees its idempotency key.
+It deletes messages older than the cutoff together with their deliveries and
+attempts. Messages that still have a `pending` or `delivering` delivery are
+kept until they finish. It deletes in batches, one short transaction each,
+until nothing is left, and returns how many messages it deleted. Running it
+from several processes at once is safe.
+
+Deleting a message frees its idempotency key. On very large tables, an index
+on `messages (created_at)` makes each batch faster.
 
 ## Database load
 
