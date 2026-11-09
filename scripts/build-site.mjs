@@ -14,9 +14,16 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
+import {
+  checkInstructionLinks,
+  docsPages,
+  llmsTxt,
+  pageTitle,
+  root,
+  site,
+} from "./agent-docs.mjs";
 
-const root = resolve(import.meta.dirname, "..");
 const out = join(root, ".site-dist");
 
 rmSync(out, { recursive: true, force: true });
@@ -52,34 +59,10 @@ if (existsSync(robots) && !readFileSync(robots, "utf8").includes(docsSitemap)) {
 }
 // Raw markdown for AI agents: every page at /docs/<page>.md, an index at
 // /llms.txt (https://llmstxt.org) and everything in one file at /llms-full.txt.
+// The llms.txt instructions come from AGENTS.md (see scripts/agent-docs.mjs).
 const docsDir = join(root, "docs");
-const pages = readdirSync(docsDir, { recursive: true })
-  .map((file) => file.split("\\").join("/"))
-  .filter(
-    (file) =>
-      file.endsWith(".md") &&
-      !file.startsWith(".vitepress/") &&
-      !file.startsWith("public/"),
-  )
-  .sort((a, b) => order(a) - order(b) || a.localeCompare(b));
-function order(file) {
-  if (file === "index.md") return 0;
-  if (file === "getting-started.md") return 1;
-  if (file === "playground.md") return 2;
-  if (file.startsWith("guides/")) return 3;
-  if (file.startsWith("reference/")) return 4;
-  return 5;
-}
-const site = "https://hookgres.dev";
-const index = [
-  "# Hookgres",
-  "",
-  "> Hookgres is an MIT-licensed TypeScript library for sending signed webhooks to your customers from the Postgres you already run. `send()` can join your database transaction, so a webhook is queued only if your data commits. It has Standard Webhooks signatures, durable retries, endpoint health, secret rotation, replay and a delivery log. Install with `npm install hookgres pg`. Requires Node.js 22.12+ and Postgres 14+.",
-  "",
-  ...agentInstructions(),
-  "## Docs",
-  "",
-];
+const pages = docsPages();
+const index = [];
 const full = [];
 for (const file of pages) {
   // Docs link to /guides/... relative to the VitePress base; make them absolute.
@@ -101,28 +84,11 @@ for (const file of pages) {
   const target = join(out, "docs", file === "index.md" ? "index.md" : file);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, markdown);
-  const title = markdown.match(/^#\s+(.+)$/m)?.[1] ?? file;
-  index.push(`- [${title}](${site}/docs/${file})`);
+  index.push({ file, title: pageTitle(markdown, file) });
   full.push(`<!-- ${site}/docs/${file} -->\n\n${markdown.trim()}\n`);
 }
-const agentLinks = agentInstructions()
-  .join("\n")
-  .matchAll(/hookgres\.dev\/docs\/([\w/-]+\.md)/g);
-for (const [, file] of agentLinks) {
-  if (!pages.includes(file)) {
-    throw new Error(`llms.txt instructions link to missing docs/${file}`);
-  }
-}
-index.push(
-  "",
-  "## Optional",
-  "",
-  `- [Full documentation in one file](${site}/llms-full.txt)`,
-  `- [Agent skill (SKILL.md)](${site}/SKILL.md)`,
-  "- [Source code](https://github.com/NickolasBenakis/hookgres)",
-  "",
-);
-writeFileSync(join(out, "llms.txt"), index.join("\n"));
+checkInstructionLinks(pages);
+writeFileSync(join(out, "llms.txt"), llmsTxt(index));
 // The agent skill (also the Claude Code plugin in skills/hookgres) at /SKILL.md.
 cpSync(join(root, "skills/hookgres/SKILL.md"), join(out, "SKILL.md"));
 writeFileSync(join(out, "llms-full.txt"), full.join("\n---\n\n"));
@@ -138,26 +104,6 @@ writeFileSync(join(out, "search-index.json"), searchIndex);
 console.log(
   `Site built in ${out} (search-index.json ${(searchIndex.length / 1024).toFixed(1)} KB)`,
 );
-
-// Numbered steps for an agent asked to "add Hookgres webhooks to this app".
-// The landing page's one-line prompt points here, so keep it short and exact.
-function agentInstructions() {
-  const doc = (file) => `${site}/docs/${file}`;
-  return [
-    "## Instructions for AI agents",
-    "",
-    "To add Hookgres webhooks to an existing app:",
-    "",
-    '1. Install `hookgres` and `pg` (`npm install hookgres pg`). Create one instance from the app\'s existing pool: `const hookgres = new Hookgres({ pool })`, with `import { Hookgres } from "hookgres"`.',
-    "2. Call `await hookgres.migrate()` on startup. It is idempotent and takes an advisory lock. If the app's database role can't `CREATE`, run it from a deploy step instead.",
-    `3. Start the worker in a long-running process with \`hookgres.start()\`. On \`SIGTERM\`, \`await hookgres.stop()\` before \`pool.end()\` so in-flight requests finish. On serverless, call \`await hookgres.runOnce()\` from a cron route and never \`start()\`. See ${doc("guides/workers.md")}.`,
-    `4. Call \`hookgres.send({ tenantId, eventType, payload }, { client })\` inside the database transaction that makes the change, passing that transaction's client, so the webhook is queued only if it commits. Add \`idempotencyKey\` when a send can repeat. See ${doc("guides/sending.md")}. If the app uses Drizzle, Prisma or Kysely, follow ${doc("guides/drizzle.md")}, ${doc("guides/prisma.md")} or ${doc("guides/kysely.md")}.`,
-    `5. Add endpoint management routes scoped to the signed-in tenant: \`createEndpoint({ tenantId, url, eventTypes })\` (return \`endpoint.secret\` once), \`listEndpoints(tenantId)\`, \`updateEndpoint(id, patch)\`, \`deleteEndpoint(id)\` and \`rotateEndpointSecret(id)\`. Take \`tenantId\` from the session, never the request body, and before updating, deleting or rotating by id, load it with \`getEndpoint(id)\` and check that \`endpoint.tenantId\` matches. See ${doc("guides/endpoints.md")}.`,
-    `6. Pass \`blockPrivateAddresses: true\` to \`new Hookgres({ pool, blockPrivateAddresses: true })\`, so customer endpoint URLs can't reach private or internal addresses. Hookgres checks them when an endpoint is created and again after DNS on every delivery. See ${doc("guides/production.md")}.`,
-    `7. Pass \`onError\` to the app's logger. Receivers verify with \`verifyWebhook({ secret, headers, body })\` on the raw body and deduplicate on \`webhook-id\`. See ${doc("guides/verifying.md")} and ${doc("reference/api.md")}.`,
-    "",
-  ];
-}
 
 // One entry per page and per h2/h3, for site/search.js. Anchor ids come from
 // the built VitePress HTML, so they always match what the docs actually serve.

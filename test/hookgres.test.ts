@@ -172,6 +172,17 @@ describe("migrate", () => {
       /Invalid schema name/,
     );
   });
+
+  it("says to call migrate() when the tables don't exist", async () => {
+    const hw = ctx.create({ schema: `${ctx.schema}_unmigrated` });
+    const missing = /does not exist\. .*call `await hookgres\.migrate\(\)`/;
+    await expect(hw.listEndpoints("acme")).rejects.toThrow(missing);
+    await expect(
+      hw.send({ tenantId: "acme", eventType: "e", payload: {} }),
+    ).rejects.toThrow(missing);
+    // Still Postgres's error, with its code, so existing handling keeps working.
+    await expect(hw.runOnce()).rejects.toMatchObject({ code: "42P01" });
+  });
 });
 
 describe("endpoints", () => {

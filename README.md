@@ -70,6 +70,10 @@ In Claude Code, you can install the Hookgres skill instead:
 /plugin install hookgres@hookgres
 ```
 
+The package also ships `AGENTS.md` and `llms.txt`
+(in `node_modules/hookgres/`) with integration steps, and every function and
+method has JSDoc with an example.
+
 ## Quick start
 
 ```ts

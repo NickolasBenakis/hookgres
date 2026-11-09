@@ -44,6 +44,16 @@ for (const cidr of [
  * embed an IPv4 address (`::ffff:127.0.0.1`, NAT64, 6to4) are judged by that
  * IPv4 address. Accepts bracketed IPv6 (`[::1]`, as in `URL#hostname`) and
  * zone ids. Returns `false` for strings that aren't IP addresses.
+ *
+ * Applies the same rules as `blockPrivateAddresses`; use it to check
+ * addresses in your own `fetch` or proxy.
+ *
+ * @example
+ * isPrivateAddress("10.0.0.1"); // true
+ * isPrivateAddress("::ffff:127.0.0.1"); // true
+ * isPrivateAddress("8.8.8.8"); // false
+ *
+ * @see https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf
  */
 export function isPrivateAddress(address: string): boolean {
   const ip = normalise(address);
@@ -72,6 +82,10 @@ function isBadPort(url: URL): boolean {
   return url.port !== "" && BAD_PORTS.has(Number(url.port));
 }
 
+/**
+ * `true` blocks every private address; `{ allow: [...] }` blocks all except
+ * the listed IPs and CIDRs, e.g. `{ allow: ["10.1.2.0/24", "fd00::5"] }`.
+ */
 export type BlockPrivateAddressesOption = boolean | { allow: string[] };
 
 export class AddressGuard {
@@ -83,7 +97,9 @@ export class AddressGuard {
   constructor(option: BlockPrivateAddressesOption) {
     if (typeof option !== "object") return;
     if (!Array.isArray(option.allow)) {
-      throw new Error("blockPrivateAddresses.allow must be an array");
+      throw new Error(
+        'blockPrivateAddresses.allow must be an array of IPs or CIDRs, e.g. { allow: ["10.1.2.0/24"] }. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf',
+      );
     }
     for (const entry of option.allow) {
       if (
@@ -119,12 +135,12 @@ export class AddressGuard {
       this.isBlocked(host)
     ) {
       throw new Error(
-        `Endpoint URL points to a private address: ${url.href} (blockPrivateAddresses is on)`,
+        `Endpoint URL points to a private address: ${url.href} (blockPrivateAddresses is on). Use a public URL; to allow specific internal IPs, pass blockPrivateAddresses: { allow: ["10.1.2.0/24"] }, and leave it off in local development. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf`,
       );
     }
     if (isBadPort(url)) {
       throw new Error(
-        `Endpoint URL uses a blocked port: ${url.href} (blockPrivateAddresses is on)`,
+        `Endpoint URL uses a blocked port: ${url.href} (blockPrivateAddresses is on). Use a standard web port like 443. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf`,
       );
     }
   }
