@@ -1,9 +1,14 @@
-# What is Hookgres?
+# Hookgres docs
 
-Hookgres is a TypeScript library for **sending webhooks to your customers**
-from the Postgres database you already run. It gives you what hosted services
-like Svix or Hookdeck give you on the sending side, as a dependency instead of
-a vendor:
+Signed, retried, logged webhooks to your customers, from the Postgres you
+already run. A TypeScript library, not another service.
+
+<DocsHub />
+
+## What you get
+
+Hookgres gives you what hosted services like Svix or Hookdeck give you on the
+sending side, as a dependency instead of a vendor:
 
 - **Signed requests** using the [Standard Webhooks](https://www.standardwebhooks.com)
   spec, so receivers can verify them in any language.
@@ -70,10 +75,3 @@ your database.
   retries mean a later event can arrive before an earlier one.
 - **Block internal URLs for you.** See
   [Going to production](/guides/production#block-internal-addresses-ssrf).
-
-## Next steps
-
-- [Getting started](/getting-started): install, send and verify your first
-  webhook.
-- [Playground](/playground): watch retries, failures and replay in your
-  browser with one command.

@@ -14,7 +14,7 @@
 <meta property="og:image" content="https://hookgres.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Hookgres: webhooks for your customers, from the Postgres you already run.">
+<meta property="og:image:alt" content="Hookgres: webhooks from the Postgres you already run. Shows the npm install command and a send() call inside a database transaction.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Hookgres: Postgres webhooks for TypeScript">
 <meta name="twitter:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
@@ -25,15 +25,6 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<script>
-  // The delivery log in the hero plays its attempts once per session.
-  try {
-    if (!sessionStorage.getItem("hg-intro") && matchMedia("(prefers-reduced-motion: no-preference)").matches) {
-      document.documentElement.classList.add("intro");
-      sessionStorage.setItem("hg-intro", "1");
-    }
-  } catch {}
-</script>
 <style>
   :root {
     --bg: oklch(98.9% 0.002 286);
@@ -57,11 +48,15 @@
     --code-key: oklch(78% 0.1 250);
     --code-str: oklch(82% 0.1 150);
     --shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.06), 0 32px 64px oklch(0% 0 0 / 0.06);
+    /* Small raised surfaces: a ring standing in for the border, plus a tight shadow. */
+    --raised: 0 0 0 1px oklch(0% 0 0 / 0.07), 0 1px 2px oklch(0% 0 0 / 0.05), 0 4px 12px -4px oklch(0% 0 0 / 0.07);
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
     --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
-    --wrap: 1080px;
+    --wrap: 1200px;
+    --gutter: max(24px, env(safe-area-inset-left));
     --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -81,29 +76,33 @@
       --code-bg: oklch(17% 0.006 270);
       --code-line: oklch(27% 0.008 270);
       --shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
+      --raised: 0 0 0 1px oklch(100% 0 0 / 0.1);
     }
   }
 
   *, *::before, *::after { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; scroll-padding-top: 64px; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; scroll-padding-top: 72px; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--ink);
-    font: 17px/1.5 var(--sans);
-    letter-spacing: -0.011em;
+    font: 16px/1.5 var(--sans);
+    letter-spacing: -0.006em;
+    font-synthesis: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
   a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; text-underline-offset: 3px; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+  @media (hover: hover) and (pointer: fine) { a:hover { text-decoration: underline; text-decoration-thickness: from-font; text-underline-offset: 3px; } }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
   ::selection { background: oklch(49% 0.095 248 / 0.22); }
-  code { font-family: var(--mono); font-size: 0.86em; letter-spacing: 0; }
-  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 max(22px, env(safe-area-inset-left)); }
+  code { font-family: var(--mono); font-size: 0.88em; letter-spacing: 0; }
+  button { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); }
+  @media (max-width: 400px) { :root { --gutter: max(16px, env(safe-area-inset-left)); } }
 
-  /* Navigation: content scrolls underneath, so the bar is translucent. */
+  /* Header: content scrolls underneath, so the bar is translucent. */
   .nav {
     position: sticky; top: 0; z-index: 10;
     background: color-mix(in oklch, var(--bg) 78%, transparent);
@@ -111,85 +110,240 @@
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-bottom: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
   }
-  .nav .wrap { display: flex; align-items: center; gap: 28px; height: 52px; }
-  .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-weight: 600; font-size: 17px; letter-spacing: -0.02em; }
+  .nav .wrap { display: flex; align-items: center; gap: 32px; height: 56px; }
+  .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-weight: 600; font-size: 16px; letter-spacing: -0.02em; flex: none; }
   .brand:hover { text-decoration: none; }
   .brand svg { width: 22px; height: 22px; border-radius: 6px; }
-  .nav nav { display: flex; align-items: center; gap: 26px; margin-left: auto; font-size: 13px; }
-  .nav nav a:not(.pill) { color: var(--ink-2); }
-  .nav nav a:not(.pill):hover { color: var(--ink); text-decoration: none; }
+  .nav-links { display: flex; align-items: center; gap: 24px; font-size: 14px; }
+  .nav-links a { color: var(--ink-2); transition: color 150ms var(--ease); }
+  @media (hover: hover) and (pointer: fine) { .nav-links a:hover { color: var(--ink); text-decoration: none; } }
+  .nav-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .search-trigger {
+    display: inline-flex; align-items: center; gap: 8px;
+    width: 220px; height: 32px; padding: 0 6px 0 11px; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--bg-alt); box-shadow: inset 0 0 0 1px var(--line);
+    font: 13px/1 var(--sans); letter-spacing: 0; color: var(--ink-3); text-align: left;
+    transition: box-shadow 150ms var(--ease), color 150ms var(--ease);
+  }
+  .search-trigger svg { width: 15px; height: 15px; flex: none; }
+  .search-trigger .search-label { flex: 1; }
+  .search-trigger kbd {
+    font: 500 11px/1 var(--sans); letter-spacing: 0.02em; color: var(--ink-3);
+    padding: 4px 6px; border-radius: 6px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .search-trigger:active { transform: scale(0.98); }
+  @media (hover: hover) and (pointer: fine) { .search-trigger:hover { color: var(--ink-2); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 22%, transparent); } }
   .pill {
-    display: inline-flex; align-items: center; justify-content: center;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     border-radius: 999px; font-weight: 500; white-space: nowrap;
-    transition: background-color 160ms var(--ease), transform 160ms var(--ease);
+    transition: background-color 150ms var(--ease), transform 150ms var(--ease), box-shadow 150ms var(--ease);
   }
   .pill:hover { text-decoration: none; }
   .pill:active { transform: scale(0.97); }
-  .pill.small { height: 28px; padding: 0 13px; font-size: 13px; background: var(--accent); color: var(--accent-ink); }
-  .pill.small:hover { background: var(--accent-hover); }
-  @media (max-width: 560px) { .nav nav .wide { display: none; } .nav nav { gap: 18px; } .nav .wrap { gap: 16px; } }
-  @media (max-width: 400px) { .nav nav .github { display: none; } }
+  /* Header controls are 32–36px tall; their hit areas extend to 44px. */
+  .search-trigger, .pill.small { position: relative; }
+  .search-trigger::before, .pill.small::before { content: ""; position: absolute; inset: -6px -2px; }
+  .nav-links a { padding-block: 12px; }
+  .pill.small { height: 32px; padding: 0 14px; font-size: 13.5px; background: var(--accent); color: var(--accent-ink); }
+  @media (hover: hover) and (pointer: fine) { .pill.small:hover { background: var(--accent-hover); } }
+  @media (max-width: 860px) { .nav .wrap { gap: 24px; } .search-trigger { width: 180px; } }
+  @media (max-width: 720px) { .nav-links .hide-md { display: none; } }
+  @media (max-width: 640px) {
+    .nav .wrap { gap: 18px; }
+    .search-trigger { width: 36px; height: 36px; padding: 0; justify-content: center; }
+    .search-trigger .search-label, .search-trigger kbd { display: none; }
+    .search-trigger svg { width: 17px; height: 17px; }
+  }
+  @media (max-width: 520px) { .nav-links .hide-sm { display: none; } }
+  @media (max-width: 360px) { .nav-links { display: none; } }
 
-  /* Hero */
-  .hero { text-align: center; padding: clamp(64px, 11vw, 132px) 0 0; }
+  /* Hero: the pitch on the left, the code on the right. */
+  .hero { padding: clamp(36px, 5.5vw, 64px) 0 0; }
+  .hero-grid { display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 1fr); gap: clamp(40px, 4.5vw, 64px); align-items: center; }
+  .eyebrow { margin: 0 0 16px; font-size: 14px; font-weight: 500; color: var(--ink-2); }
+  .eyebrow a { color: inherit; }
   .hero h1 {
     font-family: var(--display);
-    font-size: clamp(44px, 1.6rem + 5.4vw, 88px);
-    line-height: 1.03;
-    letter-spacing: -0.038em;
+    font-size: clamp(38px, 1rem + 2.6vw, 54px);
+    line-height: 1.06;
+    letter-spacing: -0.034em;
     font-weight: 700;
-    margin: 0 auto;
-    max-width: 13ch;
+    margin: 0;
     text-wrap: balance;
   }
-  .hero .lede {
-    font-size: clamp(19px, 1rem + 0.55vw, 23px);
-    line-height: 1.42;
-    letter-spacing: -0.016em;
-    color: var(--ink-2);
-    max-width: 36em;
-    margin: 26px auto 0;
-    text-wrap: pretty;
-  }
-  .hero .actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center; margin-top: 36px; }
-  .pill.large { height: 48px; padding: 0 26px; font-size: 17px; background: var(--accent); color: var(--accent-ink); }
-  .pill.large:hover { background: var(--accent-hover); }
+  .lede { font-size: clamp(17px, 0.95rem + 0.3vw, 19px); line-height: 1.45; letter-spacing: -0.012em; color: var(--ink-2); margin: 16px 0 0; max-width: 34em; text-wrap: pretty; }
+
   .copy {
     font: 500 12.5px/1 var(--sans); letter-spacing: 0;
-    border: 0; border-radius: 999px; padding: 8px 12px; margin-left: 8px; cursor: pointer;
+    border: 0; border-radius: 999px; padding: 8px 12px; cursor: pointer;
     background: transparent; color: var(--ink-2);
-    transition: background-color 160ms var(--ease), color 160ms var(--ease);
-    min-width: 66px;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+    min-width: 62px; position: relative;
   }
+  .copy::before { content: ""; position: absolute; inset: -8px -2px; }
   .copy:active { transform: scale(0.97); }
   .copy[data-copied] { color: var(--ok); }
-  @media (hover: hover) { .copy:hover { background: color-mix(in oklch, var(--ink) 8%, transparent); color: var(--ink); } }
+  @media (hover: hover) and (pointer: fine) { .copy:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); color: var(--ink); } }
+  /* Copy-paste starts: an agent prompt and the npm command. */
+  .start { margin-top: 28px; background: var(--surface); border-radius: 14px; box-shadow: var(--raised); }
+  .start-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 10px 8px 10px 16px; }
+  .start > * + * { border-top: 1px solid var(--line); }
+  .start-tag { font-size: 12px; font-weight: 500; color: var(--ink-3); }
+  .start-cmd { margin: 0; font: 14px/1.5 var(--mono); letter-spacing: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .start-cmd .dim { color: var(--ink-3); -webkit-user-select: none; user-select: none; }
+  .start-note { grid-column: 2 / -1; margin: 2px 0 0; font-size: 12.5px; color: var(--ink-3); }
+  .disclose {
+    font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 3px; position: relative;
+  }
+  .disclose::before { content: ""; position: absolute; inset: -13px -6px; }
+  .disclose .chev { width: 11px; height: 11px; transition: transform 200ms var(--ease-out); }
+  .disclose[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  @media (hover: hover) and (pointer: fine) { .disclose:hover { text-decoration: underline; text-underline-offset: 3px; } }
+  .full-prompt { padding: 14px 16px 14px; }
+  .full-prompt:not([hidden]) { animation: reveal 220ms var(--ease-out); }
+  @keyframes reveal { from { opacity: 0; transform: translateY(-4px); } }
+  .full-prompt p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; }
+  .full-prompt .copy { margin-top: 12px; color: var(--ink); box-shadow: var(--raised); }
+  .full-prompt .copy[data-copied] { color: var(--ok); }
 
-  /* The delivery log: the product, shown. */
-  .stage { margin: clamp(56px, 8vw, 88px) auto 0; max-width: 1000px; }
-  .window {
-    background: var(--surface);
-    border-radius: 18px;
+  /* Icon copy button: the glyph swaps to a check for 1.6s. */
+  .copy-btn {
+    position: relative; display: grid; place-items: center;
+    width: 32px; height: 32px; border: 0; border-radius: 8px; cursor: pointer;
+    background: transparent; color: var(--ink-3);
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+  }
+  .copy-btn::before { content: ""; position: absolute; inset: -6px; }
+  .copy-btn .glyph, .copy-btn .check { grid-area: 1 / 1; width: 16px; height: 16px; transition: opacity 150ms var(--ease), transform 200ms var(--ease-out); }
+  .copy-btn .check { opacity: 0; transform: scale(0.6); color: var(--ok); }
+  .copy-btn[data-copied] .glyph { opacity: 0; transform: scale(0.6); }
+  .copy-btn[data-copied] .check { opacity: 1; transform: scale(1); }
+  .copy-btn:active { transform: scale(0.94); }
+  .copy-btn[data-failed] { color: var(--bad); }
+  @media (hover: hover) and (pointer: fine) { .copy-btn:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); color: var(--ink); } }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 24px; }
+  .pill.large { height: 44px; padding: 0 22px; font-size: 15.5px; background: var(--accent); color: var(--accent-ink); }
+  @media (hover: hover) and (pointer: fine) { .pill.large:hover { background: var(--accent-hover); } }
+  .pill.ghost { height: 44px; padding: 0 20px; font-size: 15.5px; color: var(--ink); background: var(--surface); box-shadow: var(--raised); }
+  @media (hover: hover) and (pointer: fine) { .pill.ghost:hover { background: color-mix(in oklch, var(--ink) 4%, var(--surface)); } }
+
+  /* Code windows */
+  .code {
+    background: var(--code-bg); color: var(--code-ink);
+    border-radius: 14px; overflow: hidden; min-width: 0;
     box-shadow: var(--shadow);
-    overflow: hidden;
-    text-align: left;
   }
-  .window-bar {
-    display: flex; align-items: center; gap: 14px;
-    padding: 14px 20px; border-bottom: 1px solid var(--line);
-    font-size: 13px; color: var(--ink-2);
+  .code .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 8px 0 18px; border-bottom: 1px solid var(--code-line); font-size: 12.5px; color: var(--code-dim); }
+  .code .copy { color: var(--code-dim); }
+  .code .copy:focus-visible, .code .copy-btn:focus-visible, .code .tab:focus-visible { outline-color: var(--code-key); }
+  .code .copy-btn { color: var(--code-dim); }
+  @media (hover: hover) and (pointer: fine) {
+    .code .copy:hover, .code .copy-btn:hover { background: oklch(100% 0 0 / 0.08); color: var(--code-ink); }
   }
+  .code pre { margin: 0; padding: 18px 20px 22px; overflow-x: auto; font: 13px/1.7 var(--mono); letter-spacing: 0; tab-size: 2; }
+  .k { color: var(--code-key); }
+  .s { color: var(--code-str); }
+  .c { color: var(--code-dim); }
+  .tabs { display: flex; gap: 2px; margin-left: -10px; }
+  .tab {
+    border: 0; background: none; cursor: pointer; height: 30px; padding: 0 10px; border-radius: 7px;
+    font: 500 12.5px/1 var(--sans); letter-spacing: 0; color: var(--code-dim);
+    transition: color 150ms var(--ease), background-color 150ms var(--ease);
+  }
+  .tab { position: relative; }
+  .tab::before { content: ""; position: absolute; inset: -7px 0; }
+  .tab[aria-selected="true"] { color: var(--code-ink); background: oklch(100% 0 0 / 0.08); }
+  @media (hover: hover) and (pointer: fine) { .tab:hover { color: var(--code-ink); } }
+  .tab-panel[hidden] { display: none; }
+  /* Both files keep the taller one's height, so switching tabs doesn't shift the page. */
+  .hero-code pre { font-size: 12.5px; line-height: 1.65; padding: 16px 20px 20px; min-height: calc(22lh + 36px); }
+
+  /* What's in the box: six capabilities, one line each. */
+  .caps {
+    list-style: none; margin: clamp(40px, 5vw, 56px) 0 0; padding: 0;
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+  }
+  .caps li { padding: 18px 20px 4px 0; }
+  .caps li + li { padding-left: 20px; border-left: 1px solid var(--line); }
+  .caps h3 { margin: 0; font-size: 14px; line-height: 1.35; font-weight: 600; letter-spacing: -0.01em; }
+  .caps h3 a { color: var(--ink); }
+  .caps p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
+  .caps code { font-size: 0.9em; color: var(--ink); }
+  @media (max-width: 1100px) {
+    .caps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .caps li, .caps li + li { padding: 16px 20px 16px 0; border-left: 0; }
+    .caps li:nth-child(n + 4) { border-top: 1px solid var(--line); }
+    .caps li:not(:nth-child(3n + 1)) { padding-left: 20px; border-left: 1px solid var(--line); }
+  }
+  @media (max-width: 960px) {
+    .hero-grid { grid-template-columns: minmax(0, 1fr); }
+    .hero-copy { max-width: 640px; }
+    .hero-code pre { min-height: 0; }
+  }
+  @media (max-width: 640px) {
+    .caps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .caps li, .caps li + li, .caps li:not(:nth-child(3n + 1)) { padding: 14px 14px 14px 0; border-left: 0; border-top: 0; }
+    .caps li:nth-child(n + 3) { border-top: 1px solid var(--line); }
+    .caps li:nth-child(2n) { padding-left: 14px; border-left: 1px solid var(--line); }
+    .start-row { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 6px 10px 14px; row-gap: 2px; }
+    .start-tag { grid-column: 1 / -1; }
+    .start-note { grid-column: 1 / -1; }
+    .start .copy-btn { grid-row: 2; grid-column: 2; }
+    .start-cmd { font-size: 13.5px; }
+    .full-prompt { padding: 12px 14px; }
+    .eyebrow { margin-bottom: 12px; font-size: 13px; }
+    .start { margin-top: 22px; }
+    .actions { margin-top: 20px; }
+  }
+  @media (max-width: 380px) {
+    .caps { grid-template-columns: minmax(0, 1fr); }
+    .caps li:nth-child(n), .caps li:nth-child(2n) { padding: 14px 0; border-left: 0; border-top: 1px solid var(--line); }
+    .caps li:first-child { border-top: 0; }
+    .actions .pill { flex: 1 1 auto; }
+  }
+
+  /* Sections */
+  section.band { padding: clamp(64px, 8vw, 104px) 0; }
+  section.alt { background: var(--bg-alt); }
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(30px, 1rem + 2vw, 42px);
+    line-height: 1.1; letter-spacing: -0.03em; font-weight: 700;
+    margin: 0; text-wrap: balance;
+  }
+  .kicker { margin: 0 0 10px; font-size: 14px; font-weight: 500; color: var(--accent); }
+  .sub { font-size: 17px; line-height: 1.55; letter-spacing: -0.01em; color: var(--ink-2); margin: 16px 0 0; max-width: 34em; text-wrap: pretty; }
+  .sub code { color: var(--ink); }
+  .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(36px, 6vw, 80px); align-items: center; }
+  .split.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .split.flip > :first-child { order: 2; }
+  @media (max-width: 900px) { .split, .split.flip { grid-template-columns: minmax(0, 1fr); } .split.flip > :first-child { order: 0; } }
+  .head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 20px 40px; }
+  .more { margin: 20px 0 0; font-size: 15.5px; font-weight: 500; }
+  .more a::after { content: " ›"; }
+  .points { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 14px; }
+  ul.points li { padding-left: 18px; position: relative; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
+  ul.points li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: var(--line); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 18%, transparent); }
+  .points b { color: var(--ink); font-weight: 600; }
+  .points code { color: var(--ink); }
+
+  /* Windows (delivery log, simulator) */
+  .window { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; text-align: left; }
+  .window-bar { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
   .dots { display: flex; gap: 7px; }
-  .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+  .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
   .window-bar .title { font-weight: 500; color: var(--ink); }
-  .window-bar .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; letter-spacing: 0; color: var(--ink-3); }
-  .log { padding: 10px 20px 18px; }
-  @media (max-width: 560px) { .window-bar .meta { display: none; } .log { padding: 4px 16px 14px; } .window-bar { padding: 12px 16px; } }
+  .window-bar .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; letter-spacing: 0; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .log { padding: 6px 18px 12px; }
+  @media (max-width: 560px) { .window-bar .meta.log-id { display: none; } .log { padding: 4px 14px 10px; } .window-bar { padding: 12px 14px; } }
   .log-row {
     display: grid;
-    grid-template-columns: minmax(0, 190px) repeat(8, minmax(0, 1fr)) minmax(0, 120px);
+    grid-template-columns: minmax(0, 190px) repeat(8, minmax(0, 1fr)) minmax(0, 110px);
     align-items: center; gap: 8px;
-    padding: 12px 0; border-top: 1px solid var(--line);
+    padding: 11px 0; border-top: 1px solid var(--line);
   }
   .log-row.head { border-top: 0; padding: 6px 0 8px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .log-row.head span { text-align: center; }
@@ -213,9 +367,6 @@
   .status.ok { color: var(--ok); }
   .status.bad { color: var(--bad); }
   .status small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
-  .intro .attempt, .intro .status { animation: appear 420ms var(--ease) both; animation-delay: calc(var(--i, 0) * 110ms + 350ms); }
-  @keyframes appear { from { opacity: 0; transform: translateY(4px) scale(0.92); } }
-  .caption { text-align: center; color: var(--ink-3); font-size: 14px; margin: 18px auto 0; max-width: 46em; text-wrap: pretty; }
   @media (max-width: 760px) {
     .log-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
     .log-row.head { display: none; }
@@ -225,58 +376,39 @@
   }
   @media (min-width: 761px) { .log-row .slots { display: contents; } }
 
-
-  /* Installer: AI prompt or npm */
-  .installer { max-width: 720px; margin: 36px auto 0; text-align: left; }
+  /* Segmented control (simulator) */
   .seg {
     position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-    padding: 3px; border-radius: 999px; background: var(--bg-alt); border: 1px solid var(--line);
-    --i: 0; --n: 2;
+    padding: 3px; border-radius: 999px; background: var(--bg-alt); box-shadow: inset 0 0 0 1px var(--line);
+    --i: 0; --n: 3;
   }
-  .installer .seg { display: grid; width: min(100%, 380px); margin: 0 auto 14px; }
   .seg button {
     position: relative; z-index: 1; border: 0; background: none; cursor: pointer;
-    font: 500 14px/1 var(--sans); letter-spacing: -0.01em; color: var(--ink-2);
+    font: 500 13.5px/1 var(--sans); letter-spacing: -0.01em; color: var(--ink-2);
     padding: 10px 16px; border-radius: 999px; white-space: nowrap;
     transition: color 200ms var(--ease);
   }
-  .seg button[aria-selected="true"], .seg button[aria-pressed="true"] { color: var(--ink); }
+  .seg button::before { content: ""; position: absolute; inset: -6px 0; }
+  .seg button[aria-pressed="true"] { color: var(--ink); }
   .seg-thumb {
     position: absolute; top: 3px; bottom: 3px; left: 3px;
     width: calc((100% - 6px) / var(--n)); border-radius: 999px;
-    background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 2px 8px oklch(0% 0 0 / 0.06);
+    background: var(--surface); box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.04), 0 1px 2px oklch(0% 0 0 / 0.08), 0 2px 8px oklch(0% 0 0 / 0.06);
     transform: translateX(calc(var(--i) * 100%));
-    transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: transform 280ms var(--ease-out);
   }
-  fieldset.seg { margin: 0; min-inline-size: 0; }
-  @media (max-width: 400px) { .seg button { font-size: 13.5px; padding: 10px 8px; } }
-  .seg.small button { font-size: 13.5px; padding: 9px 16px; }
-  .panels { display: grid; }
-  .panel {
-    grid-area: 1 / 1; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow);
-    padding: 22px 22px 16px; animation: panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
-  }
-  .panel[hidden] { display: none; }
-  @keyframes panel-in { from { opacity: 0; transform: translateY(4px); } }
-  .prompt { margin: 0; font-size: 15.5px; line-height: 1.6; color: var(--ink); letter-spacing: -0.008em; }
-  .cmd { margin: 0; font: 16px/1.5 var(--mono); letter-spacing: 0; padding: 6px 0 4px; }
-  .dollar { color: var(--ink-3); user-select: none; }
-  .panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
-  .copy.strong { background: var(--accent); color: var(--accent-ink); padding: 9px 16px; min-width: 0; }
-  @media (hover: hover) { .copy.strong:hover { background: var(--accent-hover); color: var(--accent-ink); } }
-  .copy.strong[data-copied] { color: var(--accent-ink); }
-  @media (max-width: 560px) { .panel-foot { flex-direction: column; align-items: stretch; } .copy.strong { margin-left: 0; height: 40px; } }
+  fieldset.seg { margin: 0; border: 0; min-inline-size: 0; }
+  @media (max-width: 400px) { .seg button { padding: 10px 10px; } }
 
   /* Interactive demos */
   .demo { min-width: 0; }
   .pill.action {
-    height: 40px; padding: 0 20px; font-size: 15px; border: 0; cursor: pointer;
+    height: 40px; padding: 0 18px; font-size: 15px; border: 0; cursor: pointer;
     background: var(--accent); color: var(--accent-ink); font-family: var(--sans);
   }
-  @media (hover: hover) { .pill.action:hover { background: var(--accent-hover); } }
-  .pill.action.quiet { background: var(--bg-alt); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
-  section.alt .pill.action.quiet { background: var(--surface); }
-  @media (hover: hover) { .pill.action.quiet:hover { background: color-mix(in oklch, var(--ink) 6%, var(--surface)); } }
+  @media (hover: hover) and (pointer: fine) { .pill.action:hover { background: var(--accent-hover); } }
+  .pill.action.quiet { background: var(--surface); color: var(--ink); box-shadow: var(--raised); }
+  @media (hover: hover) and (pointer: fine) { .pill.action.quiet:hover { background: color-mix(in oklch, var(--ink) 4%, var(--surface)); } }
 
   .bar-hint { color: var(--code-dim); }
   .tx-demo pre { white-space: pre-wrap; word-break: break-word; }
@@ -284,7 +416,7 @@
   .tx-demo[data-state="commit"] .tx-end { background: oklch(76% 0.15 152 / 0.16); }
   .tx-demo[data-state="rollback"] .tx-end { background: oklch(70% 0.17 27 / 0.18); }
   .tx-demo[data-state="rollback"] .ln:not(.tx-end) { opacity: 0.38; }
-  .flow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 22px 4px 0; }
+  .flow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 20px 4px 0; }
   .node b { display: block; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
   .node small { display: block; font-size: 12.5px; color: var(--ink-3); transition: color 200ms var(--ease); }
   .node:last-child { text-align: right; }
@@ -297,7 +429,7 @@
     opacity: 0; transform: translateX(0) scale(0.95);
   }
   .packet.go { animation: travel 900ms cubic-bezier(0.65, 0, 0.35, 1) forwards; }
-  .packet.drop { animation: drop 420ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+  .packet.drop { animation: drop 420ms var(--ease-out) forwards; }
   @keyframes travel {
     0% { opacity: 0; transform: translateX(0) scale(0.95); }
     15% { opacity: 1; transform: translateX(0) scale(1); }
@@ -310,28 +442,28 @@
   }
   .tx-rx.ok { color: var(--ok); }
   .tx-db.bad { color: var(--bad); }
-  .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 22px; }
+  .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
   .demo-status { margin: 0 0 0 6px; font-size: 14px; color: var(--ink-2); flex: 1 1 200px; }
 
-  .sim { max-width: 1000px; margin: 56px auto 0; }
-  .sim-controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; margin-bottom: 22px; }
-  .sim-controls .seg { --n: 3; }
-  .sim-track { position: relative; padding: 30px 24px 18px; }
-  .sim-line { position: absolute; left: 24px; right: 24px; top: 52px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .sim { margin-top: 36px; }
+  .sim-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .sim-track { position: relative; padding: 28px 24px 18px; }
+  .sim-line { position: absolute; left: 24px; right: 24px; top: 50px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
   .sim-progress { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(0); }
   .sim-slots { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
   .sim-slot { display: grid; justify-items: center; gap: 10px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .sim-slot .chip-wrap { height: 24px; display: flex; align-items: center; }
-  .sim-slot .attempt { animation: chip-in 260ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+  .sim-slot .attempt { animation: chip-in 260ms var(--ease-out) both; }
   @keyframes chip-in { from { opacity: 0; transform: translateY(4px) scale(0.95); } }
-  .sim-status { margin: 0; padding: 14px 24px 18px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); min-height: 52px; }
+  .sim-status { margin: 0; padding: 14px 24px 16px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); min-height: 52px; }
   .sim-status b { font-weight: 600; }
   .sim-status .ok { color: var(--ok); }
   .sim-status .bad { color: var(--bad); }
   @media (max-width: 640px) {
     .sim-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 18px; }
     .sim-line { display: none; }
-    .sim-track { padding-top: 18px; }
+    .sim-track { padding: 18px 14px 16px; }
+    .sim-status { padding: 14px 16px; }
   }
 
   .sig-label { display: block; font-size: 14px; color: var(--ink-2); margin: 0 0 8px; }
@@ -347,10 +479,10 @@
   .sig-value.fresh { animation: flash 420ms var(--ease); }
   @keyframes flash { from { opacity: 0.35; } }
   .sig-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
-  .switch { display: inline-flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .switch { display: inline-flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); cursor: pointer; -webkit-user-select: none; user-select: none; }
   .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .switch-ui { position: relative; width: 40px; height: 24px; border-radius: 999px; background: var(--line); transition: background-color 200ms var(--ease); flex: none; }
-  .switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: oklch(100% 0 0); box-shadow: 0 1px 3px oklch(0% 0 0 / 0.2); transition: transform 240ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: oklch(100% 0 0); box-shadow: 0 1px 3px oklch(0% 0 0 / 0.2); transition: transform 240ms var(--ease-out); }
   .switch input:checked + .switch-ui { background: var(--bad); }
   .switch input:checked + .switch-ui::after { transform: translateX(16px); }
   .switch input:focus-visible + .switch-ui { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -359,89 +491,52 @@
   .verdict.ok { color: var(--ok); }
   .verdict.bad { color: var(--bad); }
   .sig-secret { margin: 14px 0 0; font-size: 13px; color: var(--ink-3); word-break: break-all; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
-    .panel, .packet.go, .packet.drop, .sim-slot .attempt, .sig-value.fresh { animation: none; }
-    .packet.go { opacity: 0; }
-  }
-
-  /* Sections */
-  section { padding: clamp(88px, 12vw, 148px) 0; }
-  section.alt { background: var(--bg-alt); }
-  h2 {
-    font-family: var(--display);
-    font-size: clamp(34px, 1.2rem + 3vw, 56px);
-    line-height: 1.07; letter-spacing: -0.032em; font-weight: 700;
-    margin: 0; text-wrap: balance;
-  }
-  .sub { font-size: clamp(18px, 1rem + 0.3vw, 21px); line-height: 1.47; letter-spacing: -0.014em; color: var(--ink-2); margin: 20px 0 0; max-width: 34em; text-wrap: pretty; }
-  .sub code { color: var(--ink); }
-  .center { text-align: center; }
-  .center .sub { margin-inline: auto; }
-  .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(36px, 6vw, 80px); align-items: center; }
-  .split.flip { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
-  .split.flip > :first-child { order: 2; }
-  @media (max-width: 860px) { .split, .split.flip { grid-template-columns: minmax(0, 1fr); } .split.flip > :first-child { order: 0; } }
-  .more { margin: 24px 0 0; font-size: 17px; }
-  .more a::after { content: " ›"; }
-
-  .code {
-    background: var(--code-bg); color: var(--code-ink);
-    border-radius: 18px; overflow: hidden; min-width: 0;
-    box-shadow: var(--shadow);
-  }
-  .code .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 20px; border-bottom: 1px solid var(--code-line); font-size: 12.5px; color: var(--code-dim); }
-  .code .copy { color: var(--code-dim); }
-  .code .copy:focus-visible { outline-color: var(--code-key); }
-  @media (hover: hover) { .code .copy:hover { background: oklch(100% 0 0 / 0.08); color: var(--code-ink); } }
-  .code pre { margin: 0; padding: 20px 22px 24px; overflow-x: auto; font: 13.5px/1.7 var(--mono); letter-spacing: 0; tab-size: 2; }
-  .k { color: var(--code-key); }
-  .s { color: var(--code-str); }
-  .c { color: var(--code-dim); }
+  .langs { margin: 20px 0 0; color: var(--ink-3); font-size: 14.5px; }
+  .langs b { color: var(--ink-2); font-weight: 500; }
 
   /* Defaults, in numbers */
-  .numbers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border-radius: 18px; overflow: hidden; margin-top: 64px; }
-  .number { background: var(--bg); padding: 30px 26px 32px; }
-  .number b { display: block; font-family: var(--display); font-size: clamp(40px, 1.4rem + 2.6vw, 56px); line-height: 1; letter-spacing: -0.04em; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .number .unit { font-size: 0.45em; letter-spacing: -0.02em; margin-left: 4px; color: var(--ink-2); font-weight: 600; }
-  .number p { margin: 14px 0 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; }
-  @media (max-width: 860px) { .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 460px) { .number { padding: 24px 18px 26px; } .number p { font-size: 14px; } }
+  .numbers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 40px; border-top: 1px solid var(--line); }
+  .number { padding: 22px 24px 0 0; }
+  .number + .number { padding-left: 24px; border-left: 1px solid var(--line); }
+  .number b { display: block; font-family: var(--display); font-size: clamp(32px, 1rem + 1.6vw, 40px); line-height: 1; letter-spacing: -0.035em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .number .unit { font-size: 0.45em; letter-spacing: -0.015em; margin-left: 4px; color: var(--ink-2); font-weight: 600; }
+  .number p { margin: 10px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.45; text-wrap: pretty; }
+  @media (max-width: 860px) {
+    .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .number:nth-child(3) { padding-left: 0; border-left: 0; }
+    .number:nth-child(n + 3) { margin-top: 22px; border-top: 1px solid var(--line); }
+  }
+  @media (max-width: 460px) { .number, .number + .number { padding-right: 12px; } .number + .number:nth-child(even) { padding-left: 14px; } }
   .note { margin: 22px 0 0; font-size: 14px; color: var(--ink-3); }
   .note code { color: var(--ink-2); }
 
-  /* Everything else, as a plain list */
-  .list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px 48px; margin-top: 64px; }
-  .list h3 { font-size: 19px; line-height: 1.3; letter-spacing: -0.02em; font-weight: 600; margin: 0; padding-top: 18px; border-top: 1px solid var(--line); }
-  .list p { margin: 8px 0 0; color: var(--ink-2); font-size: 16px; line-height: 1.5; text-wrap: pretty; }
-  @media (max-width: 860px) { .list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .list { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
-
-  .langs { margin: 26px 0 0; color: var(--ink-3); font-size: 15px; }
-  .langs b { color: var(--ink-2); font-weight: 500; }
+  .log-stage { margin-top: 36px; }
+  .log-foot { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 64px); margin-top: 40px; align-items: start; }
+  @media (max-width: 900px) { .log-foot { grid-template-columns: minmax(0, 1fr); } }
+  .log-foot .points { margin-top: 0; }
 
   /* Comparison */
-  .table { width: 100%; margin-top: 56px; border-collapse: collapse; font-size: 16px; }
-  .table th, .table td { text-align: left; padding: 18px 24px 18px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .table thead th { font-size: 13px; color: var(--ink-3); font-weight: 500; padding-block: 14px; border-top: 1px solid var(--line); }
+  .table { width: 100%; margin-top: 36px; border-collapse: collapse; font-size: 15.5px; }
+  .table th, .table td { text-align: left; padding: 15px 24px 15px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .table thead th { font-size: 13px; color: var(--ink-3); font-weight: 500; padding-block: 12px; border-top: 1px solid var(--line); }
   .table tbody th { color: var(--ink-2); font-weight: 400; width: 36%; }
   .table td.us { color: var(--ink); font-weight: 500; }
-  @media (max-width: 640px) { .table { font-size: 14.5px; } .table th, .table td { padding-right: 12px; } }
+  @media (max-width: 640px) { .table { font-size: 14px; } .table th, .table td { padding-right: 12px; } }
 
   /* Closing */
-  .cta h2 { font-size: clamp(40px, 1.4rem + 4vw, 72px); letter-spacing: -0.038em; }
-  .cta .actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 36px; }
-  .pill.ghost { height: 48px; padding: 0 24px; font-size: 17px; color: var(--accent); border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent); }
-  @media (hover: hover) { .pill.ghost:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); } }
+  .cta h2 { font-size: clamp(32px, 1rem + 2.6vw, 48px); }
+  .cta .actions { margin-top: 28px; }
 
-  footer { border-top: 1px solid var(--line); padding: 28px 0 calc(40px + env(safe-area-inset-bottom)); font-size: 12.5px; color: var(--ink-3); }
+  footer { border-top: 1px solid var(--line); padding: 28px 0 calc(40px + env(safe-area-inset-bottom)); font-size: 13px; color: var(--ink-3); }
   .footer-inner { display: flex; flex-wrap: wrap; gap: 14px 28px; justify-content: space-between; }
-  .footer-links { display: flex; flex-wrap: wrap; gap: 22px; }
-  .footer-links a, .footer-inner a { color: var(--ink-2); }
+  .footer-links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+  footer .footer-inner a { color: var(--ink-2); }
 
-  /* The hero intro is already skipped for reduced motion by its script. */
-  @media (prefers-reduced-motion: reduce) { .pill, .copy { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
+    .full-prompt:not([hidden]), .packet.go, .packet.drop, .sim-slot .attempt, .sig-value.fresh { animation: none; }
+    .packet.go { opacity: 0; }
+  }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
 </head>
@@ -452,104 +547,77 @@
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#163a5f"/><path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Hookgres
     </a>
-    <nav aria-label="Main">
+    <nav class="nav-links" aria-label="Main">
       <a href="/docs/">Docs</a>
-      <a class="wide" href="/docs/playground">Playground</a>
-      <a class="github" href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
-      <a class="pill small" href="/docs/getting-started">Get started</a>
+      <a class="hide-md" href="/docs/playground">Playground</a>
+      <a class="hide-sm" href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
     </nav>
+    <div class="nav-actions">
+      <button type="button" class="search-trigger" data-search-open aria-label="Search docs" aria-keyshortcuts="Meta+K Control+K">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3.25 3.25"/></svg>
+        <span class="search-label">Search docs</span>
+        <kbd aria-hidden="true" data-search-kbd>⌘K</kbd>
+      </button>
+      <a class="pill small" href="/docs/getting-started">Get started</a>
+    </div>
   </div>
 </header>
 
 <main>
-  <div class="wrap hero">
-    <h1>Webhooks from the Postgres you already run.</h1>
-    <p class="lede">Hookgres signs, sends, retries and logs the webhooks your customers subscribe to. It's an open-source TypeScript library, so there are no extra servers, no queue to operate and no per-message bill.</p>
-    <div class="installer">
-      <div class="seg" role="tablist" aria-label="How to install">
-        <span class="seg-thumb" aria-hidden="true"></span>
-        <button type="button" role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="true">Ask your AI agent</button>
-        <button type="button" role="tab" id="tab-npm" aria-controls="panel-npm" aria-selected="false" tabindex="-1">Install with npm</button>
-      </div>
-      <div class="panels">
-        <div class="panel" id="panel-ai" role="tabpanel" aria-labelledby="tab-ai">
-          <p class="prompt" id="ai-prompt">Add Hookgres (https://hookgres.dev) to this project so we can send signed webhooks to our customers. First read https://hookgres.dev/llms.txt. Then install hookgres and pg, run migrate() on startup, start the delivery worker with a graceful shutdown, add API routes for customers to manage their webhook endpoints scoped to their tenant, and call send() inside our existing database transactions where events happen. Block private network addresses as the production guide describes.</p>
-          <div class="panel-foot">
-            <span>Paste into Claude Code, Codex, Gemini CLI or Cursor.</span>
-            <button class="copy strong" type="button" data-copy-from="ai-prompt" data-label="Copy prompt" aria-label="Copy the prompt for your AI agent">Copy prompt</button>
-          </div>
-        </div>
-        <div class="panel" id="panel-npm" role="tabpanel" aria-labelledby="tab-npm" hidden>
-          <p class="cmd"><span class="dollar">$ </span>npm install hookgres pg</p>
-          <div class="panel-foot">
-            <span>Node.js 22.12+ and Postgres 14+. Then <a href="/docs/getting-started">get started</a>.</span>
-            <button class="copy strong" type="button" data-copy="npm install hookgres pg" data-label="Copy" aria-label="Copy install command">Copy</button>
-          </div>
-        </div>
-      </div>
-    </div>
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Open-source Postgres webhooks for TypeScript</p>
+          <h1>Webhooks from the Postgres you already run.</h1>
+          <p class="lede">Signed, retried and logged webhooks for your customers. No new servers.</p>
 
-    <div class="stage">
-      <div class="window" role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
-        <div class="window-bar" aria-hidden="true">
-          <div class="dots"><i></i><i></i><i></i></div>
-          <span class="title">invoice.paid</span>
-          <span class="meta">msg_01m6yb1bw7xncca4sw5028556c</span>
-        </div>
-        <div class="log" aria-hidden="true">
-          <div class="log-row head">
-            <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>17.6h</span><span>27.6h</span><span>Delivery</span>
-          </div>
-          <div class="log-row">
-            <div class="endpoint"><b>acme.com/webhooks</b><small>every event</small></div>
-            <div class="slots">
-              <div class="slot"><span class="attempt ok" style="--i:0">204</span></div>
-              <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+          <div class="start">
+            <div class="start-row">
+              <span class="start-tag" id="tag-agent">Agent</span>
+              <p class="start-cmd" id="agent-prompt">Add Hookgres webhooks to this app: hookgres.dev/llms.txt</p>
+              <button type="button" class="copy-btn" data-copy-from="agent-prompt" aria-label="Copy the prompt for your AI agent">
+                <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
+                <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
+              </button>
+              <p class="start-note">Works with Claude Code, Codex, Gemini CLI and Cursor. <button type="button" class="disclose" aria-expanded="false" aria-controls="full-prompt">Full prompt<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg></button></p>
             </div>
-            <div class="status ok" style="--i:1">Succeeded<small>1 attempt</small></div>
-          </div>
-          <div class="log-row">
-            <div class="endpoint"><b>shop.example/hooks</b><small>2 event types</small></div>
-            <div class="slots">
-              <div class="slot"><span class="attempt warn" style="--i:1">503</span></div>
-              <div class="slot"><span class="attempt warn" style="--i:2">503</span></div>
-              <div class="slot"><span class="attempt ok" style="--i:3">204</span></div>
-              <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+            <div class="full-prompt" id="full-prompt" hidden>
+              <p id="ai-prompt">Add Hookgres (https://hookgres.dev) to this project so we can send signed webhooks to our customers. First read https://hookgres.dev/llms.txt. Then install hookgres and pg, run migrate() on startup, start the delivery worker with a graceful shutdown, add API routes for customers to manage their webhook endpoints scoped to their tenant, and call send() inside our existing database transactions where events happen. Block private network addresses as the production guide describes.</p>
+              <button class="copy" type="button" data-copy-from="ai-prompt" data-label="Copy full prompt" aria-label="Copy the full prompt">Copy full prompt</button>
             </div>
-            <div class="status ok" style="--i:4">Succeeded<small>3 attempts</small></div>
-          </div>
-          <div class="log-row">
-            <div class="endpoint"><b>crm.example/in</b><small>invoice.paid</small></div>
-            <div class="slots">
-              <div class="slot"><span class="attempt bad" style="--i:2">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:3">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:4">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:5">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:6">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:7">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:8">500</span></div>
-              <div class="slot"><span class="attempt bad" style="--i:9">500</span></div>
+            <div class="start-row">
+              <span class="start-tag">npm</span>
+              <p class="start-cmd"><span class="dim" aria-hidden="true">$ </span>npm install hookgres pg</p>
+              <button type="button" class="copy-btn" data-copy="npm install hookgres pg" aria-label="Copy the install command">
+                <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
+                <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
+              </button>
             </div>
-            <div class="status bad" style="--i:10">Failed<small>8 attempts</small></div>
+          </div>
+
+          <div class="actions">
+            <a class="pill large" href="/docs/getting-started">Get started</a>
+            <a class="pill ghost" href="/docs/playground">Try the playground</a>
           </div>
         </div>
-      </div>
-      <p class="caption">One event, three customer endpoints, on the default retry schedule. Every attempt's status, response and timing is stored in your database.</p>
-    </div>
-  </div>
 
-  <section>
-    <div class="wrap split">
-      <div>
-        <h2>One call to send. The rest is handled.</h2>
-        <p class="sub">Hookgres writes the message and one delivery per subscribed endpoint, then a worker in your app signs each request, sends it, retries failures and records every attempt.</p>
-        <p class="more"><a href="/docs/getting-started">Getting started</a></p>
-      </div>
-      <div class="code">
-        <div class="bar"><span>app.ts</span><button class="copy" type="button" data-copy-from="send-code" aria-label="Copy app.ts">Copy</button></div>
-<pre id="send-code"><span class="k">import</span> { Hookgres } <span class="k">from</span> <span class="s">"hookgres"</span>;
+        <div class="code hero-code">
+          <div class="bar">
+            <div class="tabs" role="tablist" aria-label="Example code">
+              <button type="button" class="tab" role="tab" id="tab-send" aria-controls="code-send" aria-selected="true">app.ts</button>
+              <button type="button" class="tab" role="tab" id="tab-verify" aria-controls="code-verify" aria-selected="false" tabindex="-1">receiver.ts</button>
+            </div>
+            <button type="button" class="copy-btn" data-copy-tab aria-label="Copy this file">
+              <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
+              <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
+            </button>
+          </div>
+<pre class="tab-panel" id="code-send" role="tabpanel" aria-labelledby="tab-send"><span class="k">import</span> { Hookgres } <span class="k">from</span> <span class="s">"hookgres"</span>;
 
-<span class="k">const</span> hookgres = <span class="k">new</span> Hookgres({ pool });
+<span class="k">const</span> hookgres = <span class="k">new</span> Hookgres({
+  connectionString: process.env.DATABASE_URL,
+});
 <span class="k">await</span> hookgres.migrate();
 hookgres.start();
 
@@ -557,24 +625,54 @@ hookgres.start();
 <span class="k">await</span> hookgres.createEndpoint({
   tenantId: <span class="s">"acme"</span>,
   url: <span class="s">"https://acme.com/webhooks"</span>,
+  eventTypes: [<span class="s">"invoice.paid"</span>],
 });
 
-<span class="c">// Anywhere in your app</span>
+<span class="c">// Anywhere in your app, or inside a transaction</span>
 <span class="k">await</span> hookgres.send({
   tenantId: <span class="s">"acme"</span>,
   eventType: <span class="s">"invoice.paid"</span>,
   payload: { invoiceId: <span class="s">"in_123"</span>, amount: 4200 },
 });</pre>
+<pre class="tab-panel" id="code-verify" role="tabpanel" aria-labelledby="tab-verify" hidden><span class="k">import</span> { verifyWebhook } <span class="k">from</span> <span class="s">"hookgres"</span>;
+
+<span class="c">// Your customer's server. Any Standard Webhooks</span>
+<span class="c">// library verifies these requests too.</span>
+<span class="k">export async function</span> POST(request: Request) {
+  <span class="k">try</span> {
+    <span class="k">const</span> event = verifyWebhook({
+      secret: process.env.WEBHOOK_SECRET!,
+      headers: request.headers,
+      body: <span class="k">await</span> request.text(),
+    });
+    <span class="c">// event.type === "invoice.paid"</span>
+    <span class="k">return new</span> Response(<span class="k">null</span>, { status: 204 });
+  } <span class="k">catch</span> {
+    <span class="k">return new</span> Response(<span class="k">null</span>, { status: 400 });
+  }
+}</pre>
+        </div>
       </div>
+
+      <ul class="caps">
+        <li><h3><a href="/docs/guides/sending">Transactional send</a></h3><p>Pass your <code>client</code> to <code>send()</code>. Roll back and nothing goes out.</p></li>
+        <li><h3><a href="/docs/guides/verifying">Standard Webhooks</a></h3><p>HMAC-SHA256 signatures the official verifiers in 9 languages accept.</p></li>
+        <li><h3><a href="/docs/guides/retries">Retries for 28 hours</a></h3><p>8 attempts, 5 seconds to 10 hours apart, then the delivery fails.</p></li>
+        <li><h3><a href="/docs/guides/endpoints">Endpoint API</a></h3><p>Create, list, update and disable endpoints per tenant and event type.</p></li>
+        <li><h3><a href="/docs/reference/schema">Log and replay</a></h3><p>Every attempt is a row in your database. <code>replayDelivery()</code> resends.</p></li>
+        <li><h3><a href="/docs/guides/secret-rotation">Secret rotation</a></h3><p>Old and new secrets both sign for 24 hours, so receivers never miss one.</p></li>
+      </ul>
     </div>
   </section>
 
-  <section class="alt">
+  <section class="band">
     <div class="wrap split flip">
       <div>
+        <p class="kicker">Transactional</p>
         <h2>Queued in your transaction. Sent only if it commits.</h2>
         <p class="sub">A hosted service sits outside your database, so a webhook can go out for an order that later rolled back. Hookgres writes the webhook in the same transaction as your data.</p>
         <p class="sub">Workers claim deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like.</p>
+        <p class="more"><a href="/docs/guides/sending">Sending webhooks</a></p>
       </div>
       <div class="demo tx-demo" data-state="idle">
         <div class="code">
@@ -595,15 +693,16 @@ hookgres.start();
     </div>
   </section>
 
-  <section>
+  <section class="band alt">
     <div class="wrap">
-      <div class="center">
-        <h2>Watch it retry.</h2>
-        <p class="sub">Pick how your customer's server behaves and send an event. This runs the default schedule, with 28 hours squeezed into a few seconds.</p>
-      </div>
-      <div class="demo sim">
+      <div class="head-row">
+        <div>
+          <p class="kicker">Retries</p>
+          <h2>Watch it retry.</h2>
+          <p class="sub">Pick how your customer's server behaves and send an event. This runs the default schedule, with 28 hours squeezed into a few seconds.</p>
+        </div>
         <div class="sim-controls">
-          <fieldset class="seg small">
+          <fieldset class="seg">
             <legend class="sr-only">Receiver behaviour</legend>
             <span class="seg-thumb" aria-hidden="true"></span>
             <button type="button" aria-pressed="true" data-mode="healthy">Healthy</button>
@@ -612,6 +711,8 @@ hookgres.start();
           </fieldset>
           <button type="button" class="pill action" id="sim-send">Send event</button>
         </div>
+      </div>
+      <div class="demo sim">
         <div class="window sim-window">
           <div class="window-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
           <div class="sim-track" aria-hidden="true">
@@ -621,37 +722,20 @@ hookgres.start();
           <p class="sim-status" role="status" aria-live="polite">Press Send event.</p>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section class="alt">
-    <div class="wrap">
-      <div class="center">
-        <h2>Sensible defaults, all configurable.</h2>
-        <p class="sub">The same retry shape Svix uses, tested against real Postgres 14 to 18 on every commit.</p>
-      </div>
       <div class="numbers">
         <div class="number"><b>8<span class="unit">attempts</span></b><p>over about 28 hours, from 5 seconds to 10 hours apart.</p></div>
         <div class="number"><b>5<span class="unit">days</span></b><p>of failures before an endpoint is disabled. One call turns it back on.</p></div>
         <div class="number"><b>24<span class="unit">hours</span></b><p>when old and new secrets both sign, so receivers rotate without dropping events.</p></div>
         <div class="number"><b>0<span class="unit">lost</span></b><p>and none duplicated across 20,000 webhooks and 4 competing workers in the load test.</p></div>
       </div>
-      <p class="note">On one laptop: about 13,000 sends and 5,500 deliveries per second. Reproduce it with <code>pnpm bench</code>.</p>
-
-      <div class="list">
-        <div><h3>Standard Webhooks signatures</h3><p>HMAC-SHA256 per the <a href="https://www.standardwebhooks.com">open spec</a>, checked against the official library in CI.</p></div>
-        <div><h3>Built for multi-tenant apps</h3><p>Every event goes only to one tenant's endpoints, filtered by event type.</p></div>
-        <div><h3>Idempotency keys</h3><p>Pass the same key twice and get the original message back, not a duplicate.</p></div>
-        <div><h3>Replay</h3><p>Re-send any finished delivery, with the same <code>webhook-id</code> so receivers can deduplicate.</p></div>
-        <div><h3>Crash recovery</h3><p>If a worker dies mid-request, its claim expires and another worker picks it up.</p></div>
-        <div><h3>It's just tables</h3><p>Query deliveries with SQL for dashboards, support and alerts. No vendor API to page through.</p></div>
-      </div>
+      <p class="note">The same retry shape Svix uses, all configurable. On one laptop: about 13,000 sends and 5,500 deliveries per second. Reproduce it with <code>pnpm bench</code>.</p>
     </div>
   </section>
 
-  <section>
+  <section class="band">
     <div class="wrap split">
       <div>
+        <p class="kicker">Signatures</p>
         <h2>What your customers receive.</h2>
         <p class="sub">A JSON envelope and three signed headers. The <code>webhook-id</code> stays the same across retries. Delivery is at least once, so receivers deduplicate on it.</p>
         <p class="langs"><b>Verify in any language</b> with the official Standard Webhooks libraries: JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir.</p>
@@ -677,28 +761,81 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="alt">
-    <div class="wrap split flip">
-      <div>
-        <h2>Try it in two minutes.</h2>
-        <p class="sub">The playground runs Postgres and three fake customer endpoints: one healthy, one flaky, one down. Send events and watch them retry, fail and replay at <a href="http://localhost:3000">localhost:3000</a>.</p>
-        <p class="more"><a href="/docs/playground">About the playground</a></p>
+  <section class="band alt">
+    <div class="wrap">
+      <p class="kicker">Delivery log</p>
+      <h2>Every attempt is a row you can query.</h2>
+      <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
+      <div class="log-stage">
+        <div class="window" role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
+          <div class="window-bar" aria-hidden="true">
+            <div class="dots"><i></i><i></i><i></i></div>
+            <span class="title">invoice.paid</span>
+            <span class="meta log-id">msg_01m6yb1bw7xncca4sw5028556c</span>
+          </div>
+          <div class="log" aria-hidden="true">
+            <div class="log-row head">
+              <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>17.6h</span><span>27.6h</span><span>Delivery</span>
+            </div>
+            <div class="log-row">
+              <div class="endpoint"><b>acme.com/webhooks</b><small>every event</small></div>
+              <div class="slots">
+                <div class="slot"><span class="attempt ok">204</span></div>
+                <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+              </div>
+              <div class="status ok">Succeeded<small>1 attempt</small></div>
+            </div>
+            <div class="log-row">
+              <div class="endpoint"><b>shop.example/hooks</b><small>2 event types</small></div>
+              <div class="slots">
+                <div class="slot"><span class="attempt warn">503</span></div>
+                <div class="slot"><span class="attempt warn">503</span></div>
+                <div class="slot"><span class="attempt ok">204</span></div>
+                <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+              </div>
+              <div class="status ok">Succeeded<small>3 attempts</small></div>
+            </div>
+            <div class="log-row">
+              <div class="endpoint"><b>crm.example/in</b><small>invoice.paid</small></div>
+              <div class="slots">
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+                <div class="slot"><span class="attempt bad">500</span></div>
+              </div>
+              <div class="status bad">Failed<small>8 attempts</small></div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="code">
-        <div class="bar"><span>Terminal</span><button class="copy" type="button" data-copy="git clone https://github.com/NickolasBenakis/hookgres &amp;&amp; cd hookgres &amp;&amp; docker compose up" aria-label="Copy playground commands">Copy</button></div>
-<pre><span class="c">$ </span>git clone https://github.com/NickolasBenakis/hookgres
-<span class="c">$ </span>cd hookgres
-<span class="c">$ </span>docker compose up</pre>
+      <div class="log-foot">
+        <ul class="points">
+          <li><b>Replay.</b> <code>replayDelivery()</code> re-sends a finished delivery with the same <code>webhook-id</code>, so receivers can deduplicate.</li>
+          <li><b>Idempotency keys.</b> Pass the same key twice and get the original message back, not a duplicate.</li>
+          <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant's endpoints, filtered by event type.</li>
+          <li><b>Crash recovery.</b> If a worker dies mid-request, its claim expires and another worker picks it up.</li>
+        </ul>
+        <div class="code">
+          <div class="bar"><span>Failed in the last 24 hours</span><button class="copy" type="button" data-copy-from="sql-code" aria-label="Copy the SQL query">Copy</button></div>
+<pre id="sql-code"><span class="k">select</span> e.tenant_id, e.url, d.last_error
+<span class="k">from</span> hookgres.deliveries d
+<span class="k">join</span> hookgres.endpoints e <span class="k">on</span> e.id = d.endpoint_id
+<span class="k">where</span> d.status = <span class="s">'failed'</span>
+  <span class="k">and</span> d.updated_at &gt; now() - <span class="k">interval</span> <span class="s">'1 day'</span>;</pre>
+        </div>
       </div>
     </div>
   </section>
 
-  <section>
+  <section class="band">
     <div class="wrap">
-      <div class="center">
-        <h2>A library, not a service.</h2>
-        <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
-      </div>
+      <p class="kicker">Compared</p>
+      <h2>A library, not a service.</h2>
+      <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
       <table class="table">
         <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col">Hookgres</th><th scope="col">Hosted service</th></tr></thead>
         <tbody>
@@ -712,13 +849,21 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="cta center">
-    <div class="wrap">
-      <h2>Ship webhooks this afternoon.</h2>
-      <p class="sub">Add the package, run <code>migrate()</code>, start sending.</p>
-      <div class="actions">
-        <a class="pill large" href="/docs/getting-started">Get started</a>
-        <a class="pill ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
+  <section class="band alt cta">
+    <div class="wrap split">
+      <div>
+        <h2>Ship webhooks this afternoon.</h2>
+        <p class="sub">Add the package, run <code>migrate()</code>, start sending. Or try the playground first: Postgres plus three fake customer endpoints (healthy, flaky and down) at <code>localhost:3000</code>.</p>
+        <div class="actions">
+          <a class="pill large" href="/docs/getting-started">Get started</a>
+          <a class="pill ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
+        </div>
+      </div>
+      <div class="code">
+        <div class="bar"><span>Playground</span><button class="copy" type="button" data-copy="git clone https://github.com/NickolasBenakis/hookgres &amp;&amp; cd hookgres &amp;&amp; docker compose up" aria-label="Copy playground commands">Copy</button></div>
+<pre><span class="c">$ </span>git clone https://github.com/NickolasBenakis/hookgres
+<span class="c">$ </span>cd hookgres
+<span class="c">$ </span>docker compose up</pre>
       </div>
     </div>
   </section>
@@ -743,30 +888,55 @@ hookgres.start();
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (selector, root = document) => root.querySelector(selector);
 
-  // Copy buttons
-  for (const button of document.querySelectorAll(".copy")) {
+  // The search shortcut hint matches the platform.
+  {
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+    if (!/mac|iphone|ipad/i.test(platform)) {
+      for (const kbd of document.querySelectorAll(".search-trigger kbd")) kbd.textContent = "Ctrl K";
+    }
+  }
+
+  // Copy buttons. Text buttons swap their label; icon buttons swap to a check.
+  for (const button of document.querySelectorAll(".copy, .copy-btn")) {
     const label = button.dataset.label || button.textContent;
+    const icon = button.classList.contains("copy-btn");
+    let timer;
     button.addEventListener("click", async () => {
-      const from = button.dataset.copyFrom;
-      const text = from ? document.getElementById(from).textContent : button.dataset.copy;
+      let text = button.dataset.copy;
+      if (button.dataset.copyFrom) text = document.getElementById(button.dataset.copyFrom).textContent;
+      if ("copyTab" in button.dataset) text = $(".hero-code .tab-panel:not([hidden])").textContent;
       const status = document.getElementById("copy-status");
+      clearTimeout(timer);
       try {
         await navigator.clipboard.writeText(text);
-        button.textContent = "Copied";
-        status.textContent = "Copied to clipboard";
+        if (!icon) button.textContent = "Copied";
         button.dataset.copied = "";
+        status.textContent = "Copied to clipboard";
       } catch {
-        button.textContent = "Failed";
+        if (icon) button.dataset.failed = "";
+        else button.textContent = "Failed";
         status.textContent = "Copy failed";
       }
-      setTimeout(() => {
-        button.textContent = label;
+      timer = setTimeout(() => {
+        if (!icon) button.textContent = label;
         delete button.dataset.copied;
+        delete button.dataset.failed;
       }, 1600);
     });
   }
 
-  // Segmented controls: tabs (installer) and radios (simulator), with arrow keys.
+  // Full agent prompt disclosure
+  {
+    const toggle = $(".disclose");
+    const region = document.getElementById(toggle.getAttribute("aria-controls"));
+    toggle.addEventListener("click", () => {
+      const open = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(open));
+      region.hidden = !open;
+    });
+  }
+
+  // Segmented controls: tabs (hero code) and toggle buttons (simulator).
   function segmented(seg, onChange) {
     const buttons = [...seg.querySelectorAll("button")];
     const tabs = buttons[0].getAttribute("role") === "tab";
@@ -793,8 +963,8 @@ hookgres.start();
     });
   }
 
-  segmented($(".installer .seg"), (button) => {
-    for (const panel of document.querySelectorAll(".installer .panel")) {
+  segmented($(".hero-code .tabs"), (button) => {
+    for (const panel of document.querySelectorAll(".hero-code .tab-panel")) {
       panel.hidden = panel.id !== button.getAttribute("aria-controls");
     }
   });
@@ -880,7 +1050,7 @@ hookgres.start();
       if (cls) b.className = cls;
       return b;
     };
-    segmented($(".sim .seg"), (button) => {
+    segmented($(".sim-controls .seg"), (button) => {
       mode = button.dataset.mode;
     });
     sendButton.addEventListener("click", async () => {
@@ -969,5 +1139,6 @@ hookgres.start();
     update();
   }
 </script>
+<script src="/search.js" defer></script>
 </body>
 </html>

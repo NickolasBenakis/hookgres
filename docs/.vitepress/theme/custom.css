@@ -1,8 +1,9 @@
 /*
  * Hookgres docs theme. Mirrors the landing page (site/index.html): the same
- * oklch tokens, system type, translucent nav and dark code panels, mapped
- * onto VitePress's --vp-* variables. Component overrides are prefixed with a
- * parent class so they outrank VitePress's scoped styles without !important.
+ * oklch tokens, system type, 56px translucent header and dark code panels,
+ * mapped onto VitePress's --vp-* variables. Component overrides are prefixed
+ * with a parent class so they outrank VitePress's scoped styles without
+ * !important.
  */
 
 /* Landing page tokens -------------------------------------------------- */
@@ -26,10 +27,21 @@
   --hg-code-ink: oklch(92% 0.005 270);
   --hg-code-dim: oklch(64% 0.012 270);
   --hg-code-key: oklch(78% 0.1 250);
+  /* Small raised surfaces: a ring standing in for the border, plus a tight
+     shadow. The same as the landing page's --raised. */
+  --hg-raised:
+    0 0 0 1px oklch(0% 0 0 / 0.07), 0 1px 2px oklch(0% 0 0 / 0.05),
+    0 4px 12px -4px oklch(0% 0 0 / 0.07);
+  --hg-raised-hover:
+    0 0 0 1px oklch(0% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.06),
+    0 6px 16px -6px oklch(0% 0 0 / 0.1);
   /* The landing page's .code shadow, lighter: docs stack many blocks. */
   --hg-code-shadow:
     0 1px 2px oklch(0% 0 0 / 0.04), 0 6px 16px oklch(0% 0 0 / 0.05),
     0 20px 40px oklch(0% 0 0 / 0.04);
+  --hg-overlay-shadow:
+    0 0 0 1px oklch(0% 0 0 / 0.08), 0 2px 6px oklch(0% 0 0 / 0.06),
+    0 16px 40px -8px oklch(0% 0 0 / 0.18), 0 40px 80px -20px oklch(0% 0 0 / 0.2);
   --hg-tint: 7%;
   --hg-tint-base: var(--hg-bg);
   --hg-sans:
@@ -43,7 +55,9 @@
     ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas,
     monospace;
   --hg-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hg-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --hg-fast: 150ms;
+  --hg-enter: 200ms;
   --hg-blur: saturate(180%) blur(20px);
 }
 
@@ -63,7 +77,11 @@
   --hg-bad: oklch(70% 0.17 27);
   --hg-code-bg: oklch(17% 0.006 270);
   --hg-code-line: oklch(27% 0.008 270);
+  --hg-raised: 0 0 0 1px oklch(100% 0 0 / 0.1);
+  --hg-raised-hover: 0 0 0 1px oklch(100% 0 0 / 0.16);
   --hg-code-shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
+  --hg-overlay-shadow:
+    0 0 0 1px oklch(100% 0 0 / 0.12), 0 24px 64px oklch(0% 0 0 / 0.6);
   --hg-tint: 14%;
   --hg-tint-base: var(--hg-bg-alt);
 }
@@ -124,11 +142,12 @@
   --vp-button-brand-hover-bg: var(--hg-accent-hover);
   --vp-button-brand-active-bg: var(--hg-accent-hover);
 
-  --vp-nav-height: 52px;
+  --vp-nav-height: 56px;
   --vp-nav-logo-height: 22px;
   --vp-nav-bg-color: color-mix(in oklab, var(--hg-bg) 78%, transparent);
   --vp-local-nav-bg-color: var(--vp-nav-bg-color);
   --vp-sidebar-bg-color: var(--hg-bg);
+  --vp-backdrop-bg-color: oklch(0% 0 0 / 0.32);
 
   --vp-input-border-color: var(--vp-c-border);
   --vp-input-switch-bg-color: var(--vp-c-default-soft);
@@ -149,6 +168,7 @@
   --vp-code-copy-code-hover-border-color: oklch(36% 0.01 270);
   --vp-code-copy-code-hover-bg: oklch(23% 0.008 270);
   --vp-code-copy-code-active-text: var(--hg-code-ink);
+  --vp-code-copy-copied-text-content: "Copied";
   --vp-code-tab-divider: var(--hg-code-line);
   --vp-code-tab-bg: var(--hg-code-bg);
   --vp-code-tab-text-color: var(--hg-code-dim);
@@ -158,17 +178,24 @@
 
   --vp-custom-block-font-size: 15px;
   --vp-custom-block-code-font-size: 0.86em;
+}
 
-  --vp-local-search-bg: var(--hg-bg);
+.dark {
+  --vp-backdrop-bg-color: oklch(0% 0 0 / 0.6);
 }
 
 /* Base ----------------------------------------------------------------- */
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
 
 body {
   letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-synthesis: none;
 }
 
 code,
@@ -184,10 +211,70 @@ samp {
 
 :focus-visible {
   outline: 2px solid var(--hg-accent);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
-/* Nav: content scrolls underneath, so the bar is translucent -------------- */
+a,
+button {
+  touch-action: manipulation;
+}
+
+/* Header: 56px, translucent, one hairline. Matches the landing page's
+   header: logo, Docs / Playground / GitHub, then search and Get started. --- */
+
+/* VitePress adds .has-sidebar to the bar only after hydration, so until then
+   the links sat against the brand and then jumped right. The title carries
+   the class in the prerendered HTML, so key the sidebar layout off that. */
+@media (min-width: 960px) {
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .wrapper {
+    padding: 0;
+  }
+
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .container {
+    max-width: 100%;
+  }
+
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .container > .title {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    padding: 0 32px;
+    width: var(--vp-sidebar-width);
+    height: var(--vp-nav-height);
+  }
+
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .container > .content {
+    position: relative;
+    z-index: 1;
+    padding-right: 32px;
+    padding-left: var(--vp-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .container > .title {
+    padding-left: max(
+      32px,
+      calc((100% - (var(--vp-layout-max-width) - 64px)) / 2)
+    );
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) /
+      2 +
+      var(--vp-sidebar-width) -
+      32px
+    );
+  }
+
+  .VPNavBar:has(.VPNavBarTitle.has-sidebar) .container > .content {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) /
+      2 +
+      var(--vp-sidebar-width)
+    );
+  }
+}
 
 @media (min-width: 960px) {
   .VPNav .VPNavBar.has-sidebar .content-body,
@@ -211,6 +298,18 @@ samp {
   }
 }
 
+@media (max-width: 959px) {
+  .VPNav .VPNavBar {
+    background-color: var(--vp-nav-bg-color);
+    backdrop-filter: var(--hg-blur);
+    -webkit-backdrop-filter: var(--hg-blur);
+  }
+}
+
+.VPNav .VPNavBar .divider-line {
+  background-color: color-mix(in oklab, var(--hg-line) 70%, transparent);
+}
+
 .VPLocalNav {
   backdrop-filter: var(--hg-blur);
   -webkit-backdrop-filter: var(--hg-blur);
@@ -219,7 +318,7 @@ samp {
 /* Brand mark: identical to the landing page's .brand. */
 .VPNavBar .VPNavBarTitle .title {
   gap: 9px;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -231,84 +330,138 @@ samp {
   border-radius: 6px;
 }
 
+/* Links sit next to the brand; search and Get started go to the right. */
+.VPNavBar .content-body {
+  gap: 10px;
+}
+
+.VPNavBar .content-body > .VPNavBarMenu {
+  order: -1;
+  margin-right: auto;
+  margin-left: -12px;
+}
+
 .VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   color: var(--vp-c-text-2);
   transition: color var(--hg-fast) var(--hg-ease);
 }
 
-.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover {
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
   color: var(--vp-c-text-1);
 }
 
-.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
-  color: var(--vp-c-brand-1);
+/* GitHub is a plain link here, like on the landing page. */
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.vp-external-link-icon::after {
+  display: none;
 }
 
-.VPNavBar .VPNavBarSocialLinks .VPSocialLink,
-.VPNavBar .VPNavBarSocialLinks .VPSocialLink:hover {
-  transition: color var(--hg-fast) var(--hg-ease);
+@media (hover: hover) and (pointer: fine) {
+  .VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover {
+    color: var(--vp-c-text-1);
+  }
 }
 
-.VPNavBar .VPNavBarSocialLinks .VPSocialLink > svg,
-.VPNavBar .VPNavBarSocialLinks .VPSocialLink > [class^="vpi-social-"] {
-  width: 18px;
-  height: 18px;
+/* The colour scheme follows the OS, as on the landing page (appearance
+   "force-auto" in config.ts), so there is no theme switch. */
+.VPNavBar .VPNavBarAppearance,
+.VPNavBar .VPNavBarExtra,
+.VPNavBar .VPNavBarSocialLinks {
+  display: none;
 }
 
-.VPNavBar .VPNavBarAppearance .VPSwitch {
-  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
-  transition-property: border-color, transform !important;
-  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
-  transition-duration: var(--hg-fast) !important;
-  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
-  transition-timing-function: var(--hg-ease) !important;
+/* Search pill: the landing page's .search-trigger. */
+.VPNavBar .VPNavBarSearch {
+  flex-grow: 0;
+  padding-left: 0;
 }
 
-.VPNavBar .VPNavBarAppearance .VPSwitch:hover {
-  border-color: var(--vp-c-text-3);
-}
-
-/* Search: a quiet field, like the landing page's install pill. */
-.DocSearch-Button {
-  height: var(--vp-nav-height);
+.VPNavBarSearch .DocSearch-Button {
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--vp-c-text-3);
   transition:
-    background-color var(--hg-fast) var(--hg-ease),
+    box-shadow var(--hg-fast) var(--hg-ease),
+    color var(--hg-fast) var(--hg-ease),
     transform var(--hg-fast) var(--hg-ease);
 }
 
-@media (min-width: 768px) {
-  .VPNavBarSearch .DocSearch-Button {
-    border: 0;
-    border-radius: 9px;
-    padding: 0 10px 0 11px;
-    height: 32px;
-    background: var(--vp-c-default-soft);
-  }
+.VPNavBarSearch .DocSearch-Button:focus {
+  outline: none;
+}
 
-  .VPNavBarSearch .DocSearch-Button:hover {
-    background: var(--vp-c-default-3);
+.VPNavBarSearch .DocSearch-Button:focus-visible {
+  /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
+  outline: 2px solid var(--hg-accent) !important;
+  outline-offset: 2px;
+}
+
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Container {
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.VPNavBarSearch .DocSearch-Button .DocSearch-Search-Icon {
+  top: 0;
+  margin: 0;
+  width: 17px;
+  height: 17px;
+  color: currentColor;
+  transition: none;
+}
+
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Placeholder,
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Keys {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .VPNavBarSearch .DocSearch-Button {
+    justify-content: flex-start;
+    width: 180px;
+    height: 32px;
+    padding: 0 6px 0 11px;
+    background: var(--hg-bg-alt);
+    box-shadow: inset 0 0 0 1px var(--hg-line);
   }
 
   .VPNavBarSearch .DocSearch-Button .DocSearch-Search-Icon {
-    top: 0;
-    width: 13px;
-    height: 13px;
-    color: var(--vp-c-text-3);
+    width: 15px;
+    height: 15px;
   }
 
   .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Placeholder {
-    margin-top: 0;
-    padding-right: 20px;
+    display: block;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
     font-weight: 400;
-    color: var(--vp-c-text-3);
-    transition: color var(--hg-fast) var(--hg-ease);
+    letter-spacing: 0;
+    color: inherit;
+    transition: none;
   }
 
+  /* One chip, both glyphs on one baseline. VitePress draws two bordered keys
+     with a 2px top margin and 22px line boxes, which sat the hint 1px low. */
   .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Keys {
-    height: 20px;
+    display: flex;
+    align-items: center;
+    flex: none;
+    border-radius: 6px;
+    padding: 4px 6px;
+    background: var(--hg-surface);
+    box-shadow: inset 0 0 0 1px var(--hg-line);
   }
 
   .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Key,
@@ -316,23 +469,110 @@ samp {
     .DocSearch-Button
     .DocSearch-Button-Key
     + .DocSearch-Button-Key {
+    display: block;
     margin: 0;
     border: 0;
     padding: 0;
-    height: 20px;
-    line-height: 20px;
-    font-weight: 400;
+    height: auto;
+    font: 500 11px / 1 var(--hg-sans);
+    letter-spacing: 0.02em;
     color: var(--vp-c-text-3);
+    transition: none;
+  }
+
+  /* VitePress zeroes the first key's font-size and draws ⌘ or Ctrl in
+     ::after, so the size is set here rather than inherited. */
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Key:first-child::after {
+    font: 500 11px / 1 var(--hg-sans);
+    letter-spacing: 0.02em;
+    color: inherit;
+  }
+
+  html:not(.mac)
+    .VPNavBarSearch
+    .DocSearch-Button
+    .DocSearch-Button-Key:first-child {
+    margin-right: 3px;
   }
 }
 
-/* Local search modal */
-.VPLocalSearchBox .shell {
-  border-radius: 16px;
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--hg-ink) 6%, transparent),
-    0 12px 32px oklch(0% 0 0 / 0.12),
-    0 40px 80px oklch(0% 0 0 / 0.12);
+@media (min-width: 960px) {
+  .VPNavBarSearch .DocSearch-Button {
+    width: 220px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .VPNavBarSearch .DocSearch-Button:hover {
+    background: transparent;
+    color: var(--vp-c-text-1);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (min-width: 640px) {
+  .VPNavBarSearch .DocSearch-Button:hover {
+    background: var(--hg-bg-alt);
+    color: var(--vp-c-text-2);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--hg-ink) 22%, transparent);
+  }
+}
+
+/* 36px and 32px controls, 44px to the touch. */
+.VPNavBarSearch .DocSearch-Button,
+.hg-cta {
+  position: relative;
+}
+
+.VPNavBarSearch .DocSearch-Button::before,
+.hg-cta::before {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}
+
+/* Get started: the landing page's small primary pill. */
+.hg-cta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 14px;
+  height: 32px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  color: var(--hg-accent-ink);
+  background: var(--hg-accent);
+  -webkit-user-select: none;
+  user-select: none;
+  transition:
+    background-color var(--hg-fast) var(--hg-ease),
+    transform var(--hg-fast) var(--hg-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hg-cta:hover {
+    color: var(--hg-accent-ink);
+    background: var(--hg-accent-hover);
+  }
+}
+
+@media (max-width: 767px) {
+  .VPNavBar .content-body {
+    gap: 4px;
+  }
+
+  .hg-cta {
+    margin-left: 4px;
+  }
+}
+
+@media (max-width: 379px) {
+  .hg-cta {
+    display: none;
+  }
 }
 
 /* Sidebar: same canvas as the page, a hairline edge, quiet items ---------- */
@@ -345,7 +585,11 @@ samp {
 
 .VPSidebar .nav .group + .group {
   border-top: 0;
-  padding-top: 18px;
+  padding-top: 0;
+}
+
+.VPSidebar .nav .VPSidebarItem.level-0 {
+  padding-bottom: 18px;
 }
 
 .VPSidebar .nav .VPSidebarItem.is-link > .item {
@@ -365,8 +609,10 @@ samp {
   transition: color var(--hg-fast) var(--hg-ease);
 }
 
-.VPSidebar .nav .VPSidebarItem.is-link > .item > .link:hover .text {
-  color: var(--vp-c-text-1);
+@media (hover: hover) and (pointer: fine) {
+  .VPSidebar .nav .VPSidebarItem.is-link > .item > .link:hover .text {
+    color: var(--vp-c-text-1);
+  }
 }
 
 .VPSidebar .nav .VPSidebarItem.is-active > .item {
@@ -379,7 +625,7 @@ samp {
 
 /* biome-ignore lint/style/noDescendingSpecificity: group headings are not links */
 .VPSidebar .nav .VPSidebarItem.level-0:not(.is-link) > .item > .text {
-  padding-bottom: 6px;
+  padding: 4px 0 6px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.005em;
@@ -398,14 +644,16 @@ samp {
 }
 
 .VPDoc .VPDocAsideOutline .outline-link {
-  line-height: 28px;
+  line-height: 26px;
   font-size: 13px;
   transition: color var(--hg-fast) var(--hg-ease);
 }
 
-.VPDoc .VPDocAsideOutline .outline-link:hover {
-  color: var(--vp-c-text-1);
-  transition: color var(--hg-fast) var(--hg-ease);
+@media (hover: hover) and (pointer: fine) {
+  .VPDoc .VPDocAsideOutline .outline-link:hover {
+    color: var(--vp-c-text-1);
+    transition: color var(--hg-fast) var(--hg-ease);
+  }
 }
 
 .VPDoc .VPDocAsideOutline .outline-link.active {
@@ -413,11 +661,19 @@ samp {
 }
 
 .VPDoc .VPDocAsideOutline .outline-marker {
-  top: 30px;
+  top: 29px;
   height: 16px;
+  transition:
+    top var(--hg-fast) var(--hg-ease),
+    opacity var(--hg-fast) var(--hg-ease);
 }
 
-/* Content -------------------------------------------------------------- */
+/* Content: product docs, not a poster. 16px body at 1.65, headings on a
+   short scale with tight tracking, a capped measure for running text. ------ */
+
+.vp-doc {
+  font-size: 16px;
+}
 
 .vp-doc h1,
 .vp-doc h2,
@@ -428,17 +684,16 @@ samp {
 }
 
 .vp-doc h1 {
-  font-size: 36px;
-  line-height: 1.1;
+  font-size: 32px;
+  line-height: 1.12;
   letter-spacing: -0.03em;
   font-weight: 700;
 }
 
 @media (min-width: 768px) {
   .vp-doc h1 {
-    font-size: 48px;
-    line-height: 1.08;
-    letter-spacing: -0.035em;
+    font-size: 38px;
+    letter-spacing: -0.032em;
   }
 }
 
@@ -448,39 +703,42 @@ samp {
 }
 
 .vp-doc h2 {
-  margin: 64px 0 16px;
+  margin: 52px 0 14px;
   border-top-color: var(--vp-c-divider);
-  padding-top: 32px;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.028em;
-  font-weight: 700;
+  padding-top: 26px;
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -0.024em;
+  font-weight: 650;
 }
 
 .vp-doc h2 .header-anchor {
-  top: 32px;
+  top: 26px;
 }
 
 .vp-doc h3 {
-  margin: 40px 0 0;
-  font-size: 20px;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  margin: 36px 0 0;
+  font-size: 19px;
+  line-height: 1.35;
+  letter-spacing: -0.018em;
+  font-weight: 600;
 }
 
 .vp-doc h4 {
   margin: 28px 0 0;
-  font-size: 17px;
-  line-height: 1.35;
-  letter-spacing: -0.016em;
+  font-size: 16.5px;
+  line-height: 1.4;
+  letter-spacing: -0.014em;
+  font-weight: 600;
 }
 
-/* The sentence under the title reads as a lede, like the landing's .sub,
+/* The sentence under the title reads as a lede, like the landing's .lede,
    unless it only introduces a list. */
 .vp-doc h1 + p:not(:has(+ ul, + ol)) {
-  margin-top: 20px;
-  font-size: 19px;
-  line-height: 1.47;
+  margin-top: 14px;
+  max-width: 40em;
+  font-size: 18px;
+  line-height: 1.5;
   letter-spacing: -0.014em;
   color: var(--vp-c-text-2);
   text-wrap: pretty;
@@ -492,11 +750,20 @@ samp {
 
 .vp-doc p,
 .vp-doc li {
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
 .vp-doc p {
-  margin: 18px 0;
+  margin: 16px 0;
+}
+
+/* About 75 characters: SF's "0" is wide, so ch would allow ~85. */
+.vp-doc > div > :is(p, ul, ol) {
+  max-width: 38em;
+}
+
+.vp-doc li + li {
+  margin-top: 6px;
 }
 
 .vp-doc li::marker {
@@ -504,6 +771,7 @@ samp {
 }
 
 .vp-doc strong {
+  font-weight: 600;
   color: var(--vp-c-text-1);
 }
 
@@ -517,13 +785,15 @@ samp {
     text-decoration-color var(--hg-fast) var(--hg-ease);
 }
 
-.vp-doc a:hover {
-  color: var(--vp-c-brand-2);
-  text-decoration-color: currentColor;
+@media (hover: hover) and (pointer: fine) {
+  .vp-doc a:hover {
+    color: var(--vp-c-brand-2);
+    text-decoration-color: currentColor;
+  }
 }
 
 .vp-doc :not(pre) > code {
-  border-radius: 6px;
+  border-radius: 5px;
   padding: 0.12em 0.36em;
 }
 
@@ -538,8 +808,9 @@ samp {
 
 /* Tables: hairline rows, like the landing page's comparison table. */
 .vp-doc table {
-  margin: 28px 0;
-  font-size: 15px;
+  margin: 24px 0;
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .vp-doc tr,
@@ -552,7 +823,7 @@ samp {
 .vp-doc td {
   border: 0;
   border-bottom: 1px solid var(--vp-c-divider);
-  padding: 13px 20px 13px 0;
+  padding: 11px 20px 11px 0;
   line-height: 1.5;
   vertical-align: top;
 }
@@ -562,12 +833,12 @@ samp {
 }
 
 .vp-doc td {
-  font-size: 15px;
+  font-size: 14.5px;
 }
 
 .vp-doc thead th {
   border-top: 1px solid var(--vp-c-divider);
-  padding-block: 10px;
+  padding-block: 9px;
   font-size: 13px;
   font-weight: 500;
   color: var(--vp-c-text-3);
@@ -581,10 +852,10 @@ samp {
 
 /* Custom containers: tinted panels with a coloured title. */
 .vp-doc .custom-block {
-  margin: 24px 0;
+  margin: 20px 0;
   border: 0;
-  border-radius: 14px;
-  padding: 16px 20px;
+  border-radius: 12px;
+  padding: 14px 18px;
   line-height: 1.6;
 }
 
@@ -598,7 +869,8 @@ samp {
 }
 
 .vp-doc .custom-block .custom-block-title {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
@@ -650,27 +922,28 @@ samp {
 
 .vp-doc div[class*="language-"],
 .vp-doc li div[class*="language-"] {
-  margin: 20px 0;
-  border-radius: 14px;
+  margin: 18px 0;
+  border-radius: 12px;
   box-shadow: var(--hg-code-shadow);
 }
 
 .vp-doc [class*="language-"] pre {
-  padding: 20px 0 22px;
+  padding: 18px 0 20px;
   scrollbar-width: thin;
   scrollbar-color: oklch(100% 0 0 / 0.2) transparent;
 }
 
 .vp-doc [class*="language-"] code {
-  padding: 0 22px;
+  padding: 0 20px;
   font-size: 13.5px;
+  line-height: 1.65;
 }
 
 .vp-doc [class*="language-"] code .highlighted,
 .vp-doc [class*="language-"] code .diff {
-  margin: 0 -22px;
-  padding: 0 22px;
-  width: calc(100% + 44px);
+  margin: 0 -20px;
+  padding: 0 20px;
+  width: calc(100% + 40px);
 }
 
 .vp-doc [class*="language-"] > span.lang {
@@ -681,18 +954,30 @@ samp {
   letter-spacing: 0;
 }
 
+/* Copy: 32px, top-right, swaps to "Copied" with VitePress's check. */
 .vp-doc [class*="language-"] > button.copy {
-  top: 10px;
-  right: 10px;
+  top: 9px;
+  right: 9px;
   border-radius: 8px;
-  width: 36px;
-  height: 36px;
-  background-size: 18px;
+  width: 32px;
+  height: 32px;
+  background-size: 16px;
   transition:
     border-color var(--hg-fast) var(--hg-ease),
     background-color var(--hg-fast) var(--hg-ease),
     opacity var(--hg-fast) var(--hg-ease),
     transform var(--hg-fast) var(--hg-ease);
+}
+
+/* Touch screens have no hover to reveal it, so it stays visible there. */
+@media (hover: none) {
+  .vp-doc [class*="language-"] > button.copy {
+    opacity: 1;
+  }
+
+  .vp-doc [class*="language-"] > button.copy + span.lang {
+    opacity: 0;
+  }
 }
 
 .vp-doc [class*="language-"] > button.copy.copied,
@@ -702,8 +987,13 @@ samp {
 
 .vp-doc [class*="language-"] > button.copy.copied::before,
 .vp-doc [class*="language-"] > button.copy:hover.copied::before {
+  top: -1px;
   border-radius: 8px 0 0 8px;
-  height: 36px;
+  padding: 0 8px;
+  height: 32px;
+  line-height: 30px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .vp-doc .custom-block :not(pre) > code {
@@ -713,21 +1003,21 @@ samp {
 
 /* Code groups: one panel, tabs on top. */
 .vp-doc .vp-code-group {
-  margin: 20px 0;
-  border-radius: 14px;
+  margin: 18px 0;
+  border-radius: 12px;
   background-color: var(--hg-code-bg);
   box-shadow: var(--hg-code-shadow);
 }
 
 .vp-doc .vp-code-group .tabs {
   margin: 0;
-  border-radius: 14px 14px 0 0;
+  border-radius: 12px 12px 0 0;
   padding: 0 10px;
 }
 
 .vp-doc .vp-code-group .tabs label {
   padding: 0 10px;
-  line-height: 44px;
+  line-height: 42px;
   font-size: 13px;
   transition: color var(--hg-fast) var(--hg-ease);
 }
@@ -740,44 +1030,721 @@ samp {
 .vp-doc .vp-code-group div[class*="language-"] {
   margin: 0;
   /* biome-ignore lint/complexity/noImportantStyles: outranks VitePress's own !important */
-  border-radius: 0 0 14px 14px !important;
+  border-radius: 0 0 12px 12px !important;
   box-shadow: none;
 }
 
 /* Footer of each page */
-.VPDoc .VPDocFooter .edit-link-button {
+.VPDoc .VPDocFooter .edit-info {
+  padding-bottom: 14px;
+}
+
+.VPDoc .VPDocFooter .edit-link-button,
+.VPDoc .VPDocFooter .VPLastUpdated {
   font-size: 13px;
   font-weight: 400;
+  line-height: 24px;
+  color: var(--vp-c-text-3);
   transition: color var(--hg-fast) var(--hg-ease);
 }
 
-.VPDoc .VPDocFooter .pager-link {
-  border-color: var(--vp-c-divider);
-  border-radius: 14px;
-  padding: 14px 18px 16px;
-  transition: border-color var(--hg-fast) var(--hg-ease);
+.VPDoc .VPDocFooter .prev-next {
+  border-top-color: var(--vp-c-divider);
+  padding-top: 20px;
+  gap: 12px;
 }
 
-.VPDoc .VPDocFooter .pager-link:hover {
-  border-color: color-mix(in oklab, var(--hg-accent) 45%, transparent);
+.VPDoc .VPDocFooter .pager-link {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px 14px;
+  background-color: var(--hg-surface);
+  box-shadow: var(--hg-raised);
+  transition: box-shadow var(--hg-fast) var(--hg-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .VPDoc .VPDocFooter .pager-link:hover {
+    box-shadow: var(--hg-raised-hover);
+  }
 }
 
 .VPDoc .VPDocFooter .pager-link .desc {
+  font-size: 12.5px;
   font-weight: 400;
   color: var(--vp-c-text-3);
 }
 
 .VPDoc .VPDocFooter .pager-link .title {
-  margin-top: 2px;
+  margin-top: 1px;
   font-size: 15px;
+  font-weight: 500;
   letter-spacing: -0.012em;
 }
+
+/* Docs home: copy-paste starts and the places to go ----------------------- */
+
+.vp-doc .hg-hub {
+  margin: 28px 0 8px;
+}
+
+.hg-hub-start {
+  border-radius: 14px;
+  background: var(--hg-surface);
+  box-shadow: var(--hg-raised);
+}
+
+.hg-copy {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 8px 8px 8px 16px;
+}
+
+.hg-copy + .hg-copy {
+  border-top: 1px solid var(--hg-line);
+}
+
+.hg-copy-tag {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hg-ink-3);
+}
+
+.vp-doc .hg-copy-text {
+  margin: 0;
+  max-width: none;
+  font: 14px / 1.5 var(--hg-mono);
+  letter-spacing: 0;
+  color: var(--hg-ink);
+  overflow-wrap: anywhere;
+}
+
+.hg-copy-prompt {
+  color: var(--hg-ink-3);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hg-copy-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  color: var(--hg-ink-3);
+  transition:
+    background-color var(--hg-fast) var(--hg-ease),
+    color var(--hg-fast) var(--hg-ease),
+    transform var(--hg-fast) var(--hg-ease);
+}
+
+/* 44px to the touch, without crowding the row. */
+.hg-copy-button::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.hg-copy-button svg {
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    opacity var(--hg-fast) var(--hg-ease),
+    transform var(--hg-enter) var(--hg-ease-out);
+}
+
+.hg-copy-button .glyph {
+  stroke-width: 1.4;
+}
+
+.hg-copy-button .check {
+  opacity: 0;
+  transform: scale(0.6);
+  stroke-width: 1.8;
+  color: var(--hg-ok);
+}
+
+.hg-copy[data-state="copied"] .hg-copy-button .glyph {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.hg-copy[data-state="copied"] .hg-copy-button .check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hg-copy-button:hover {
+    color: var(--hg-ink);
+    background-color: color-mix(in oklab, var(--hg-ink) 7%, transparent);
+  }
+}
+
+.hg-copy-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* When the clipboard is blocked, say so where the reader is looking. */
+.hg-copy[data-state="failed"] .hg-copy-status {
+  position: static;
+  grid-column: 2 / -1;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  font-size: 12.5px;
+  color: var(--hg-ink-3);
+}
+
+.hg-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hg-card {
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 14px;
+  padding: 16px 18px 15px;
+  background: var(--hg-surface);
+  box-shadow: var(--hg-raised);
+  color: var(--hg-ink);
+  transition: box-shadow var(--hg-fast) var(--hg-ease);
+}
+
+.hg-card-wide {
+  grid-column: span 3;
+}
+
+.vp-doc a.hg-card,
+.vp-doc .hg-card a {
+  text-decoration: none;
+}
+
+.vp-doc a.hg-card {
+  color: var(--hg-ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vp-doc a.hg-card:hover {
+    color: var(--hg-ink);
+    box-shadow: var(--hg-raised-hover);
+  }
+
+  .vp-doc a.hg-card:hover .hg-card-title::after {
+    transform: translateX(2px);
+    color: var(--hg-accent);
+  }
+}
+
+.vp-doc .hg-card-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--hg-ink);
+}
+
+.hg-card-title::after {
+  content: "→";
+  font-weight: 400;
+  color: var(--hg-ink-3);
+  transition:
+    transform var(--hg-fast) var(--hg-ease),
+    color var(--hg-fast) var(--hg-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vp-doc .hg-card a.hg-card-title:hover {
+    color: var(--hg-accent);
+  }
+}
+
+.hg-card-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hg-ink-2);
+  text-wrap: pretty;
+}
+
+.vp-doc .hg-card .hg-card-text code {
+  font-size: 0.88em;
+}
+
+.hg-card-meta {
+  margin-top: auto;
+  padding-top: 8px;
+  font: 12px / 1.4 var(--hg-mono);
+  letter-spacing: 0;
+  color: var(--hg-ink-3);
+}
+
+.vp-doc .hg-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: auto 0 0;
+  padding: 8px 0 0;
+  max-width: none;
+  list-style: none;
+}
+
+.vp-doc .hg-card-links li {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.vp-doc .hg-card-links li + li {
+  margin: 0;
+}
+
+.vp-doc .hg-card-links a {
+  color: var(--hg-accent);
+}
+
+/* Fingers need taller targets than the text line gives. */
+@media (pointer: coarse) {
+  .vp-doc .hg-card-links {
+    gap: 0 16px;
+  }
+
+  .vp-doc .hg-card-links a {
+    display: inline-block;
+    padding: 10px 0;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vp-doc .hg-card-links a:hover {
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+  }
+}
+
+@media (max-width: 1100px) {
+  .hg-card,
+  .hg-card-wide {
+    grid-column: span 3;
+  }
+
+  .hg-card:nth-child(3) {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 560px) {
+  .hg-hub-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .hg-card,
+  .hg-card-wide,
+  .hg-card:nth-child(3) {
+    grid-column: auto;
+  }
+
+  .hg-copy {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+    padding-left: 14px;
+  }
+
+  .hg-copy-tag {
+    grid-column: 1 / -1;
+  }
+
+  .hg-copy[data-state="failed"] .hg-copy-status {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Search palette (theme/SearchPalette.vue) -------------------------------- */
+
+.hg-search {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: min(12vh, 120px) 16px 16px;
+}
+
+.hg-search-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--vp-backdrop-bg-color);
+}
+
+.hg-search-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  width: min(640px, 100%);
+  max-height: min(560px, calc(var(--hg-vvh, 100dvh) - min(12vh, 120px) - 16px));
+  overflow: hidden;
+  background: var(--hg-surface);
+  box-shadow: var(--hg-overlay-shadow);
+}
+
+.hg-search-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--hg-line);
+  padding: 0 12px 0 18px;
+  height: 56px;
+}
+
+.hg-search-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--hg-ink-3);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.hg-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  font: 400 16px / 1 var(--hg-sans);
+  letter-spacing: -0.011em;
+  color: var(--hg-ink);
+  background: none;
+  caret-color: var(--hg-accent);
+}
+
+.hg-search-input:focus,
+.hg-search-input:focus-visible {
+  outline: none;
+}
+
+.hg-search-input::placeholder {
+  color: var(--hg-ink-3);
+}
+
+.hg-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.hg-search-close {
+  position: relative;
+  flex: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: 500 11px / 1 var(--hg-sans);
+  letter-spacing: 0.02em;
+  color: var(--hg-ink-3);
+  background: var(--hg-bg-alt);
+  box-shadow: inset 0 0 0 1px var(--hg-line);
+  -webkit-user-select: none;
+  user-select: none;
+  transition: color var(--hg-fast) var(--hg-ease);
+}
+
+.hg-search-close::before {
+  content: "";
+  position: absolute;
+  inset: -10px -8px;
+}
+
+.hg-search-close-text {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hg-search-close:hover {
+    color: var(--hg-ink);
+  }
+}
+
+.hg-search-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 6px 8px;
+  scroll-padding-block: 30px 8px;
+}
+
+.hg-search-group + .hg-search-group {
+  margin-top: 4px;
+}
+
+.hg-search-group-label {
+  padding: 10px 12px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hg-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hg-search-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 44px;
+  color: var(--hg-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.hg-search-item[aria-selected="true"] {
+  background: color-mix(in oklab, var(--hg-ink) 6%, transparent);
+}
+
+.hg-search-kind {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--hg-ink-3);
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+.hg-search-hash {
+  display: grid;
+  place-items: center;
+  font: 500 14px / 1 var(--hg-mono);
+  color: var(--hg-ink-3);
+}
+
+.hg-search-item[aria-selected="true"] .hg-search-kind {
+  stroke: var(--hg-accent);
+  color: var(--hg-accent);
+}
+
+.hg-search-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hg-search-title,
+.hg-search-crumbs {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hg-search-title {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.hg-search-crumbs {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--hg-ink-3);
+}
+
+.hg-search-crumbs > span + span::before {
+  content: " › ";
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: the palette is outside .vp-doc */
+.hg-search :is(.hg-search-title, .hg-search-crumbs) code {
+  font-size: 0.9em;
+}
+
+.hg-search-item mark {
+  border-radius: 3px;
+  color: inherit;
+  background: color-mix(in oklab, var(--hg-accent) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--hg-accent) 18%, transparent);
+}
+
+.hg-search-enter {
+  flex: none;
+  visibility: hidden;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font: 500 11px / 1 var(--hg-sans);
+  color: var(--hg-ink-3);
+  background: var(--hg-surface);
+  box-shadow: inset 0 0 0 1px var(--hg-line);
+}
+
+.hg-search-item[aria-selected="true"] .hg-search-enter {
+  visibility: visible;
+}
+
+.hg-search-empty {
+  padding: 28px 16px 24px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--hg-ink-2);
+}
+
+.hg-search .hg-search-empty p {
+  margin: 0;
+}
+
+.hg-search .hg-search-empty p + p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--hg-ink-3);
+}
+
+.hg-search-empty strong {
+  font-weight: 600;
+  color: var(--hg-ink);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: the palette is outside .vp-doc */
+.hg-search .hg-search-empty code {
+  font-size: 0.92em;
+}
+
+.hg-search .hg-search-empty a {
+  color: var(--hg-accent);
+}
+
+/* Only worth showing if the index takes a noticeable moment to arrive. */
+.hg-search-loading {
+  opacity: 0;
+  animation: hg-show 1ms linear 400ms forwards;
+}
+
+@keyframes hg-show {
+  to {
+    opacity: 1;
+  }
+}
+
+.hg-search-footer {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 16px;
+  border-top: 1px solid var(--hg-line);
+  padding: 0 14px;
+  height: 38px;
+  font-size: 12px;
+  color: var(--hg-ink-3);
+  background: color-mix(in oklab, var(--hg-bg-alt) 60%, var(--hg-surface));
+}
+
+.hg-search-footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hg-search-footer kbd {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font: 500 11px / 1 var(--hg-sans);
+  background: var(--hg-surface);
+  box-shadow: inset 0 0 0 1px var(--hg-line);
+}
+
+.hg-search-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Phones: the panel hugs the top, there's no keyboard to hint at, and the
+   close control reads "Cancel" like iOS search. */
+@media (max-width: 639px), (pointer: coarse) {
+  .hg-search-footer,
+  .hg-search-item[aria-selected="true"] .hg-search-enter {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .hg-search {
+    padding: max(8px, env(safe-area-inset-top)) 8px 8px;
+  }
+
+  .hg-search-panel {
+    border-radius: 14px;
+    max-height: calc(var(--hg-vvh, 100dvh) - 16px);
+  }
+
+  .hg-search-bar {
+    padding: 0 6px 0 14px;
+    height: 52px;
+  }
+
+  .hg-search-close {
+    padding: 8px 10px;
+    font: 400 15px / 1 var(--hg-sans);
+    letter-spacing: -0.01em;
+    color: var(--hg-accent);
+    background: none;
+    box-shadow: none;
+  }
+
+  .hg-search-close::before {
+    inset: -4px 0;
+  }
+
+  .hg-search-close-key {
+    display: none;
+  }
+
+  .hg-search-close-text {
+    display: inline;
+  }
+}
+
+/* No open or close animation: the palette is a keyboard tool opened many
+   times a session, and like Raycast's it should simply be there. */
 
 /* Press feedback --------------------------------------------------------- */
 
 @media (prefers-reduced-motion: no-preference) {
   .DocSearch-Button:active,
-  .VPNavBar .VPNavBarAppearance .VPSwitch:active,
+  .hg-cta:active,
+  .hg-copy-button:active,
   .vp-doc [class*="language-"] > button.copy:active,
   .VPLocalNav .menu:active,
   .VPNavBarHamburger:active,
@@ -786,9 +1753,10 @@ samp {
   }
 }
 
-/* Every transition above runs on --hg-fast, so this switches them all off. */
+/* Every transition above runs on these, so this switches them all off. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --hg-fast: 0s;
+    --hg-enter: 0s;
   }
 }
