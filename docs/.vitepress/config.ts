@@ -31,7 +31,7 @@ function currentLinkStyle(relativePath: string) {
 export default defineConfig({
   title: "Hookgres",
   description:
-    "Reliable, signed webhooks from the Postgres you already run. Retries, endpoint health, secret rotation and replay for TypeScript.",
+    "Webhooks that commit with your data: signed, retried webhooks queued in your own Postgres transaction. Endpoint health, secret rotation and replay for TypeScript.",
   base: "/docs/",
   ignoreDeadLinks: "localhostLinks",
   cleanUrls: true,

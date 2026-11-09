@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hookgres: Postgres webhooks for TypeScript</title>
-<meta name="description" content="Send signed, retried, logged webhooks to your customers from the Postgres you already run. A TypeScript library: no extra servers, queues or per-message bills.">
+<title>Hookgres: Postgres webhooks that commit with your data</title>
+<meta name="description" content="A TypeScript library that queues webhooks in your Postgres transaction, then signs, retries and logs every delivery. No extra service, no per-message bill.">
 <link rel="canonical" href="https://hookgres.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Hookgres">
 <meta property="og:url" content="https://hookgres.dev/">
-<meta property="og:title" content="Hookgres: Postgres webhooks for TypeScript">
-<meta property="og:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
+<meta property="og:title" content="Hookgres: webhooks that commit with your data">
+<meta property="og:description" content="Signed, retried webhooks queued in your own Postgres transaction. No extra service, no per-message bill.">
 <meta property="og:image" content="https://hookgres.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Hookgres: webhooks from the Postgres you already run. Shows the npm install command and a send() call inside a database transaction.">
+<meta property="og:image:alt" content="Hookgres: webhooks that commit with your data. Shows the npm install command and a send() call inside a database transaction.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Hookgres: Postgres webhooks for TypeScript">
-<meta name="twitter:description" content="Signed, retried, logged webhooks from the Postgres you already run.">
+<meta name="twitter:title" content="Hookgres: webhooks that commit with your data">
+<meta name="twitter:description" content="Signed, retried webhooks queued in your own Postgres transaction. No extra service, no per-message bill.">
 <meta name="twitter:image" content="https://hookgres.dev/og.png">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfd">
@@ -569,8 +569,8 @@
       <div class="hero-grid">
         <div class="hero-copy">
           <p class="eyebrow">Open-source Postgres webhooks for TypeScript</p>
-          <h1>Webhooks from the Postgres you already run.</h1>
-          <p class="lede">Signed, retried and logged webhooks for your customers. No new servers.</p>
+          <h1>Webhooks that&nbsp;commit with your data.</h1>
+          <p class="lede">A TypeScript library that queues webhooks in your Postgres transaction, then signs, retries and logs every delivery. No extra service, no&nbsp;per&#8209;message&nbsp;bill.</p>
 
           <div class="start">
             <div class="start-row">
@@ -628,12 +628,12 @@ hookgres.start();
   eventTypes: [<span class="s">"invoice.paid"</span>],
 });
 
-<span class="c">// Anywhere in your app, or inside a transaction</span>
+<span class="c">// In your transaction: sent only if it commits</span>
 <span class="k">await</span> hookgres.send({
   tenantId: <span class="s">"acme"</span>,
   eventType: <span class="s">"invoice.paid"</span>,
   payload: { invoiceId: <span class="s">"in_123"</span>, amount: 4200 },
-});</pre>
+}, { client });</pre>
 <pre class="tab-panel" id="code-verify" role="tabpanel" aria-labelledby="tab-verify" hidden><span class="k">import</span> { verifyWebhook } <span class="k">from</span> <span class="s">"hookgres"</span>;
 
 <span class="c">// Your customer's server. Any Standard Webhooks</span>
@@ -670,7 +670,7 @@ hookgres.start();
       <div>
         <p class="kicker">Transactional</p>
         <h2>Queued in your transaction. Sent only if it commits.</h2>
-        <p class="sub">A hosted service sits outside your database, so a webhook can go out for an order that later rolled back. Hookgres writes the webhook in the same transaction as your data.</p>
+        <p class="sub">A webhook service is a second system. Call it after your commit, and a crash in between loses the event. Call it before, and a rollback leaves your customer with a webhook for an invoice that was never paid. Hookgres writes the webhook in the same transaction as your data, so you get the outbox and the delivery in one library.</p>
         <p class="sub">Workers claim deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like.</p>
         <p class="more"><a href="/docs/guides/sending">Sending webhooks</a></p>
       </div>

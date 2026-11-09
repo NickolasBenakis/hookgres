@@ -74,7 +74,7 @@ const site = "https://hookgres.dev";
 const index = [
   "# Hookgres",
   "",
-  "> Hookgres is an MIT-licensed TypeScript library for sending signed webhooks to your customers from the Postgres you already run: Standard Webhooks signatures, durable retries, endpoint health, secret rotation, replay and a delivery log. Install with `npm install hookgres pg`. Requires Node.js 22.12+ and Postgres 14+.",
+  "> Hookgres is an MIT-licensed TypeScript library for sending signed webhooks to your customers from the Postgres you already run. `send()` can join your database transaction, so a webhook is queued only if your data commits. It has Standard Webhooks signatures, durable retries, endpoint health, secret rotation, replay and a delivery log. Install with `npm install hookgres pg`. Requires Node.js 22.12+ and Postgres 14+.",
   "",
   ...agentInstructions(),
   "## Docs",
