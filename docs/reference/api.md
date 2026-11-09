@@ -11,6 +11,7 @@ import {
   generateSecret,
   assertSecret,
   WebhookVerificationError,
+  isPrivateAddress,
 } from "hookgres";
 ```
 
@@ -158,6 +159,17 @@ otherwise returns it.
 ### `WebhookVerificationError`
 
 The error class `verifyWebhook` throws.
+
+## Other helpers
+
+### `isPrivateAddress(ip): boolean`
+
+Returns `true` if `ip` is an address the `blockPrivateAddresses` option
+blocks: private, loopback, link-local, multicast or reserved, including IPv6
+forms that carry such an IPv4 address, like `::ffff:127.0.0.1`. Ignores an
+IPv6 zone id (`fe80::1%eth0`). Returns `false` for anything that isn't an IP
+address, including hostnames. Use it to put the same check in a custom
+`fetch` transport.
 
 ### `DEFAULT_RETRY_SCHEDULE`
 

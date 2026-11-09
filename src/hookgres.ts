@@ -2,6 +2,13 @@ import pg from "pg";
 import { newId } from "./ids.js";
 import { migrations } from "./migrations.js";
 import { assertSecret, generateSecret, sign } from "./signing.js";
+import {
+  AddressGuard,
+  type BlockPrivateAddressesOption,
+  guardedTransport,
+  type Transport,
+  type TransportResponse,
+} from "./ssrf.js";
 import type {
   Attempt,
   CreateEndpointInput,
@@ -64,7 +71,20 @@ export interface HookgresOptions {
   lockTimeoutMs?: number;
   /** Grace period for the old secret after `rotateEndpointSecret`. Defaults to 24h. */
   secretRotationGraceMs?: number;
-  /** Custom fetch, e.g. to add a proxy or an SSRF guard. */
+  /**
+   * Refuse to send to private, loopback, link-local and other internal
+   * addresses. `true` blocks them all; `{ allow: ["10.1.2.0/24"] }` blocks
+   * all except the listed IPs and CIDRs. Checked when endpoints are created
+   * or updated (IP literals and `localhost`) and on every delivery, after
+   * DNS. Defaults to `false`. With a custom `fetch`, only the create/update
+   * check applies.
+   * @see https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf
+   */
+  blockPrivateAddresses?: BlockPrivateAddressesOption;
+  /**
+   * Custom fetch, e.g. to send through a proxy. With `blockPrivateAddresses`,
+   * endpoint URLs are still checked, but delivery uses this fetch as is.
+   */
   fetch?: typeof fetch;
   userAgent?: string;
   /** Called for unexpected worker errors. Defaults to `console.error`. */
@@ -124,7 +144,9 @@ export class Hookgres {
   private readonly concurrency: number;
   private readonly lockTimeoutMs: number;
   private readonly secretRotationGraceMs: number;
-  private readonly fetchFn: typeof fetch;
+  private readonly guard: AddressGuard | null;
+  private readonly transport: Transport;
+  private readonly closeTransport: () => void;
   private readonly userAgent: string;
   private readonly onError: (error: unknown) => void;
 
@@ -177,7 +199,23 @@ export class Hookgres {
       throw new Error("lockTimeoutMs must be greater than requestTimeoutMs");
     }
     this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.guard = options.blockPrivateAddresses
+      ? new AddressGuard(options.blockPrivateAddresses)
+      : null;
+    if (this.guard && !options.fetch) {
+      const guarded = guardedTransport(this.guard);
+      this.transport = guarded.send;
+      this.closeTransport = guarded.close;
+    } else {
+      this.transport = options.fetch ?? globalThis.fetch;
+      this.closeTransport = () => {};
+      if (this.guard) {
+        process.emitWarning(
+          "blockPrivateAddresses with a custom fetch only checks endpoint URLs when they are created or updated. Checking the addresses each delivery connects to is up to your fetch or proxy (see isPrivateAddress, or a proxy like Smokescreen).",
+          { code: "HOOKGRES_SSRF_CUSTOM_FETCH" },
+        );
+      }
+    }
     this.userAgent = options.userAgent ?? "Hookgres/0.1";
     this.onError =
       options.onError ??
@@ -230,7 +268,7 @@ export class Hookgres {
    * @see https://hookgres.dev/docs/guides/endpoints
    */
   async createEndpoint(input: CreateEndpointInput): Promise<Endpoint> {
-    assertUrl(input.url);
+    assertUrl(input.url, this.guard);
     const { rows } = await this.pool.query(
       `INSERT INTO ${this.t.endpoints}
          (id, tenant_id, url, description, event_types, secret, metadata)
@@ -284,7 +322,7 @@ export class Hookgres {
       sets.push(`${column} = $${values.length}`);
     };
     if (patch.url !== undefined) {
-      assertUrl(patch.url);
+      assertUrl(patch.url, this.guard);
       set("url", patch.url);
     }
     if (patch.description !== undefined) set("description", patch.description);
@@ -516,6 +554,7 @@ export class Hookgres {
   /** Stops the worker and closes the pool if Hookgres created it. */
   async close(): Promise<void> {
     await this.stop();
+    this.closeTransport();
     if (this.ownsPool) await this.pool.end();
   }
 
@@ -737,7 +776,7 @@ export class Hookgres {
       const signature = secrets
         .map((secret) => sign(secret, delivery.message_id, timestamp, body))
         .join(" ");
-      const response = await this.fetchFn(delivery.url, {
+      const response = await this.transport(delivery.url, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -792,7 +831,7 @@ async function queryWithNulHint(
   }
 }
 
-function assertUrl(url: string): void {
+function assertUrl(url: string, guard: AddressGuard | null): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -802,6 +841,7 @@ function assertUrl(url: string): void {
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new Error(`Endpoint URL must use http or https: ${url}`);
   }
+  guard?.assertEndpointUrl(parsed);
 }
 
 function normaliseEventTypes(
@@ -816,7 +856,9 @@ function normaliseEventTypes(
   return [...new Set(eventTypes)];
 }
 
-async function readLimited(response: Response): Promise<string | null> {
+async function readLimited(
+  response: TransportResponse,
+): Promise<string | null> {
   if (!response.body) return null;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -840,12 +882,22 @@ function describeError(error: unknown, timeoutMs: number): string {
   if (error.name === "TimeoutError") return `Timed out after ${timeoutMs}ms`;
   // fetch wraps the real reason ("ECONNREFUSED", "bad port", ...) in `cause`,
   // sometimes as an AggregateError when several addresses were tried.
-  const cause = error.cause as
-    | { code?: string; message?: string; errors?: { code?: string }[] }
-    | undefined;
-  const detail =
-    cause?.code ?? cause?.errors?.find((e) => e.code)?.code ?? cause?.message;
+  const cause = error.cause as ErrorDetail | undefined;
+  const detail = codeOf(cause) ?? cause?.message;
+  // node:http (blockPrivateAddresses) rejects with the reason itself; when
+  // every address fails it's an AggregateError with an empty message.
+  if (!error.message) return codeOf(error as ErrorDetail) ?? error.name;
   return detail ? `${error.message}: ${detail}` : error.message;
+}
+
+type ErrorDetail = {
+  code?: string;
+  message?: string;
+  errors?: { code?: string }[];
+};
+
+function codeOf(error: ErrorDetail | undefined): string | undefined {
+  return error?.code ?? error?.errors?.find((e) => e.code)?.code;
 }
 
 type Row = Record<string, unknown>;

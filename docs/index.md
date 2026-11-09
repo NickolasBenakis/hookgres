@@ -73,5 +73,5 @@ your database.
   Receivers deduplicate on the `webhook-id` header.
 - **Ordering.** Deliveries are sent roughly in the order they became due, but
   retries mean a later event can arrive before an earlier one.
-- **Block internal URLs for you.** See
+- **Block internal URLs by default.** Turn on `blockPrivateAddresses` for that; see
   [Going to production](/guides/production#block-internal-addresses-ssrf).
