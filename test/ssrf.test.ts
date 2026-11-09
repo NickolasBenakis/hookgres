@@ -6,7 +6,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Hookgres,
   isPrivateAddress,
@@ -441,36 +441,75 @@ describe("blockPrivateAddresses", () => {
     expect(delivery.lastError).toBe("Blocked port 6667");
   });
 
-  it("refuses to run when Node sends requests through an env proxy", () => {
-    const saved = { ...process.env };
+  function captureWarnings() {
+    return vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+  }
+  const codes = (spy: ReturnType<typeof captureWarnings>) =>
+    spy.mock.calls.map((call) => (call[1] as { code?: string })?.code);
+
+  it("with a custom fetch, checks URLs but delivers through that fetch", async () => {
+    const warnings = captureWarnings();
+    const fetched: string[] = [];
+    const customFetch = ((url: string, init: RequestInit) => {
+      fetched.push(url);
+      return globalThis.fetch(url, init);
+    }) as typeof fetch;
+    const hw = ctx.create({ blockPrivateAddresses: true, fetch: customFetch });
     try {
-      process.env.HTTPS_PROXY = "http://proxy.internal:3128";
-      expect(() => ctx.create({ blockPrivateAddresses: true })).not.toThrow();
-      process.env.NODE_USE_ENV_PROXY = "1";
-      expect(() => ctx.create({ blockPrivateAddresses: true })).toThrow(
-        /HTTPS_PROXY.*Smokescreen/,
+      expect(codes(warnings)).toEqual(["HOOKGRES_SSRF_CUSTOM_FETCH"]);
+      expect(String(warnings.mock.calls[0]?.[0])).toMatch(
+        /isPrivateAddress.*Smokescreen/,
       );
-      expect(() => ctx.create()).not.toThrow();
-      delete process.env.HTTPS_PROXY;
-      process.env.http_proxy = "http://proxy.internal:3128";
-      expect(() => ctx.create({ blockPrivateAddresses: true })).toThrow(
-        /http_proxy/,
-      );
+      for (const url of ["http://127.0.0.1/", "http://example.com:25/"]) {
+        await expect(
+          hw.createEndpoint({ tenantId: "acme", url }),
+        ).rejects.toThrow(/private address|blocked port/);
+      }
+      // The custom fetch owns delivery-time checks, so loopback goes out.
+      await endpointFor(receiver.url);
+      const { delivery } = await sendAndDrain(hw);
+      expect(delivery.status).toBe("succeeded");
+      expect(fetched).toEqual([receiver.url]);
+      expect(receiver.requests).toHaveLength(1);
+      expect(warnings).toHaveBeenCalledTimes(1);
     } finally {
-      process.env = saved;
+      warnings.mockRestore();
     }
   });
 
-  it("can't be combined with a custom fetch, and validates allow", () => {
-    expect(() =>
-      ctx.create({ blockPrivateAddresses: true, fetch: globalThis.fetch }),
-    ).toThrow(/custom fetch.*Smokescreen/);
+  it("ignores Node's env proxy and warns once", async () => {
+    const saved = { ...process.env };
+    const warnings = captureWarnings();
+    try {
+      // A proxy that refuses connections: delivery only works if it's skipped.
+      process.env.HTTPS_PROXY = await closedPortUrl();
+      process.env.HTTP_PROXY = process.env.HTTPS_PROXY;
+      ctx.create({ blockPrivateAddresses: true });
+      ctx.create();
+      expect(warnings).not.toHaveBeenCalled();
+
+      process.env.NODE_USE_ENV_PROXY = "1";
+      const hw = ctx.create({
+        blockPrivateAddresses: { allow: ["127.0.0.1"] },
+      });
+      expect(codes(warnings)).toEqual(["HOOKGRES_SSRF_ENV_PROXY"]);
+      expect(String(warnings.mock.calls[0]?.[0])).toMatch(
+        /^HTTP_PROXY is ignored while blockPrivateAddresses is on/,
+      );
+      await endpointFor(receiver.url);
+      const { delivery } = await sendAndDrain(hw);
+      expect(delivery.status).toBe("succeeded");
+      expect(warnings).toHaveBeenCalledTimes(1);
+    } finally {
+      process.env = saved;
+      warnings.mockRestore();
+    }
+  });
+
+  it("validates allow entries", () => {
     expect(() =>
       ctx.create({ blockPrivateAddresses: { allow: ["10.0.0.0/40"] } }),
     ).toThrow(/Invalid blockPrivateAddresses.allow entry "10.0.0.0\/40"/);
-    expect(() =>
-      ctx.create({ blockPrivateAddresses: false, fetch: globalThis.fetch }),
-    ).not.toThrow();
   });
 });
 

@@ -31,16 +31,19 @@ const hookgres = new Hookgres({
 | `lockTimeoutMs`          | `requestTimeoutMs` + 30s      | How long a claimed delivery stays locked before another worker may retry it after a crash. Must be greater than `requestTimeoutMs`.                                                                               |
 | `secretRotationGraceMs`  | 24 hours                      | Default grace period for `rotateEndpointSecret`.                                                                                                                                                                  |
 | `blockPrivateAddresses`  | `false`                       | `true` refuses to send to private and internal addresses; `{ allow: [...] }` does the same except for the listed IPs and CIDRs. See [Block internal addresses](/guides/production#block-internal-addresses-ssrf). |
-| `fetch`                  | `globalThis.fetch`            | Custom fetch, for a proxy or tests. Can't be combined with `blockPrivateAddresses`.                                                                                                                               |
+| `fetch`                  | `globalThis.fetch`            | Custom fetch, for a proxy or tests. With `blockPrivateAddresses`, only endpoint URLs are checked; delivery uses this fetch as is.                                                                                 |
 | `userAgent`              | `"Hookgres/0.1"`              | The `user-agent` header on every request.                                                                                                                                                                         |
 | `onError`                | `console.error`               | Called with unexpected worker errors, like a lost database connection. Failed deliveries are not errors.                                                                                                          |
 
 The constructor throws if neither `pool` nor `connectionString` is given, if
 `schema` is invalid, if `retrySchedule` contains a negative or non-finite
-number, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, if a
-`blockPrivateAddresses.allow` entry isn't an IP address or CIDR, or if
-`blockPrivateAddresses` is combined with `fetch` or with Node's env proxy
-(`NODE_USE_ENV_PROXY` plus `HTTP_PROXY`/`HTTPS_PROXY`).
+number, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
+`blockPrivateAddresses.allow` entry isn't an IP address or CIDR.
+
+With `blockPrivateAddresses` on, it emits a process warning (once per
+instance) if a custom `fetch` is given (`HOOKGRES_SSRF_CUSTOM_FETCH`) or if
+Node's env proxy is set up (`NODE_USE_ENV_PROXY` plus `HTTP_PROXY` or
+`HTTPS_PROXY`), which the guard ignores (`HOOKGRES_SSRF_ENV_PROXY`).
 
 ## Several instances
 

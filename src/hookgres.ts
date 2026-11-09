@@ -76,11 +76,15 @@ export interface HookgresOptions {
    * addresses. `true` blocks them all; `{ allow: ["10.1.2.0/24"] }` blocks
    * all except the listed IPs and CIDRs. Checked when endpoints are created
    * or updated (IP literals and `localhost`) and on every delivery, after
-   * DNS. Defaults to `false`. Can't be combined with `fetch`.
+   * DNS. Defaults to `false`. With a custom `fetch`, only the create/update
+   * check applies.
    * @see https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf
    */
   blockPrivateAddresses?: BlockPrivateAddressesOption;
-  /** Custom fetch, e.g. to send through a proxy. */
+  /**
+   * Custom fetch, e.g. to send through a proxy. With `blockPrivateAddresses`,
+   * endpoint URLs are still checked, but delivery uses this fetch as is.
+   */
   fetch?: typeof fetch;
   userAgent?: string;
   /** Called for unexpected worker errors. Defaults to `console.error`. */
@@ -195,20 +199,22 @@ export class Hookgres {
       throw new Error("lockTimeoutMs must be greater than requestTimeoutMs");
     }
     this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
-    if (options.blockPrivateAddresses && options.fetch) {
-      throw new Error(
-        "blockPrivateAddresses can't be combined with a custom fetch. With a custom fetch (for example one that sends through a proxy), block private addresses in that transport or proxy instead, e.g. with Smokescreen",
-      );
-    }
-    if (options.blockPrivateAddresses) {
-      this.guard = new AddressGuard(options.blockPrivateAddresses);
+    this.guard = options.blockPrivateAddresses
+      ? new AddressGuard(options.blockPrivateAddresses)
+      : null;
+    if (this.guard && !options.fetch) {
       const guarded = guardedTransport(this.guard);
       this.transport = guarded.send;
       this.closeTransport = guarded.close;
     } else {
-      this.guard = null;
       this.transport = options.fetch ?? globalThis.fetch;
       this.closeTransport = () => {};
+      if (this.guard) {
+        process.emitWarning(
+          "blockPrivateAddresses with a custom fetch only checks endpoint URLs when they are created or updated. Checking the addresses each delivery connects to is up to your fetch or proxy (see isPrivateAddress, or a proxy like Smokescreen).",
+          { code: "HOOKGRES_SSRF_CUSTOM_FETCH" },
+        );
+      }
     }
     this.userAgent = options.userAgent ?? "Hookgres/0.1";
     this.onError =

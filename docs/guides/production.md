@@ -95,16 +95,23 @@ a username or password fail, as they do with `fetch`. Error messages use
 Node's wording, like `connect ECONNREFUSED 203.0.113.7:443` instead of
 `fetch failed: ECONNREFUSED`.
 
-That's also why it can't be combined with the `fetch` option, or with
 Node's built-in proxy support (`NODE_USE_ENV_PROXY` together with
-`HTTP_PROXY` or `HTTPS_PROXY`): the constructor throws, because requests
-would skip the proxy. If you send through a proxy, put the guard in the
-proxy, or unset the proxy variables. If you pass your own `fetch`, put the
-guard in that transport. `isPrivateAddress(ip)`, exported
-from `hookgres`, applies the same rules as the built-in guard. Call it on
-every address your transport's DNS lookup returns, and on hosts that are
-already IP addresses (it accepts `new URL(url).hostname` as is, brackets
-included).
+`HTTP_PROXY` or `HTTPS_PROXY`) is ignored while the option is on, because
+going through the proxy would hide which address the request reaches.
+Hookgres connects directly and emits a `HOOKGRES_SSRF_ENV_PROXY` warning
+once, when you create the instance. If webhooks must go through a proxy,
+pass a `fetch` that uses it.
+
+**With your own `fetch`**, for example one that sends through a proxy,
+Hookgres still checks endpoint URLs when they're created or updated, but
+delivers through your `fetch` as is. It can't see which address your
+transport connects to, so checking that is the job of the transport or the
+proxy, such as Smokescreen. Hookgres emits a `HOOKGRES_SSRF_CUSTOM_FETCH`
+warning once, when you create the instance, as a reminder.
+`isPrivateAddress(ip)`, exported from `hookgres`, applies the same rules as
+the built-in guard. Call it on every address your transport's DNS lookup
+returns, and on hosts that are already IP addresses (it accepts
+`new URL(url).hostname` as is, brackets included).
 
 **Also block it at the network level.** An egress proxy that only allows
 public addresses, such as Stripe's

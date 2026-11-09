@@ -188,7 +188,13 @@ export function guardedTransport(
   guard: AddressGuard,
   tls: { ca?: string } = {},
 ): { send: Transport; close(): void } {
-  assertNoEnvProxy();
+  const proxy = envProxyVariable();
+  if (proxy) {
+    process.emitWarning(
+      `${proxy} is ignored while blockPrivateAddresses is on: webhooks connect directly so every address can be checked.`,
+      { code: "HOOKGRES_SSRF_ENV_PROXY" },
+    );
+  }
   // Like undici, close idle keep-alive sockets after 4s, before receivers'
   // own idle timeouts reset them. The agent only destroys free sockets on
   // timeout; requests in flight are bounded by the AbortSignal.
@@ -246,23 +252,19 @@ export function guardedTransport(
 }
 
 /**
- * Node can route its own HTTP clients through HTTP(S)_PROXY. These agents
- * would bypass that proxy, and behind a proxy the guard belongs there.
+ * The proxy variable Node's own HTTP clients would use (NODE_USE_ENV_PROXY),
+ * if any. The guarded agents don't use it.
  */
-function assertNoEnvProxy(): void {
+function envProxyVariable(): string | undefined {
   const env = process.env;
   const flag = env.NODE_USE_ENV_PROXY;
   const enabled =
     (flag !== undefined && !["", "0", "false"].includes(flag)) ||
     process.execArgv.includes("--use-env-proxy");
-  const proxy = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].find(
+  if (!enabled) return undefined;
+  return ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].find(
     (name) => env[name],
   );
-  if (enabled && proxy) {
-    throw new Error(
-      `blockPrivateAddresses can't be used while Node routes requests through ${proxy} (NODE_USE_ENV_PROXY). Block private addresses in the proxy instead, e.g. with Smokescreen, or unset ${proxy}`,
-    );
-  }
 }
 
 function blockedError(address: string): Error {
