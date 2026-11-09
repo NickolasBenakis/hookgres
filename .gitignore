@@ -4,6 +4,8 @@ coverage
 *.log
 .DS_Store
 .site-dist
+# Generated from AGENTS.md and docs/ on prepack (pnpm llms).
+/llms.txt
 docs/.vitepress/dist
 docs/.vitepress/cache
 DECISIONS.md

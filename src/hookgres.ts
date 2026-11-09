@@ -1,4 +1,4 @@
-import pg from "pg";
+import pg, { type QueryResult, type QueryResultRow } from "pg";
 import { newId } from "./ids.js";
 import { migrations } from "./migrations.js";
 import { assertSecret, generateSecret, sign } from "./signing.js";
@@ -33,7 +33,16 @@ const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** Delay before each retry: 8 attempts over roughly 28 hours. */
+/**
+ * Default delay in ms before each retry: 5s, 5m, 30m, 2h, 5h, 10h, 10h, so 8
+ * attempts over roughly 28 hours. Pass your own as `retrySchedule`.
+ *
+ * @example
+ * // Same schedule, plus one more retry a day later
+ * new Hookgres({ pool, retrySchedule: [...DEFAULT_RETRY_SCHEDULE, 24 * 60 * 60 * 1000] });
+ *
+ * @see https://hookgres.dev/docs/guides/retries
+ */
 export const DEFAULT_RETRY_SCHEDULE = [
   5 * SECOND,
   5 * MINUTE,
@@ -46,14 +55,45 @@ export const DEFAULT_RETRY_SCHEDULE = [
 
 const RESPONSE_BODY_LIMIT = 4096;
 
+/** Base URL for the docs links in error messages. */
+const DOCS = "https://hookgres.dev/docs";
+
+/**
+ * Options for `new Hookgres(options)`. Pass either `pool` or
+ * `connectionString`; everything else is optional.
+ *
+ * @example
+ * import pg from "pg";
+ * import { Hookgres } from "hookgres";
+ *
+ * const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+ * const hookgres = new Hookgres({
+ *   pool,
+ *   blockPrivateAddresses: true, // customer URLs can't reach internal hosts
+ *   onError: (error) => logger.error(error),
+ * });
+ *
+ * @see https://hookgres.dev/docs/reference/configuration
+ */
 export interface HookgresOptions {
-  /** An existing `pg.Pool`. Hookgres never closes a pool it did not create. */
+  /**
+   * An existing `pg.Pool`, usually the one your app already uses, so
+   * `send()` can join your transactions. Hookgres never closes a pool it did
+   * not create.
+   */
   pool?: pg.Pool;
   /** Alternatively, a connection string; Hookgres creates and owns the pool. */
   connectionString?: string;
-  /** Postgres schema for Hookgres's tables. Defaults to `hookgres`. */
+  /**
+   * Postgres schema for Hookgres's tables: lowercase letters, digits and
+   * underscores. Defaults to `hookgres`. Run `migrate()` once per schema.
+   */
   schema?: string;
-  /** Delay in ms before each retry. Its length + 1 is the max attempt count. */
+  /**
+   * Delay in ms before each retry. Its length + 1 is the max attempt count.
+   * Defaults to {@link DEFAULT_RETRY_SCHEDULE} (8 attempts over ~28 hours).
+   * @see https://hookgres.dev/docs/guides/retries
+   */
   retrySchedule?: number[];
   /**
    * Spreads each retry delay randomly by up to this fraction, so endpoints
@@ -104,6 +144,7 @@ export interface HookgresOptions {
    * endpoint URLs are still checked, but delivery uses this fetch as is.
    */
   fetch?: typeof fetch;
+  /** `User-Agent` header sent with every webhook. Defaults to `Hookgres/0.1`. */
   userAgent?: string;
   /** Called for unexpected worker errors, and for idle-connection errors on a pool Hookgres created from `connectionString`. Defaults to `console.error`. */
   onError?: (error: unknown) => void;
@@ -156,6 +197,10 @@ interface HttpResult {
  * @see https://hookgres.dev/docs/
  */
 export class Hookgres {
+  /**
+   * The pool Hookgres queries: the one you passed in, or the one it created
+   * from `connectionString`. Use it to open transactions for `send()`.
+   */
   readonly pool: pg.Pool;
   private readonly ownsPool: boolean;
   private readonly schema: string;
@@ -192,6 +237,20 @@ export class Hookgres {
   /** Ends the LISTEN connection or its reconnect wait, during stop(). */
   private stopListener: (() => void) | null = null;
 
+  /**
+   * Creates a Hookgres instance. Validates options and connects lazily: no
+   * query runs until you call a method. Create one instance per process and
+   * share it.
+   *
+   * Throws if neither `pool` nor `connectionString` is given, or an option is
+   * out of range.
+   *
+   * @example
+   * const hookgres = new Hookgres({ pool }); // your app's pg.Pool
+   * await hookgres.migrate();
+   *
+   * @see https://hookgres.dev/docs/reference/configuration
+   */
   constructor(options: HookgresOptions) {
     if (options.pool) {
       this.pool = options.pool;
@@ -200,13 +259,15 @@ export class Hookgres {
       this.pool = new pg.Pool({ connectionString: options.connectionString });
       this.ownsPool = true;
     } else {
-      throw new Error("Hookgres needs either `pool` or `connectionString`");
+      throw new Error(
+        `new Hookgres() needs either \`pool\` (your app's pg.Pool) or \`connectionString\`, e.g. new Hookgres({ pool }). See ${DOCS}/reference/configuration`,
+      );
     }
 
     const schema = options.schema ?? "hookgres";
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) {
       throw new Error(
-        `Invalid schema name "${schema}": use lowercase letters, digits and underscores`,
+        `Invalid schema name "${schema}": use lowercase letters, digits and underscores (at most 63), or omit \`schema\` to use "hookgres". See ${DOCS}/reference/configuration`,
       );
     }
     this.schema = `"${schema}"`;
@@ -220,7 +281,9 @@ export class Hookgres {
 
     this.retrySchedule = options.retrySchedule ?? DEFAULT_RETRY_SCHEDULE;
     if (this.retrySchedule.some((ms) => !Number.isFinite(ms) || ms < 0)) {
-      throw new Error("retrySchedule must contain non-negative numbers");
+      throw new Error(
+        `retrySchedule must contain non-negative numbers (delays in ms), e.g. [5000, 300000, 1800000]. See ${DOCS}/guides/retries`,
+      );
     }
     this.retryJitter = options.retryJitter ?? 0.1;
     if (
@@ -228,7 +291,9 @@ export class Hookgres {
       this.retryJitter < 0 ||
       this.retryJitter > 1
     ) {
-      throw new Error("retryJitter must be a number between 0 and 1");
+      throw new Error(
+        `retryJitter must be a number between 0 and 1, e.g. 0.1 for +/-10% (0 disables jitter). See ${DOCS}/guides/retries`,
+      );
     }
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15 * SECOND;
     this.disableEndpointAfterMs =
@@ -240,7 +305,9 @@ export class Hookgres {
     this.lockTimeoutMs =
       options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND;
     if (this.lockTimeoutMs <= this.requestTimeoutMs) {
-      throw new Error("lockTimeoutMs must be greater than requestTimeoutMs");
+      throw new Error(
+        `lockTimeoutMs (${this.lockTimeoutMs}) must be greater than requestTimeoutMs (${this.requestTimeoutMs}): raise lockTimeoutMs, or omit it to use requestTimeoutMs + 30s. See ${DOCS}/reference/configuration`,
+      );
     }
     this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
     this.guard = options.blockPrivateAddresses
@@ -273,7 +340,9 @@ export class Hookgres {
     // The listener holds a pool connection while the worker runs; with only
     // one, claims and sends would wait for it forever.
     if (options.notify && (this.pool.options?.max ?? 10) < 2) {
-      throw new Error("notify needs a pool with max of at least 2");
+      throw new Error(
+        `notify needs a pool with max of at least 2, because the worker holds one connection for LISTEN: raise the pool's \`max\` or turn \`notify\` off. See ${DOCS}/guides/workers#instant-wake-up-with-listen-notify`,
+      );
     }
     // Postgres channel names are at most 63 bytes; pg_notify rejects longer.
     this.channel = options.notify ? `${schema}_wake`.slice(0, 63) : null;
@@ -281,7 +350,18 @@ export class Hookgres {
 
   // ---------------------------------------------------------------- schema
 
-  /** Creates or upgrades Hookgres's tables. Safe to run concurrently. */
+  /**
+   * Creates or upgrades Hookgres's tables. Idempotent and safe to run
+   * concurrently (it takes an advisory lock), so call it on every startup,
+   * before any other method. If your app's database role can't `CREATE`, run
+   * it from a deploy step with a role that can.
+   *
+   * @example
+   * const hookgres = new Hookgres({ pool });
+   * await hookgres.migrate();
+   *
+   * @see https://hookgres.dev/docs/reference/schema
+   */
   async migrate(): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -322,11 +402,24 @@ export class Hookgres {
   /**
    * Registers a URL to receive a tenant's webhooks. Generates a `whsec_`
    * secret unless `input.secret` is given; show it to the tenant once.
+   *
+   * Take `tenantId` from the signed-in session, never from the request body.
+   * Throws for a non-http(s) URL, an invalid event type pattern or secret,
+   * and, with `blockPrivateAddresses`, a private or `localhost` URL.
+   *
+   * @example
+   * const endpoint = await hookgres.createEndpoint({
+   *   tenantId: session.tenantId,
+   *   url: "https://example.com/webhooks",
+   *   eventTypes: ["invoice.paid", "customer.*"], // omit for every event type
+   * });
+   * return { id: endpoint.id, secret: endpoint.secret }; // show the secret once
+   *
    * @see https://hookgres.dev/docs/guides/endpoints
    */
   async createEndpoint(input: CreateEndpointInput): Promise<Endpoint> {
     assertUrl(input.url, this.guard);
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `INSERT INTO ${this.t.endpoints}
          (id, tenant_id, url, description, event_types, secret, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -346,18 +439,36 @@ export class Hookgres {
     return toEndpoint(rows[0]);
   }
 
-  /** Returns the endpoint, or `null`. Includes its secret: check the tenant before returning it. */
+  /**
+   * Returns the endpoint, or `null`. Includes its secret. Lookups are by id
+   * only: check `endpoint.tenantId` against the signed-in tenant before
+   * returning, updating, deleting or rotating it.
+   *
+   * @example
+   * const endpoint = await hookgres.getEndpoint(id);
+   * if (!endpoint || endpoint.tenantId !== session.tenantId) return notFound();
+   *
+   * @see https://hookgres.dev/docs/guides/endpoints
+   */
   async getEndpoint(id: string): Promise<Endpoint | null> {
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.endpoints} WHERE id = $1`,
       [id],
     );
     return rows[0] ? toEndpoint(rows[0]) : null;
   }
 
-  /** Returns all of a tenant's endpoints, oldest first. */
+  /**
+   * Returns all of a tenant's endpoints, oldest first, including disabled
+   * ones and their secrets.
+   *
+   * @example
+   * const endpoints = await hookgres.listEndpoints(session.tenantId);
+   *
+   * @see https://hookgres.dev/docs/guides/endpoints
+   */
   async listEndpoints(tenantId: string): Promise<Endpoint[]> {
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.endpoints} WHERE tenant_id = $1 ORDER BY created_at, id`,
       [tenantId],
     );
@@ -367,6 +478,14 @@ export class Hookgres {
   /**
    * Changes only the fields given. `disabled: false` re-enables an endpoint
    * and clears its failure state. Returns `null` if it doesn't exist.
+   * Validates `url` and `eventTypes` like `createEndpoint`. Check the
+   * endpoint's tenant with `getEndpoint` first.
+   *
+   * @example
+   * await hookgres.updateEndpoint(endpoint.id, { eventTypes: null }); // all events
+   * await hookgres.updateEndpoint(endpoint.id, { disabled: false }); // re-enable
+   *
+   * @see https://hookgres.dev/docs/guides/endpoints
    */
   async updateEndpoint(
     id: string,
@@ -397,7 +516,7 @@ export class Hookgres {
     }
     if (sets.length === 0) return this.getEndpoint(id);
     values.push(id);
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `UPDATE ${this.t.endpoints}
        SET ${sets.join(", ")}, updated_at = now()
        WHERE id = $${values.length}
@@ -407,9 +526,18 @@ export class Hookgres {
     return rows[0] ? toEndpoint(rows[0]) : null;
   }
 
-  /** Deletes an endpoint together with its deliveries and attempts. */
+  /**
+   * Deletes an endpoint together with its deliveries and attempts. Returns
+   * `false` if it didn't exist. Check the endpoint's tenant with
+   * `getEndpoint` first.
+   *
+   * @example
+   * const deleted = await hookgres.deleteEndpoint(endpoint.id);
+   *
+   * @see https://hookgres.dev/docs/guides/endpoints
+   */
   async deleteEndpoint(id: string): Promise<boolean> {
-    const { rowCount } = await this.pool.query(
+    const { rowCount } = await this.query(
       `DELETE FROM ${this.t.endpoints} WHERE id = $1`,
       [id],
     );
@@ -420,14 +548,22 @@ export class Hookgres {
    * Replaces the signing secret. Deliveries are signed with both the new and
    * the old secret until the grace period ends, so receivers can roll over.
    * Only one previous secret is kept: rotating again ends the earlier grace
-   * period immediately.
+   * period immediately. Returns `null` if the endpoint doesn't exist. Show
+   * the new `endpoint.secret` to the tenant once.
+   *
+   * @example
+   * const rotated = await hookgres.rotateEndpointSecret(endpoint.id, {
+   *   graceMs: 24 * 60 * 60 * 1000, // old secret keeps working for 24h
+   * });
+   *
+   * @see https://hookgres.dev/docs/guides/secret-rotation
    */
   async rotateEndpointSecret(
     id: string,
     options: { secret?: string; graceMs?: number } = {},
   ): Promise<Endpoint | null> {
     const graceMs = options.graceMs ?? this.secretRotationGraceMs;
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `UPDATE ${this.t.endpoints}
        SET previous_secret = secret,
            previous_secret_expires_at = now() + make_interval(secs => $2::double precision / 1000),
@@ -451,17 +587,47 @@ export class Hookgres {
   /**
    * Queues a webhook for every enabled endpoint of the tenant subscribed to
    * `eventType`. The message and its deliveries are written in one atomic
-   * statement; pass `options.client` to make it part of your transaction.
+   * statement.
+   *
+   * To queue the webhook only if your own changes commit, pass the client of
+   * your transaction as `options.client`. Without it, `send()` runs on the
+   * pool, outside your transaction, and is queued even if you roll back.
+   *
+   * A tenant with no matching endpoints is not an error: the message is
+   * stored and `deliveryCount` is 0. Sending again with the same
+   * `idempotencyKey` returns the original message with `deduplicated: true`.
+   * Delivery happens later, in a worker (`start()` or `runOnce()`).
+   *
+   * @example
+   * const client = await pool.connect();
+   * try {
+   *   await client.query("BEGIN");
+   *   await client.query("UPDATE invoices SET paid = true WHERE id = $1", [id]);
+   *   await hookgres.send(
+   *     { tenantId, eventType: "invoice.paid", payload: { id }, idempotencyKey: `invoice.paid:${id}` },
+   *     { client }, // same transaction: queued only if it commits
+   *   );
+   *   await client.query("COMMIT");
+   * } catch (error) {
+   *   await client.query("ROLLBACK");
+   *   throw error;
+   * } finally {
+   *   client.release();
+   * }
+   *
+   * @see https://hookgres.dev/docs/guides/sending
    */
   async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
     const db: Queryable = options.client ?? this.pool;
     if (input.eventType.includes("*")) {
       throw new Error(
-        `Invalid event type "${input.eventType}": "*" is only allowed in an endpoint's eventTypes`,
+        `Invalid event type "${input.eventType}": "*" is only allowed in an endpoint's eventTypes. Send one concrete event type like "invoice.paid"; endpoints subscribe to groups with "invoice.*". See ${DOCS}/guides/sending`,
       );
     }
     if (input.payload === undefined) {
-      throw new Error("send() requires a JSON-serialisable payload");
+      throw new Error(
+        `send() requires a JSON-serialisable payload: pass the event data as \`payload\` (use null or {} for none). See ${DOCS}/guides/sending`,
+      );
     }
     const payload = JSON.stringify(input.payload);
     const idempotencyKey = input.idempotencyKey ?? null;
@@ -480,9 +646,9 @@ export class Hookgres {
       notify = `, n AS (SELECT pg_notify($6, '') FROM (SELECT 1 FROM d LIMIT 1) x)`;
     }
 
-    const { rows } = await queryWithNulHint(
-      db,
-      `WITH m AS (
+    const { rows } = await withNulHint(
+      this.query(
+        `WITH m AS (
          INSERT INTO ${this.t.messages} (id, tenant_id, event_type, payload, idempotency_key)
          VALUES ($1, $2, $3, $4::jsonb, $5)
          ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL
@@ -510,7 +676,9 @@ export class Hookgres {
        SELECT m.*, (SELECT count(*) FROM d)::int AS delivery_count
               ${notify ? ", (SELECT count(*) FROM n) AS notified" : ""}
        FROM m`,
-      values,
+        values,
+        db,
+      ),
     );
 
     if (rows[0]) {
@@ -525,15 +693,20 @@ export class Hookgres {
     }
 
     // Idempotency key already used: return the original message.
-    const existing = await db.query(
+    const existing = await this.query(
       `SELECT m.*,
               (SELECT count(*) FROM ${this.t.deliveries} d WHERE d.message_id = m.id)::int AS delivery_count
        FROM ${this.t.messages} m
        WHERE m.tenant_id = $1 AND m.idempotency_key = $2`,
       [input.tenantId, idempotencyKey],
+      db,
     );
     const row = existing.rows[0];
-    if (!row) throw new Error("Idempotent message vanished; retry send()");
+    if (!row) {
+      throw new Error(
+        "The message for this idempotencyKey was deleted while send() ran (e.g. by cleanup()); retry send()",
+      );
+    }
     return {
       message: toMessage(row),
       deliveryCount: row.delivery_count,
@@ -541,9 +714,15 @@ export class Hookgres {
     };
   }
 
-  /** Returns the message, or `null`. */
+  /**
+   * Returns the message (the event as sent, with its payload), or `null`.
+   * Lookups are by id only: check `message.tenantId` before showing it.
+   *
+   * @example
+   * const message = await hookgres.getMessage(result.message.id);
+   */
   async getMessage(id: string): Promise<Message | null> {
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.messages} WHERE id = $1`,
       [id],
     );
@@ -554,37 +733,46 @@ export class Hookgres {
    * Deletes messages created before `olderThan` whose deliveries are all
    * finished (none `pending` or `delivering`), with their deliveries and
    * attempts. Works in batches of `batchSize` (default 1000) until none are
-   * left, and returns how many messages it deleted.
+   * left, and returns how many messages it deleted. Run it from a daily job.
+   *
+   * @example
+   * const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+   * const deleted = await hookgres.cleanup({ olderThan: thirtyDays });
+   *
    * @see https://hookgres.dev/docs/guides/production#clean-up-old-rows
    */
   async cleanup(options: CleanupOptions): Promise<number> {
     const { olderThan } = options;
     const batchSize = options.batchSize ?? 1000;
     if (!Number.isInteger(batchSize) || batchSize < 1) {
-      throw new Error("cleanup batchSize must be a positive integer");
+      throw new Error(
+        `cleanup batchSize must be a positive integer, e.g. 1000 (the default). See ${DOCS}/guides/production#clean-up-old-rows`,
+      );
     }
     let cutoff: Date;
     if (olderThan instanceof Date) {
       if (Number.isNaN(olderThan.getTime())) {
-        throw new Error("cleanup olderThan is an invalid Date");
+        throw new Error(
+          `cleanup olderThan is an invalid Date: pass a valid Date, or an age in ms like 30 * 24 * 60 * 60 * 1000. See ${DOCS}/guides/production#clean-up-old-rows`,
+        );
       }
       cutoff = olderThan;
     } else if (Number.isFinite(olderThan) && olderThan >= 0) {
       // Use the database clock, like every other timestamp Hookgres writes.
-      const { rows } = await this.pool.query<{ cutoff: Date }>(
+      const { rows } = await this.query<{ cutoff: Date }>(
         "SELECT now() - make_interval(secs => $1::double precision / 1000) AS cutoff",
         [olderThan],
       );
       cutoff = (rows[0] as { cutoff: Date }).cutoff;
     } else {
       throw new Error(
-        "cleanup olderThan must be a Date or a non-negative number of ms",
+        `cleanup olderThan must be a Date or a non-negative number of ms, e.g. { olderThan: 30 * 24 * 60 * 60 * 1000 } for 30 days. See ${DOCS}/guides/production#clean-up-old-rows`,
       );
     }
 
     let deleted = 0;
     for (;;) {
-      const { rowCount } = await this.pool.query(
+      const { rowCount } = await this.query(
         `DELETE FROM ${this.t.messages}
          WHERE id IN (
            SELECT m.id FROM ${this.t.messages} m
@@ -605,9 +793,16 @@ export class Hookgres {
 
   // ------------------------------------------------------------ deliveries
 
-  /** Returns the delivery (one message to one endpoint), or `null`. */
+  /**
+   * Returns the delivery (one message to one endpoint), or `null`. Its
+   * `status` is `pending`, `delivering`, `succeeded` or `failed`.
+   *
+   * @example
+   * const delivery = await hookgres.getDelivery(deliveryId);
+   * if (delivery?.status === "failed") console.log(delivery.lastError);
+   */
   async getDelivery(id: string): Promise<Delivery | null> {
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.deliveries} WHERE id = $1`,
       [id],
     );
@@ -616,7 +811,15 @@ export class Hookgres {
 
   /**
    * Lists deliveries newest first, filtered by message, endpoint or status.
-   * `limit` defaults to 50 and is capped at 500.
+   * `limit` defaults to 50 and is capped at 500. Filter by an endpoint whose
+   * tenant you checked to show a tenant its delivery log.
+   *
+   * @example
+   * const failed = await hookgres.listDeliveries({
+   *   endpointId: endpoint.id,
+   *   status: "failed",
+   *   limit: 20,
+   * });
    */
   async listDeliveries(input: ListDeliveriesInput = {}): Promise<Delivery[]> {
     const where: string[] = [];
@@ -629,7 +832,7 @@ export class Hookgres {
     if (input.endpointId) add("endpoint_id = ?", input.endpointId);
     if (input.status) add("status = ?", input.status);
     values.push(Math.min(Math.max(1, input.limit ?? 50), 500));
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.deliveries}
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY created_at DESC, id
@@ -639,9 +842,15 @@ export class Hookgres {
     return rows.map(toDelivery);
   }
 
-  /** Lists every HTTP attempt of a delivery, oldest first. */
+  /**
+   * Lists every HTTP attempt of a delivery, oldest first, with status code,
+   * the first 4 KB of the response body, error and duration.
+   *
+   * @example
+   * const attempts = await hookgres.listAttempts(delivery.id);
+   */
   async listAttempts(deliveryId: string): Promise<Attempt[]> {
-    const { rows } = await this.pool.query(
+    const { rows } = await this.query(
       `SELECT * FROM ${this.t.attempts} WHERE delivery_id = $1 ORDER BY created_at, attempt_number`,
       [deliveryId],
     );
@@ -651,7 +860,15 @@ export class Hookgres {
   /**
    * Re-queues a finished delivery (succeeded or failed) for immediate sending
    * with a fresh retry schedule. Returns `null` if the delivery does not exist
-   * or is still in flight.
+   * or is still in flight (`pending` or `delivering`). The original message
+   * id is kept, so receivers that deduplicate on `webhook-id` will skip it.
+   * A worker must be running (or `runOnce()` called) to send it.
+   *
+   * @example
+   * const replayed = await hookgres.replayDelivery(delivery.id);
+   * if (!replayed) throw new Error("Not found or still in flight");
+   *
+   * @see https://hookgres.dev/docs/guides/retries
    */
   async replayDelivery(id: string): Promise<Delivery | null> {
     const update = `UPDATE ${this.t.deliveries}
@@ -666,12 +883,12 @@ export class Hookgres {
          )
        RETURNING *`;
     const { rows } = this.channel
-      ? await this.pool.query(
+      ? await this.query(
           `WITH r AS (${update})
            SELECT r.*, pg_notify($2, '') FROM r`,
           [id, this.channel],
         )
-      : await this.pool.query(update, [id]);
+      : await this.query(update, [id]);
     if (!rows[0]) return null;
     this.wake();
     return toDelivery(rows[0]);
@@ -679,7 +896,24 @@ export class Hookgres {
 
   // ---------------------------------------------------------------- worker
 
-  /** Starts the background delivery loop in this process. */
+  /**
+   * Starts the background delivery loop in this process and returns
+   * immediately. Calling it while already running does nothing; calling it
+   * after `stop()` starts a new loop.
+   *
+   * Only use it in a long-running process (server or worker). On serverless
+   * platforms the loop is frozen between requests: call `runOnce()` from a
+   * cron route instead. Errors in the loop go to `onError` and never stop it.
+   *
+   * @example
+   * hookgres.start();
+   * process.on("SIGTERM", async () => {
+   *   await hookgres.stop(); // let in-flight deliveries finish
+   *   await pool.end();
+   * });
+   *
+   * @see https://hookgres.dev/docs/guides/workers
+   */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -698,7 +932,16 @@ export class Hookgres {
 
   /**
    * Stops the loop, closes the LISTEN connection (with `notify`) and waits
-   * for in-flight deliveries to finish.
+   * for in-flight deliveries to finish. Safe to call when not running. Does
+   * not close the pool: call it before `pool.end()`, or use `close()`.
+   *
+   * @example
+   * process.on("SIGTERM", async () => {
+   *   await hookgres.stop();
+   *   await pool.end();
+   * });
+   *
+   * @see https://hookgres.dev/docs/guides/workers
    */
   async stop(): Promise<void> {
     this.running = false;
@@ -709,7 +952,13 @@ export class Hookgres {
     if (this.loopPromise === loop) this.loopPromise = null;
   }
 
-  /** Stops the worker and closes the pool if Hookgres created it. */
+  /**
+   * Stops the worker (like `stop()`) and closes the pool if Hookgres created
+   * it from `connectionString`. A pool you passed in stays open.
+   *
+   * @example
+   * await hookgres.close();
+   */
   async close(): Promise<void> {
     await this.stop();
     this.closeTransport();
@@ -717,9 +966,25 @@ export class Hookgres {
   }
 
   /**
-   * Claims and sends one batch of due deliveries, then returns how many it
-   * processed. Use it from a cron or serverless function instead of `start()`.
-   * Always waits for every claimed delivery to finish.
+   * Claims and sends one batch (up to `concurrency`) of due deliveries,
+   * then returns how many it processed. Use it from a cron or serverless
+   * function instead of `start()`. Always waits for every claimed delivery to
+   * finish. Safe to run from several processes at once.
+   *
+   * @example
+   * // A route your platform's cron calls every minute.
+   * export async function GET() {
+   *   const deadline = Date.now() + 45_000; // stay under the function timeout
+   *   let total = 0;
+   *   let processed: number;
+   *   do {
+   *     processed = await hookgres.runOnce();
+   *     total += processed;
+   *   } while (processed > 0 && Date.now() < deadline);
+   *   return Response.json({ delivered: total });
+   * }
+   *
+   * @see https://hookgres.dev/docs/guides/workers
    */
   async runOnce(): Promise<number> {
     const claimed = await this.claim();
@@ -745,6 +1010,22 @@ export class Hookgres {
       if (active() && processed < this.concurrency) {
         await this.sleep(this.pollIntervalMs);
       }
+    }
+  }
+
+  /**
+   * Runs a query on the pool, or on `db`. If Hookgres's tables don't exist,
+   * adds to the error that `migrate()` hasn't been run.
+   */
+  private async query<R extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: unknown[],
+    db: Queryable = this.pool,
+  ): Promise<QueryResult<R>> {
+    try {
+      return await db.query<R>(text, values);
+    } catch (error) {
+      throw explainMissingTables(error, this.schema);
     }
   }
 
@@ -871,7 +1152,7 @@ export class Hookgres {
   }
 
   private async claim(): Promise<ClaimedDelivery[]> {
-    const { rows } = await this.pool.query<ClaimedDelivery>(
+    const { rows } = await this.query<ClaimedDelivery>(
       `WITH due AS (
          SELECT id FROM ${this.t.deliveries}
          WHERE (status = 'pending' AND next_attempt_at <= now())
@@ -905,7 +1186,7 @@ export class Hookgres {
     delivery: ClaimedDelivery,
     reason: string,
   ): Promise<void> {
-    await this.pool.query(
+    await this.query(
       `UPDATE ${this.t.deliveries}
        SET status = 'failed', locked_until = NULL, lock_token = NULL,
            last_error = $3, updated_at = now()
@@ -949,7 +1230,7 @@ export class Hookgres {
     // (lock_token), so a stale worker can't overwrite a newer result. Hooks
     // only fire for results that were written.
     if (outcome.ok) {
-      const { rowCount } = await this.pool.query(
+      const { rowCount } = await this.query(
         `WITH d AS (
            UPDATE ${this.t.deliveries}
            SET status = 'succeeded', locked_until = NULL, lock_token = NULL,
@@ -992,7 +1273,7 @@ export class Hookgres {
     const delayMs = Math.round(
       baseDelayMs * (1 + this.retryJitter * (2 * Math.random() - 1)),
     );
-    const { rows } = await this.pool.query<{
+    const { rows } = await this.query<{
       next_attempt_at: Date;
       disabled_now: boolean | null;
       disabled_reason: string | null;
@@ -1126,18 +1407,14 @@ export class Hookgres {
 
 // ----------------------------------------------------------------- helpers
 
-async function queryWithNulHint(
-  db: Queryable,
-  text: string,
-  values: unknown[],
-) {
+async function withNulHint<T>(query: Promise<T>): Promise<T> {
   try {
-    return await db.query(text, values);
+    return await query;
   } catch (error) {
     // 22P05 untranslatable_character: jsonb cannot store \u0000.
     if ((error as { code?: string }).code === "22P05") {
       throw new Error(
-        "Payload contains a NUL character (\\u0000), which Postgres cannot store",
+        `Payload contains a NUL character (\\u0000), which Postgres cannot store: remove it from the payload's strings before calling send(). See ${DOCS}/guides/sending`,
         { cause: error },
       );
     }
@@ -1145,15 +1422,33 @@ async function queryWithNulHint(
   }
 }
 
+/**
+ * Adds a hint to Postgres's `relation "hookgres.endpoints" does not exist`
+ * (42P01). The error object is kept, so its class and `code` don't change.
+ */
+function explainMissingTables(error: unknown, schema: string): unknown {
+  if (!(error instanceof Error)) return error;
+  if ((error as { code?: string }).code !== "42P01") return error;
+  if (error.message.includes("migrate()")) return error;
+  const original = error.message;
+  error.message = `${original}. Hookgres's tables are missing from schema ${schema}: call \`await hookgres.migrate()\` once before using Hookgres (on startup, or in a deploy step). See ${DOCS}/getting-started`;
+  if (error.stack) error.stack = error.stack.replace(original, error.message);
+  return error;
+}
+
 function assertUrl(url: string, guard: AddressGuard | null): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`Invalid endpoint URL: ${url}`);
+    throw new Error(
+      `Invalid endpoint URL: ${url}. Pass an absolute URL like https://example.com/webhooks. See ${DOCS}/guides/endpoints`,
+    );
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`Endpoint URL must use http or https: ${url}`);
+    throw new Error(
+      `Endpoint URL must use http or https: ${url}. See ${DOCS}/guides/endpoints`,
+    );
   }
   guard?.assertEndpointUrl(parsed);
 }
@@ -1164,18 +1459,18 @@ function normaliseEventTypes(
   if (eventTypes == null) return null;
   if (eventTypes.length === 0) {
     throw new Error(
-      "eventTypes must not be empty; pass null to receive every event type",
+      `eventTypes must not be empty; pass null to receive every event type. See ${DOCS}/guides/endpoints`,
     );
   }
   for (const type of eventTypes) {
     if (type === "*") {
       throw new Error(
-        'eventTypes must not contain "*"; pass null to receive every event type',
+        `eventTypes must not contain "*"; pass null to receive every event type. See ${DOCS}/guides/endpoints`,
       );
     }
     if (type.includes("*") && !/^[^*]+\.\*$/.test(type)) {
       throw new Error(
-        `Invalid event type pattern "${type}": "*" is only allowed as the last segment, as in "invoice.*"`,
+        `Invalid event type pattern "${type}": "*" is only allowed as the last segment, as in "invoice.*". See ${DOCS}/guides/endpoints`,
       );
     }
   }
