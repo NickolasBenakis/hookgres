@@ -123,6 +123,15 @@ export default defineConfig({
         ],
       },
       {
+        text: "Frameworks",
+        items: [
+          { text: "Next.js", link: "/frameworks/nextjs" },
+          { text: "Express", link: "/frameworks/express" },
+          { text: "Hono", link: "/frameworks/hono" },
+          { text: "NestJS", link: "/frameworks/nestjs" },
+        ],
+      },
+      {
         text: "Reference",
         items: [
           { text: "API", link: "/reference/api" },
