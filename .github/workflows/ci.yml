@@ -167,12 +167,11 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - uses: changesets/action@v1
+      # v2 pushes tags and creates GitHub releases through the API; v1 failed
+      # to read Changesets 3's output and silently skipped both.
+      - uses: changesets/action@v2.1.2
         with:
-          version: pnpm ci:version
-          publish: pnpm ci:publish
-          title: Version Packages
-          commit: Version Packages
-          createGithubReleases: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm ci:version
+          publish-script: pnpm ci:publish
+          pr-title: Version Packages
+          commit-message: Version Packages
