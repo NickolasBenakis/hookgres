@@ -6,7 +6,7 @@
     </picture>
   </a>
 
-  <h3>Signed, retried, logged webhooks from the Postgres you already run.</h3>
+  <h3>Webhooks that commit with your data, from the Postgres you already run.</h3>
 
   <p>
     <a href="https://www.npmjs.com/package/hookgres"><img alt="npm version" src="https://img.shields.io/npm/v/hookgres?color=163a5f&label=npm"></a>
@@ -32,7 +32,9 @@
 <br>
 
 Hookgres is a TypeScript library that sends webhooks to your customers from
-your own Postgres. It signs them with
+your own Postgres, queued in the same transaction as the data that caused
+them. If the row commits, the webhook goes out. If it rolls back, nothing is
+sent. Hookgres signs every delivery with
 [Standard Webhooks](https://www.standardwebhooks.com), retries failures for
 about 28 hours, disables endpoints that stay down, and logs every attempt. It's
 the sending half of Svix or Hookdeck as a dependency instead of a vendor: no

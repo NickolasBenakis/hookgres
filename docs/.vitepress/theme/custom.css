@@ -9,39 +9,50 @@
 /* Landing page tokens -------------------------------------------------- */
 
 :root {
-  --hg-bg: oklch(98.9% 0.002 286);
-  --hg-bg-alt: oklch(96.6% 0.003 286);
+  /* One brand hue: neutrals, code panels and shadows share it with the accent. */
+  --h: 258;
+  --hg-bg: oklch(98.8% 0.003 var(--h));
+  --hg-bg-alt: oklch(96.5% 0.005 var(--h));
   --hg-surface: oklch(100% 0 0);
-  --hg-ink: oklch(21% 0.005 286);
-  --hg-ink-2: oklch(49% 0.008 286);
-  --hg-ink-3: oklch(52% 0.008 286);
-  --hg-line: oklch(90.5% 0.004 286);
-  --hg-accent: oklch(49% 0.095 248);
-  --hg-accent-hover: oklch(44% 0.095 248);
+  --hg-ink: oklch(21% 0.012 var(--h));
+  --hg-ink-2: oklch(48% 0.014 var(--h));
+  --hg-ink-3: oklch(52% 0.012 var(--h));
+  --hg-line: oklch(90.5% 0.008 var(--h));
+  --hg-accent: oklch(52% 0.19 var(--h));
+  --hg-accent-hover: oklch(47% 0.17 var(--h));
   --hg-accent-ink: oklch(100% 0 0);
   --hg-ok: oklch(52% 0.13 152);
   --hg-warn: oklch(52% 0.13 60);
   --hg-bad: oklch(50% 0.18 27);
-  --hg-code-bg: oklch(19% 0.008 270);
-  --hg-code-line: oklch(28% 0.01 270);
-  --hg-code-ink: oklch(92% 0.005 270);
-  --hg-code-dim: oklch(64% 0.012 270);
-  --hg-code-key: oklch(78% 0.1 250);
+  --hg-code-bg: oklch(19.5% 0.02 var(--h));
+  --hg-code-line: oklch(29% 0.022 var(--h));
+  --hg-code-ink: oklch(93% 0.008 var(--h));
+  --hg-code-dim: oklch(66% 0.022 var(--h));
+  --hg-code-key: oklch(79% 0.11 var(--h));
   /* Small raised surfaces: a ring standing in for the border, plus a tight
      shadow. The same as the landing page's --raised. */
   --hg-raised:
-    0 0 0 1px oklch(0% 0 0 / 0.07), 0 1px 2px oklch(0% 0 0 / 0.05),
-    0 4px 12px -4px oklch(0% 0 0 / 0.07);
+    0 0 0 1px oklch(25% 0.05 var(--h) / 0.07),
+    0 1px 2px oklch(25% 0.05 var(--h) / 0.05),
+    0 4px 12px -4px oklch(25% 0.05 var(--h) / 0.07);
   --hg-raised-hover:
-    0 0 0 1px oklch(0% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.06),
-    0 6px 16px -6px oklch(0% 0 0 / 0.1);
+    0 0 0 1px oklch(25% 0.05 var(--h) / 0.11),
+    0 1px 2px oklch(25% 0.05 var(--h) / 0.06),
+    0 6px 16px -6px oklch(25% 0.05 var(--h) / 0.1);
   /* The landing page's .code shadow, lighter: docs stack many blocks. */
   --hg-code-shadow:
-    0 1px 2px oklch(0% 0 0 / 0.04), 0 6px 16px oklch(0% 0 0 / 0.05),
-    0 20px 40px oklch(0% 0 0 / 0.04);
+    0 1px 2px oklch(25% 0.05 var(--h) / 0.04),
+    0 6px 16px oklch(25% 0.05 var(--h) / 0.05),
+    0 20px 40px oklch(25% 0.05 var(--h) / 0.04);
   --hg-overlay-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.08), 0 2px 6px oklch(0% 0 0 / 0.06),
-    0 16px 40px -8px oklch(0% 0 0 / 0.18), 0 40px 80px -20px oklch(0% 0 0 / 0.2);
+    0 0 0 1px oklch(25% 0.05 var(--h) / 0.08), 0 2px 6px oklch(
+      25% 0.05 var(--h) /
+      0.06
+    ),
+    0 16px 40px -8px oklch(25% 0.05 var(--h) / 0.18), 0 40px 80px -20px oklch(
+      25% 0.05 var(--h) /
+      0.2
+    );
   --hg-tint: 7%;
   --hg-tint-base: var(--hg-bg);
   --hg-sans:
@@ -63,25 +74,25 @@
 
 .dark {
   --hg-bg: oklch(0% 0 0);
-  --hg-bg-alt: oklch(15.5% 0.004 286);
-  --hg-surface: oklch(19% 0.005 286);
-  --hg-ink: oklch(96.5% 0.003 286);
-  --hg-ink-2: oklch(72% 0.008 286);
-  --hg-ink-3: oklch(66% 0.008 286);
-  --hg-line: oklch(28% 0.006 286);
-  --hg-accent: oklch(72% 0.11 245);
-  --hg-accent-hover: oklch(78% 0.1 245);
-  --hg-accent-ink: oklch(15% 0.01 260);
+  --hg-bg-alt: oklch(15.5% 0.008 var(--h));
+  --hg-surface: oklch(19% 0.01 var(--h));
+  --hg-ink: oklch(96.5% 0.004 var(--h));
+  --hg-ink-2: oklch(72% 0.014 var(--h));
+  --hg-ink-3: oklch(66% 0.012 var(--h));
+  --hg-line: oklch(28% 0.012 var(--h));
+  --hg-accent: oklch(72% 0.14 var(--h));
+  --hg-accent-hover: oklch(78% 0.12 var(--h));
+  --hg-accent-ink: oklch(17% 0.04 var(--h));
   --hg-ok: oklch(76% 0.15 152);
   --hg-warn: oklch(80% 0.14 75);
   --hg-bad: oklch(70% 0.17 27);
-  --hg-code-bg: oklch(17% 0.006 270);
-  --hg-code-line: oklch(27% 0.008 270);
+  --hg-code-bg: oklch(17% 0.016 var(--h));
+  --hg-code-line: oklch(27% 0.018 var(--h));
   --hg-raised: 0 0 0 1px oklch(100% 0 0 / 0.1);
   --hg-raised-hover: 0 0 0 1px oklch(100% 0 0 / 0.16);
   --hg-code-shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
   --hg-overlay-shadow:
-    0 0 0 1px oklch(100% 0 0 / 0.12), 0 24px 64px oklch(0% 0 0 / 0.6);
+    0 0 0 1px oklch(100% 0 0 / 0.12), 0 24px 64px oklch(25% 0.05 var(--h) / 0.6);
   --hg-tint: 14%;
   --hg-tint-base: var(--hg-bg-alt);
 }
@@ -147,7 +158,7 @@
   --vp-nav-bg-color: color-mix(in oklab, var(--hg-bg) 78%, transparent);
   --vp-local-nav-bg-color: var(--vp-nav-bg-color);
   --vp-sidebar-bg-color: var(--hg-bg);
-  --vp-backdrop-bg-color: oklch(0% 0 0 / 0.32);
+  --vp-backdrop-bg-color: oklch(25% 0.05 var(--h) / 0.32);
 
   --vp-input-border-color: var(--vp-c-border);
   --vp-input-switch-bg-color: var(--vp-c-default-soft);
@@ -165,8 +176,8 @@
   --vp-code-line-highlight-color: oklch(100% 0 0 / 0.06);
   --vp-code-copy-code-border-color: var(--hg-code-line);
   --vp-code-copy-code-bg: var(--hg-code-bg);
-  --vp-code-copy-code-hover-border-color: oklch(36% 0.01 270);
-  --vp-code-copy-code-hover-bg: oklch(23% 0.008 270);
+  --vp-code-copy-code-hover-border-color: oklch(36% 0.01 var(--h));
+  --vp-code-copy-code-hover-bg: oklch(23% 0.008 var(--h));
   --vp-code-copy-code-active-text: var(--hg-code-ink);
   --vp-code-copy-copied-text-content: "Copied";
   --vp-code-tab-divider: var(--hg-code-line);
@@ -181,7 +192,7 @@
 }
 
 .dark {
-  --vp-backdrop-bg-color: oklch(0% 0 0 / 0.6);
+  --vp-backdrop-bg-color: oklch(25% 0.05 var(--h) / 0.6);
 }
 
 /* Base ----------------------------------------------------------------- */
@@ -1394,7 +1405,12 @@ button {
 .hg-search-backdrop {
   position: absolute;
   inset: 0;
-  background: var(--vp-backdrop-bg-color);
+  /* Lighter than the sidebar's backdrop, so the page shows through the frosted panel. */
+  background: oklch(25% 0.05 var(--h) / 0.16);
+}
+
+.dark .hg-search-backdrop {
+  background: oklch(25% 0.05 var(--h) / 0.45);
 }
 
 .hg-search-panel {
@@ -1405,8 +1421,27 @@ button {
   width: min(640px, 100%);
   max-height: min(560px, calc(var(--hg-vvh, 100dvh) - min(12vh, 120px) - 16px));
   overflow: hidden;
-  background: var(--hg-surface);
-  box-shadow: var(--hg-overlay-shadow);
+  /* Frosted like Spotlight: the page shows through, blurred. */
+  background: color-mix(in oklab, var(--hg-surface) 74%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.7),
+    var(--hg-overlay-shadow);
+}
+
+.dark .hg-search-panel {
+  background: color-mix(in oklab, var(--hg-surface) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.08),
+    var(--hg-overlay-shadow);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hg-search-panel,
+  .dark .hg-search-panel {
+    background: var(--hg-surface);
+  }
 }
 
 .hg-search-bar {

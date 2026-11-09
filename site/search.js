@@ -49,8 +49,9 @@ html:has(dialog.hgs[open]) { overflow: hidden; }
   --hgs-accent: var(--accent, #2b6cb0);
   --hgs-active: color-mix(in oklab, var(--hgs-accent) 10%, transparent);
   --hgs-chip: color-mix(in oklab, var(--hgs-ink) 7%, transparent);
-  --hgs-scrim: rgb(0 0 0 / 0.24);
-  --hgs-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.06), 0 24px 64px -12px rgb(0 0 0 / 0.28);
+  --hgs-scrim: rgb(0 0 0 / 0.16);
+  --hgs-glass: color-mix(in oklab, var(--hgs-bg) 74%, transparent);
+  --hgs-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 4px 12px rgb(0 0 0 / 0.06), 0 24px 64px -12px rgb(0 0 0 / 0.3);
   position: fixed;
   inset: 0;
   width: 100%;
@@ -78,12 +79,14 @@ html:has(dialog.hgs[open]) { overflow: hidden; }
     --hgs-accent: var(--accent, #6cb0f5);
     --hgs-active: color-mix(in oklab, var(--hgs-accent) 16%, transparent);
     --hgs-chip: color-mix(in oklab, var(--hgs-ink) 10%, transparent);
-    --hgs-scrim: rgb(0 0 0 / 0.6);
-    --hgs-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 64px rgb(0 0 0 / 0.6);
+    --hgs-scrim: rgb(0 0 0 / 0.45);
+    --hgs-glass: color-mix(in oklab, var(--hgs-bg) 70%, transparent);
+    --hgs-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 64px rgb(0 0 0 / 0.6);
   }
 }
 .hgs[open] { display: flex; flex-direction: column; align-items: center; }
 .hgs::backdrop { background: transparent; }
+@media (prefers-reduced-transparency: reduce) { .hgs { --hgs-glass: var(--hgs-bg); } }
 .hgs *, .hgs *::before, .hgs *::after { box-sizing: border-box; }
 .hgs-scrim { position: absolute; inset: 0; background: var(--hgs-scrim); }
 .hgs-panel {
@@ -93,8 +96,11 @@ html:has(dialog.hgs[open]) { overflow: hidden; }
   width: min(640px, calc(100% - 32px));
   height: min(520px, calc(100% - 12vh - 32px));
   margin-top: 12vh;
-  border-radius: 14px;
-  background: var(--hgs-bg);
+  border-radius: 16px;
+  /* Frosted like Spotlight: the page shows through, blurred. */
+  background: var(--hgs-glass);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
   box-shadow: var(--hgs-shadow);
   overflow: hidden;
   isolation: isolate;
@@ -192,7 +198,9 @@ html:has(dialog.hgs[open]) { overflow: hidden; }
   z-index: 1;
   margin: 0;
   padding: 12px 20px 6px;
-  background: var(--hgs-bg);
+  background: color-mix(in oklab, var(--hgs-bg) 45%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: var(--hgs-ink-3);
   font-size: 12px;
   font-weight: 600;

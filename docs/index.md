@@ -1,7 +1,8 @@
 # Hookgres docs
 
-Signed, retried, logged webhooks to your customers, from the Postgres you
-already run. A TypeScript library, not another service.
+Webhooks that commit with your data. Hookgres queues signed, retried webhooks
+in the same Postgres transaction as your writes. A TypeScript library, not
+another service.
 
 <DocsHub />
 
