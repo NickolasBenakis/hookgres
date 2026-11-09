@@ -105,7 +105,7 @@ export interface HookgresOptions {
    */
   fetch?: typeof fetch;
   userAgent?: string;
-  /** Called for unexpected worker errors. Defaults to `console.error`. */
+  /** Called for unexpected worker errors, and for idle-connection errors on a pool Hookgres created from `connectionString`. Defaults to `console.error`. */
   onError?: (error: unknown) => void;
   /**
    * Called after every HTTP attempt, e.g. to record metrics. Runs inline in
@@ -264,6 +264,10 @@ export class Hookgres {
     this.onError =
       options.onError ??
       ((error) => console.error("[hookgres] worker error:", error));
+    // node-postgres emits "error" on the pool when an idle client's connection
+    // drops; without a listener that crashes the process. A pool the caller
+    // passed in is theirs to handle.
+    if (this.ownsPool) this.pool.on("error", (error) => this.onError(error));
     this.onAttempt = options.onAttempt;
     this.onEndpointDisabled = options.onEndpointDisabled;
     // The listener holds a pool connection while the worker runs; with only

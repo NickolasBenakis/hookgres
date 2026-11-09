@@ -802,6 +802,21 @@ describe("configuration and edge cases", () => {
     expect(hw.pool.ended).toBe(true);
   });
 
+  it("reports idle-client errors on its own pool instead of crashing", async () => {
+    const errors: unknown[] = [];
+    const hw = new Hookgres({
+      connectionString: inject("databaseUrl"),
+      schema: ctx.schema,
+      onError: (error) => errors.push(error),
+    });
+    // node-postgres emits "error" on the pool when an idle client's connection
+    // drops (a restart or failover). With no listener, Node throws.
+    const lost = new Error("Connection terminated unexpectedly");
+    expect(() => hw.pool.emit("error", lost)).not.toThrow();
+    expect(errors).toEqual([lost]);
+    await hw.close();
+  });
+
   it("does not close a pool it was given", async () => {
     const hw = ctx.create();
     await hw.close();
