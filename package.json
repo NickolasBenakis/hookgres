@@ -17,10 +17,9 @@
     "transactional-outbox"
   ],
   "license": "MIT",
-  "author": "Nikos Benakis <nickolasbenele@gmail.com>",
+  "author": "Nikos Benakis (https://github.com/NickolasBenakis)",
   "bugs": {
-    "url": "https://github.com/NickolasBenakis/hookgres/issues",
-    "email": "nickolasbenele@gmail.com"
+    "url": "https://github.com/NickolasBenakis/hookgres/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
