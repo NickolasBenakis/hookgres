@@ -1,6 +1,6 @@
 {
   "name": "hookgres",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hookgres: reliable, signed webhooks on your Postgres. Retries, endpoint health, secret rotation and replay for TypeScript, with no extra infrastructure.",
   "keywords": [
     "webhooks",
