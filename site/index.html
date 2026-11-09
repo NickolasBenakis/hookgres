@@ -545,7 +545,11 @@
   .log-foot .points { margin-top: 0; }
 
   /* Terminal recording: loads only near the viewport, plays only while visible. */
-  .demo-video-stage { margin-top: 36px; }
+  .demo-video-stage { position: relative; margin-top: 36px; }
+  .video-toggle { position: absolute; top: 10px; right: 12px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; color: oklch(92% 0.01 258); background: oklch(100% 0 0 / 0.1); cursor: pointer; transition: background 150ms var(--ease); }
+  @media (hover: hover) and (pointer: fine) { .video-toggle:hover { background: oklch(100% 0 0 / 0.18); } }
+  .video-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .video-toggle[hidden] { display: none; }
   .demo-video-stage video { display: block; width: 100%; height: auto; aspect-ratio: 1240 / 860; border-radius: 14px; background: oklch(17% 0.01 258); box-shadow: var(--shadow); }
 
   /* Comparison */
@@ -890,6 +894,7 @@ hookgres.start();
         <video id="demo-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/terminal-demo-poster.jpg" aria-label="Terminal recording: npm install hookgres pg, an app that pays one invoice in a committed transaction and one in a rolled-back transaction, a receiver that answers 503 twice and then 204, and a psql query of the three logged attempts.">
           <source data-src="/media/terminal-demo-2x.mp4" type="video/mp4">
         </video>
+        <button type="button" class="video-toggle" aria-controls="demo-video" hidden>Pause</button>
       </div>
     </div>
   </section>
@@ -956,7 +961,9 @@ hookgres.start();
   {
     const video = $("#demo-video");
     const manual = reduceMotion || navigator.connection?.saveData === true;
+    const toggle = $(".video-toggle");
     let loaded = false;
+    let userPaused = false;
     const attach = () => {
       if (loaded) return;
       loaded = true;
@@ -973,11 +980,21 @@ hookgres.start();
       }, { rootMargin: "600px 0px" });
       nearby.observe(video);
       if (!manual) {
+        toggle.hidden = false;
+        let visible = false;
         new IntersectionObserver(([entry]) => {
-          if (!entry.isIntersecting) return video.pause();
+          visible = entry.isIntersecting && entry.intersectionRatio >= 0.25;
+          if (!visible) return video.pause();
           attach();
-          video.play().catch(() => {});
-        }, { threshold: 0.25 }).observe(video);
+          if (!userPaused) video.play().catch(() => {});
+        }, { threshold: [0, 0.25] }).observe(video);
+        // A way to stop the loop for everyone (WCAG 2.2.2); a pause sticks until Play.
+        toggle.addEventListener("click", () => {
+          userPaused = !userPaused;
+          toggle.textContent = userPaused ? "Play" : "Pause";
+          if (userPaused) video.pause();
+          else if (visible) { attach(); video.play().catch(() => {}); }
+        });
       }
     } else if (video) {
       video.controls = true;
