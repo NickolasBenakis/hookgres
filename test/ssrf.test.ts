@@ -1,4 +1,11 @@
+import { execFileSync } from "node:child_process";
 import type { LookupAddress } from "node:dns";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type Hookgres,
@@ -6,7 +13,7 @@ import {
   verifyWebhook,
   type WebhookEnvelope,
 } from "../src/index.js";
-import { AddressGuard } from "../src/ssrf.js";
+import { AddressGuard, guardedTransport } from "../src/ssrf.js";
 import {
   closedPortUrl,
   drain,
@@ -65,6 +72,7 @@ describe("isPrivateAddress", () => {
     "2002:7f00:1::",
     "2002:c0a8:101::1",
     "ff02::1",
+    "::0.0.0.5",
     "[::1]",
     "[fd00::1]",
   ])("blocks %s", (address) => {
@@ -84,6 +92,27 @@ describe("AddressGuard", () => {
     expect(guard.isBlocked("::ffff:127.0.0.1")).toBe(false);
     expect(guard.isBlocked("127.0.0.2")).toBe(true);
     expect(guard.isBlocked("8.8.8.8")).toBe(false);
+  });
+
+  it("keeps IPv6 entries from allowing IPv4 addresses", () => {
+    for (const allow of ["::/0", "::/64", "::ffff:0:0/96"]) {
+      const guard = new AddressGuard({ allow: [allow] });
+      for (const ip of [
+        "127.0.0.1",
+        "10.0.0.5",
+        "169.254.169.254",
+        "::ffff:127.0.0.1",
+        "64:ff9b::a9fe:a9fe",
+        "2002:a00:5::",
+      ]) {
+        expect(guard.isBlocked(ip), `${allow} ${ip}`).toBe(true);
+      }
+    }
+    expect(new AddressGuard({ allow: ["::/0"] }).isBlocked("::1")).toBe(false);
+    const ula = new AddressGuard({ allow: ["fd00::/8"] });
+    expect(ula.isBlocked("fd00::5")).toBe(false);
+    expect(ula.isBlocked("fc00::1")).toBe(true);
+    expect(ula.isBlocked("10.0.0.5")).toBe(true);
   });
 
   it.each([
@@ -218,12 +247,18 @@ describe("blockPrivateAddresses", () => {
       "http://localhost/",
       "http://LOCALHOST./",
       "http://foo.localhost/",
+      "http://hooks.example.com:25/",
+      "https://hooks.example.com:6667/",
     ]) {
       await expect(
         hw.createEndpoint({ tenantId: "acme", url }),
         url,
-      ).rejects.toThrow(/points to a private address/);
+      ).rejects.toThrow(/points to a private address|uses a blocked port/);
     }
+    await hw.createEndpoint({
+      tenantId: "acme",
+      url: "https://hooks.example.com:8443/",
+    });
     const ep = await hw.createEndpoint({
       tenantId: "acme",
       url: "https://hooks.example.com/in",
@@ -292,6 +327,8 @@ describe("blockPrivateAddresses", () => {
       "content-length": String(Buffer.byteLength(request.body)),
       "user-agent": "Test/1",
       "webhook-id": message.id,
+      accept: "*/*",
+      "accept-encoding": "identity",
       host: new URL(receiver.url).host,
     });
     expect(request.headers["transfer-encoding"]).toBeUndefined();
@@ -372,11 +409,56 @@ describe("blockPrivateAddresses", () => {
     );
   });
 
-  it("checks https URLs too", async () => {
-    await endpointFor("https://127.0.0.1:1/");
+  it.each([
+    ["https://127.0.0.1:{port}/", "127.0.0.1"],
+    ["http://[::ffff:7f00:1]:{port}/", "::ffff:7f00:1"],
+    ["http://[64:ff9b::7f00:1]:{port}/", "64:ff9b::7f00:1"],
+    ["http://[::1]:{port}/", "::1"],
+  ])("blocks deliveries to the literal %s", async (url, address) => {
+    await endpointFor(url.replace("{port}", new URL(receiver.url).port));
     const hw = ctx.create({ blockPrivateAddresses: true, retrySchedule: [] });
     const { delivery } = await sendAndDrain(hw);
-    expect(delivery.lastError).toBe("Blocked private address 127.0.0.1");
+    expect(delivery.lastError).toBe(`Blocked private address ${address}`);
+    expect(receiver.requests).toHaveLength(0);
+  });
+
+  it("blocks https hostnames that resolve to loopback", async () => {
+    await endpointFor(`https://localhost:${new URL(receiver.url).port}/`);
+    const hw = ctx.create({ blockPrivateAddresses: true, retrySchedule: [] });
+    const { delivery } = await sendAndDrain(hw);
+    expect(delivery.lastError).toMatch(
+      /^Blocked private address (127\.0\.0\.1|::1)$/,
+    );
+  });
+
+  it("refuses fetch's bad ports at delivery", async () => {
+    await endpointFor("http://127.0.0.1:6667/");
+    const hw = ctx.create({
+      blockPrivateAddresses: { allow: ["127.0.0.1"] },
+      retrySchedule: [],
+    });
+    const { delivery } = await sendAndDrain(hw);
+    expect(delivery.lastError).toBe("Blocked port 6667");
+  });
+
+  it("refuses to run when Node sends requests through an env proxy", () => {
+    const saved = { ...process.env };
+    try {
+      process.env.HTTPS_PROXY = "http://proxy.internal:3128";
+      expect(() => ctx.create({ blockPrivateAddresses: true })).not.toThrow();
+      process.env.NODE_USE_ENV_PROXY = "1";
+      expect(() => ctx.create({ blockPrivateAddresses: true })).toThrow(
+        /HTTPS_PROXY.*Smokescreen/,
+      );
+      expect(() => ctx.create()).not.toThrow();
+      delete process.env.HTTPS_PROXY;
+      process.env.http_proxy = "http://proxy.internal:3128";
+      expect(() => ctx.create({ blockPrivateAddresses: true })).toThrow(
+        /http_proxy/,
+      );
+    } finally {
+      process.env = saved;
+    }
   });
 
   it("can't be combined with a custom fetch, and validates allow", () => {
@@ -389,5 +471,102 @@ describe("blockPrivateAddresses", () => {
     expect(() =>
       ctx.create({ blockPrivateAddresses: false, fetch: globalThis.fetch }),
     ).not.toThrow();
+  });
+});
+
+/** A throwaway cert for localhost, or null where openssl isn't installed. */
+const selfSignedCert = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "hookgres-tls-"));
+  try {
+    execFileSync(
+      "openssl",
+      [
+        ...["req", "-x509", "-newkey", "ec", "-nodes", "-days", "1"],
+        ...["-pkeyopt", "ec_paramgen_curve:prime256v1"],
+        ...["-subj", "/CN=localhost"],
+        ...["-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1"],
+        ...["-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem")],
+      ],
+      { stdio: "ignore" },
+    );
+    return {
+      key: readFileSync(join(dir, "key.pem"), "utf8"),
+      cert: readFileSync(join(dir, "cert.pem"), "utf8"),
+    };
+  } catch {
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+describe("guardedTransport", () => {
+  const guard = new AddressGuard({ allow: ["127.0.0.1", "::1"] });
+  const post = (signal = AbortSignal.timeout(2000)) => ({
+    method: "POST" as const,
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    redirect: "manual" as const,
+    signal,
+  });
+
+  it.skipIf(!selfSignedCert)(
+    "delivers over https with normal certificate checks",
+    async () => {
+      const tls = selfSignedCert as { key: string; cert: string };
+      const server = createHttpsServer(tls, (req, res) => {
+        res.end(`${req.method} ${req.url}`);
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, "127.0.0.1", resolve),
+      );
+      const { port } = server.address() as AddressInfo;
+      const trusting = guardedTransport(guard, { ca: tls.cert });
+      const untrusting = guardedTransport(guard);
+      try {
+        // localhost goes through the DNS lookup; the cert names localhost.
+        const response = await trusting.send(
+          `https://localhost:${port}/hook`,
+          post(),
+        );
+        expect(response.status).toBe(200);
+        expect(await new Response(response.body).text()).toBe("POST /hook");
+        await expect(
+          untrusting.send(`https://localhost:${port}/hook`, post()),
+        ).rejects.toThrow(/self-signed|self signed/);
+      } finally {
+        trusting.close();
+        untrusting.close();
+        server.closeAllConnections();
+        server.close();
+      }
+    },
+  );
+
+  it("reuses a kept-alive connection for the next delivery", async () => {
+    let connections = 0;
+    const server = createHttpServer((req, res) => {
+      req.resume();
+      req.on("end", () => res.end("ok"));
+    }).on("connection", () => connections++);
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const transport = guardedTransport(guard);
+    try {
+      for (let i = 0; i < 2; i++) {
+        const response = await transport.send(
+          `http://127.0.0.1:${port}/`,
+          post(),
+        );
+        expect(await new Response(response.body).text()).toBe("ok");
+      }
+      expect(connections).toBe(1);
+    } finally {
+      transport.close();
+      server.closeAllConnections();
+      server.close();
+    }
   });
 });

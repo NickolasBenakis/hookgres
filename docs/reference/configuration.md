@@ -39,7 +39,8 @@ The constructor throws if neither `pool` nor `connectionString` is given, if
 `schema` is invalid, if `retrySchedule` contains a negative or non-finite
 number, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, if a
 `blockPrivateAddresses.allow` entry isn't an IP address or CIDR, or if
-`blockPrivateAddresses` is combined with `fetch`.
+`blockPrivateAddresses` is combined with `fetch` or with Node's env proxy
+(`NODE_USE_ENV_PROXY` plus `HTTP_PROXY`/`HTTPS_PROXY`).
 
 ## Several instances
 

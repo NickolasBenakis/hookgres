@@ -22,8 +22,8 @@ for (const cidr of [
   "203.0.113.0/24",
   "224.0.0.0/4",
   "240.0.0.0/4",
-  "::/128",
-  "::1/128",
+  // ::, ::1, and IPv4-compatible forms of 0.0.0.0/8 (not decoded below).
+  "::/104",
   // Local-use NAT64 (RFC 8215). Where the IPv4 address sits depends on the
   // operator's prefix length, so block the whole range.
   "64:ff9b:1::/48",
@@ -35,7 +35,7 @@ for (const cidr of [
   "fec0::/10",
   "ff00::/8",
 ]) {
-  addCidr(BLOCKED, cidr);
+  addCidr(cidr, { ipv4: BLOCKED, ipv6: BLOCKED });
 }
 
 /**
@@ -55,10 +55,30 @@ export function isPrivateAddress(address: string): boolean {
   return embedded !== null && BLOCKED.check(embedded, "ipv4");
 }
 
+/**
+ * Ports fetch refuses to connect to (the WHATWG fetch "bad port" list), so
+ * webhooks can't be aimed at SMTP, IRC and similar services.
+ */
+const BAD_PORTS = new Set([
+  0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77,
+  79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135,
+  137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531,
+  532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720,
+  1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
+  6669, 6679, 6697, 10080,
+]);
+
+function isBadPort(url: URL): boolean {
+  return url.port !== "" && BAD_PORTS.has(Number(url.port));
+}
+
 export type BlockPrivateAddressesOption = boolean | { allow: string[] };
 
 export class AddressGuard {
-  private readonly allowed = new BlockList();
+  // Separate lists: Node matches IPv4 addresses against IPv6 rules as
+  // ::ffff:a.b.c.d, so an IPv6 entry like "::/0" would allow every IPv4.
+  private readonly allow4 = new BlockList();
+  private readonly allow6 = new BlockList();
 
   constructor(option: BlockPrivateAddressesOption) {
     if (typeof option !== "object") return;
@@ -66,7 +86,10 @@ export class AddressGuard {
       throw new Error("blockPrivateAddresses.allow must be an array");
     }
     for (const entry of option.allow) {
-      if (typeof entry !== "string" || !addCidr(this.allowed, entry)) {
+      if (
+        typeof entry !== "string" ||
+        !addCidr(entry, { ipv4: this.allow4, ipv6: this.allow6 })
+      ) {
         throw new Error(
           `Invalid blockPrivateAddresses.allow entry ${JSON.stringify(entry)}: use an IP address or CIDR, like "10.1.2.0/24" or "fd00::5"`,
         );
@@ -74,14 +97,15 @@ export class AddressGuard {
     }
   }
 
+  /** IPv4 and IPv6 forms that embed IPv4 use IPv4 entries, the rest IPv6. */
   isBlocked(address: string): boolean {
     const ip = normalise(address);
     const family = isIP(ip);
-    if (family === 4 && this.allowed.check(ip, "ipv4")) return false;
-    if (family === 6) {
-      if (this.allowed.check(ip, "ipv6")) return false;
-      const embedded = embeddedIPv4(ip);
-      if (embedded && this.allowed.check(embedded, "ipv4")) return false;
+    const embedded = family === 6 ? embeddedIPv4(ip) : null;
+    if (family === 4 && this.allow4.check(ip, "ipv4")) return false;
+    if (embedded && this.allow4.check(embedded, "ipv4")) return false;
+    if (family === 6 && !embedded && this.allow6.check(ip, "ipv6")) {
+      return false;
     }
     return isPrivateAddress(ip);
   }
@@ -96,6 +120,11 @@ export class AddressGuard {
     ) {
       throw new Error(
         `Endpoint URL points to a private address: ${url.href} (blockPrivateAddresses is on)`,
+      );
+    }
+    if (isBadPort(url)) {
+      throw new Error(
+        `Endpoint URL uses a blocked port: ${url.href} (blockPrivateAddresses is on)`,
       );
     }
   }
@@ -153,14 +182,22 @@ export type Transport = (
  * Sends requests with `node:http`/`node:https`, refusing blocked addresses
  * both for IP literals and for every address a hostname resolves to.
  * Redirects are not followed, like `fetch` with `redirect: "manual"`.
+ * `tls` exists for tests (a self-signed receiver).
  */
-export function guardedTransport(guard: AddressGuard): Transport {
+export function guardedTransport(
+  guard: AddressGuard,
+  tls: { ca?: string } = {},
+): { send: Transport; close(): void } {
+  assertNoEnvProxy();
+  // Like undici, close idle keep-alive sockets after 4s, before receivers'
+  // own idle timeouts reset them. The agent only destroys free sockets on
+  // timeout; requests in flight are bounded by the AbortSignal.
   const agents = {
-    http: new http.Agent({ keepAlive: true }),
-    https: new https.Agent({ keepAlive: true }),
+    http: new http.Agent({ keepAlive: true, timeout: 4000 }),
+    https: new https.Agent({ keepAlive: true, timeout: 4000, ...tls }),
   };
   const lookup = guard.lookup();
-  return (url, { method, headers, body, signal }) =>
+  const send: Transport = (url, { method, headers, body, signal }) =>
     new Promise((resolve, reject) => {
       signal.throwIfAborted();
       const target = new URL(url);
@@ -171,13 +208,19 @@ export function guardedTransport(guard: AddressGuard): Transport {
       // Node skips `lookup` for IP literals, so check them here.
       const host = normalise(target.hostname);
       if (isIP(host) && guard.isBlocked(host)) throw blockedError(host);
+      if (isBadPort(target)) throw new Error(`Blocked port ${target.port}`);
 
       const secure = target.protocol === "https:";
       const request = (secure ? https : http).request(
         target,
         {
           method,
-          headers: { ...headers, "content-length": Buffer.byteLength(body) },
+          headers: {
+            accept: "*/*",
+            "accept-encoding": "identity",
+            ...headers,
+            "content-length": Buffer.byteLength(body),
+          },
           agent: secure ? agents.https : agents.http,
           lookup,
         },
@@ -193,6 +236,33 @@ export function guardedTransport(guard: AddressGuard): Transport {
       request.on("error", reject);
       request.end(body);
     });
+  return {
+    send,
+    close() {
+      agents.http.destroy();
+      agents.https.destroy();
+    },
+  };
+}
+
+/**
+ * Node can route its own HTTP clients through HTTP(S)_PROXY. These agents
+ * would bypass that proxy, and behind a proxy the guard belongs there.
+ */
+function assertNoEnvProxy(): void {
+  const env = process.env;
+  const flag = env.NODE_USE_ENV_PROXY;
+  const enabled =
+    (flag !== undefined && !["", "0", "false"].includes(flag)) ||
+    process.execArgv.includes("--use-env-proxy");
+  const proxy = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].find(
+    (name) => env[name],
+  );
+  if (enabled && proxy) {
+    throw new Error(
+      `blockPrivateAddresses can't be used while Node routes requests through ${proxy} (NODE_USE_ENV_PROXY). Block private addresses in the proxy instead, e.g. with Smokescreen, or unset ${proxy}`,
+    );
+  }
 }
 
 function blockedError(address: string): Error {
@@ -206,8 +276,11 @@ function normalise(address: string): string {
   return zone === -1 ? ip : ip.slice(0, zone);
 }
 
-/** Adds `"10.0.0.0/8"` or `"fd00::5"` to a list; returns false if invalid. */
-function addCidr(list: BlockList, cidr: string): boolean {
+/** Adds `"10.0.0.0/8"` or `"fd00::5"` to its family's list; false if invalid. */
+function addCidr(
+  cidr: string,
+  lists: { ipv4: BlockList; ipv6: BlockList },
+): boolean {
   const [address = "", prefix, extra] = cidr.split("/");
   const family = isIP(address);
   if (!family || address.includes("%") || extra !== undefined) return false;
@@ -215,20 +288,24 @@ function addCidr(list: BlockList, cidr: string): boolean {
   if (prefix !== undefined && !/^\d{1,3}$/.test(prefix)) return false;
   const bits = prefix === undefined ? max : Number(prefix);
   if (bits > max) return false;
-  list.addSubnet(address, bits, family === 4 ? "ipv4" : "ipv6");
+  const type = family === 4 ? "ipv4" : "ipv6";
+  lists[type].addSubnet(address, bits, type);
   return true;
 }
 
 /**
  * The IPv4 address inside an IPv4-mapped (::ffff:0:0/96), IPv4-compatible
- * (::/96), NAT64 (64:ff9b::/96) or 6to4 (2002::/16) IPv6 address, or null.
+ * (::/96, from 1.0.0.0), NAT64 (64:ff9b::/96) or 6to4 (2002::/16) IPv6 address, or null.
  */
 function embeddedIPv4(ipv6: string): string | null {
   const h = hextets(ipv6);
   const zeros = (from: number, to: number) =>
     h.slice(from, to).every((x) => x === 0);
   if (h[0] === 0x2002) return dotted(h[1], h[2]);
-  if (zeros(0, 5) && (h[5] === 0 || h[5] === 0xffff)) return dotted(h[6], h[7]);
+  if (zeros(0, 5) && h[5] === 0xffff) return dotted(h[6], h[7]);
+  // IPv4-compatible, except :: and ::1, which are IPv6 addresses in their
+  // own right (and blocked as such).
+  if (zeros(0, 6) && (h[6] ?? 0) >= 0x100) return dotted(h[6], h[7]);
   if (h[0] === 0x64 && h[1] === 0xff9b && zeros(2, 6)) {
     return dotted(h[6], h[7]);
   }

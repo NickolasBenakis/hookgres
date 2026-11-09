@@ -142,6 +142,7 @@ export class Hookgres {
   private readonly secretRotationGraceMs: number;
   private readonly guard: AddressGuard | null;
   private readonly transport: Transport;
+  private readonly closeTransport: () => void;
   private readonly userAgent: string;
   private readonly onError: (error: unknown) => void;
 
@@ -201,10 +202,13 @@ export class Hookgres {
     }
     if (options.blockPrivateAddresses) {
       this.guard = new AddressGuard(options.blockPrivateAddresses);
-      this.transport = guardedTransport(this.guard);
+      const guarded = guardedTransport(this.guard);
+      this.transport = guarded.send;
+      this.closeTransport = guarded.close;
     } else {
       this.guard = null;
       this.transport = options.fetch ?? globalThis.fetch;
+      this.closeTransport = () => {};
     }
     this.userAgent = options.userAgent ?? "Hookgres/0.1";
     this.onError =
@@ -544,6 +548,7 @@ export class Hookgres {
   /** Stops the worker and closes the pool if Hookgres created it. */
   async close(): Promise<void> {
     await this.stop();
+    this.closeTransport();
     if (this.ownsPool) await this.pool.end();
   }
 

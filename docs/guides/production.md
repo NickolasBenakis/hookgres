@@ -68,7 +68,8 @@ It's off by default. With it on, Hookgres checks twice:
   `http://[::ffff:127.0.0.1]/` are all caught as `127.0.0.1`. There's no DNS
   lookup at this point, so customers get an error straight away for the
   obvious cases. `localhost` names are rejected even if `allow` covers
-  loopback; use the IP address, like `http://127.0.0.1:3000/`.
+  loopback; use the IP address, like `http://127.0.0.1:3000/`. Ports that
+  `fetch` refuses, such as 25 (SMTP) and 6667 (IRC), are rejected too.
 - **On every delivery.** Hookgres resolves the hostname, gets every address
   it points to, and refuses to send if any of them is blocked. The
   connection then goes to one of the addresses it just checked, so a DNS
@@ -80,16 +81,26 @@ Blocked addresses are the private, loopback, link-local, carrier-grade NAT,
 multicast, documentation and reserved ranges, for IPv4 and IPv6. IPv6
 addresses that carry an IPv4 address inside them (`::ffff:127.0.0.1`,
 `::127.0.0.1`, NAT64 `64:ff9b::7f00:1`, 6to4 `2002:7f00:1::`) are judged by
-that IPv4 address. A blocked attempt fails like a network error, with
+that IPv4 address, and only IPv4 `allow` entries apply to them. A blocked
+attempt fails like a network error, with
 `Blocked private address 10.0.0.5` as its error, and is retried on the normal
 schedule. If the DNS record later points somewhere public, the next attempt
 goes through.
 
 With the option on, Hookgres sends requests with Node's `http` and `https`
 modules instead of `fetch`, so it can control which address it connects to.
-That's why it can't be combined with the `fetch` option: the constructor
-throws. If you pass your own `fetch`, for example to send through a proxy,
-put the guard in that proxy or transport. `isPrivateAddress(ip)`, exported
+Receivers get the same method, headers and body, plus `accept: */*` and
+`accept-encoding: identity`, so responses come back uncompressed. URLs with
+a username or password fail, as they do with `fetch`. Error messages use
+Node's wording, like `connect ECONNREFUSED 203.0.113.7:443` instead of
+`fetch failed: ECONNREFUSED`.
+
+That's also why it can't be combined with the `fetch` option, or with
+Node's built-in proxy support (`NODE_USE_ENV_PROXY` together with
+`HTTP_PROXY` or `HTTPS_PROXY`): the constructor throws, because requests
+would skip the proxy. If you send through a proxy, put the guard in the
+proxy, or unset the proxy variables. If you pass your own `fetch`, put the
+guard in that transport. `isPrivateAddress(ip)`, exported
 from `hookgres`, applies the same rules as the built-in guard. Call it on
 every address your transport's DNS lookup returns, and on hosts that are
 already IP addresses (it accepts `new URL(url).hostname` as is, brackets
@@ -98,8 +109,10 @@ included).
 **Also block it at the network level.** An egress proxy that only allows
 public addresses, such as Stripe's
 [Smokescreen](https://github.com/stripe/smokescreen), or firewall rules on
-the worker hosts, protect you even if application code has a gap. A proxy
-also gives you fixed outbound IPs that customers can allowlist.
+the worker hosts, protect you even if application code has a gap. Some
+cloud-internal services sit on public IPs, like Azure's `168.63.129.16`,
+so an address-based guard alone can't catch them. A proxy also gives you
+fixed outbound IPs that customers can allowlist.
 
 ## Monitoring
 
