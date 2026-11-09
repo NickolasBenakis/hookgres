@@ -95,6 +95,7 @@ export default defineConfig({
       { text: "Docs", link: "/", activeMatch: "^/(?!playground)" },
       { text: "Playground", link: "/playground" },
       { text: "GitHub", link: repo },
+      { text: "npm", link: "https://www.npmjs.com/package/hookgres" },
     ],
     sidebar: [
       {

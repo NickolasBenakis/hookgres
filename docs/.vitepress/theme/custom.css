@@ -1394,7 +1394,12 @@ button {
 .hg-search-backdrop {
   position: absolute;
   inset: 0;
-  background: var(--vp-backdrop-bg-color);
+  /* Lighter than the sidebar's backdrop, so the page shows through the frosted panel. */
+  background: oklch(0% 0 0 / 0.16);
+}
+
+.dark .hg-search-backdrop {
+  background: oklch(0% 0 0 / 0.45);
 }
 
 .hg-search-panel {
@@ -1405,8 +1410,23 @@ button {
   width: min(640px, 100%);
   max-height: min(560px, calc(var(--hg-vvh, 100dvh) - min(12vh, 120px) - 16px));
   overflow: hidden;
-  background: var(--hg-surface);
-  box-shadow: var(--hg-overlay-shadow);
+  /* Frosted like Spotlight: the page shows through, blurred. */
+  background: color-mix(in oklab, var(--hg-surface) 74%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.7), var(--hg-overlay-shadow);
+}
+
+.dark .hg-search-panel {
+  background: color-mix(in oklab, var(--hg-surface) 70%, transparent);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), var(--hg-overlay-shadow);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hg-search-panel,
+  .dark .hg-search-panel {
+    background: var(--hg-surface);
+  }
 }
 
 .hg-search-bar {
