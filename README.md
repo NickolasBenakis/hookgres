@@ -25,6 +25,8 @@
     <a href="https://hookgres.dev/llms.txt">llms.txt</a>
     ·
     <a href="CHANGELOG.md">Changelog</a>
+    ·
+    <a href="https://hookgres.dev/docs/roadmap">Roadmap</a>
   </p>
 </div>
 

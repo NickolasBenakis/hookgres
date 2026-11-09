@@ -127,6 +127,7 @@ export default defineConfig({
         ],
       },
       { text: "FAQ", link: "/faq" },
+      { text: "Roadmap", link: "/roadmap" },
     ],
     editLink: {
       pattern: `${repo}/edit/main/docs/:path`,
