@@ -49,7 +49,7 @@ export default defineConfig({
       {
         name: "theme-color",
         media: "(prefers-color-scheme: light)",
-        content: "#fbfbfd",
+        content: "#fafbfd",
       },
     ],
     [
