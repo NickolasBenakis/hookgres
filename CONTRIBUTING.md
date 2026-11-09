@@ -28,6 +28,15 @@ pnpm examples      # runs every example against the compose database
 pnpm site:build    # if you changed the docs or the landing page
 ```
 
+Other scripts:
+
+```sh
+pnpm docs:dev     # docs with live reload at http://localhost:5173/docs/
+pnpm coverage     # tests with coverage thresholds
+pnpm smoke        # packs the library and runs an example from the tarball
+pnpm bench        # load test; tune with LOAD_N, LOAD_WORKERS, LOAD_CONCURRENCY
+```
+
 `pnpm format` fixes formatting. CI runs the tests on Postgres 14–18 and
 Node.js 22, 24 and 26.
 

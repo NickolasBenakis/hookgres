@@ -1,35 +1,64 @@
-# Hookgres
+<div align="center">
+  <a href="https://hookgres.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+      <img alt="Hookgres" src=".github/assets/logo-light.svg" width="310" height="64">
+    </picture>
+  </a>
 
-**Postgres webhooks for TypeScript.** Send signed webhooks to your customers
-from the Postgres you already run, with retries, endpoint health, secret
-rotation and replay, and without extra servers, queues or per-message bills.
+  <h3>Signed, retried, logged webhooks from the Postgres you already run.</h3>
 
-Hookgres is the webhook-sending half of Svix or Hookdeck, as a library:
+  <p>
+    <a href="https://www.npmjs.com/package/hookgres"><img alt="npm version" src="https://img.shields.io/npm/v/hookgres?color=163a5f&label=npm"></a>
+    <a href="https://www.npmjs.com/package/hookgres"><img alt="TypeScript types included" src="https://img.shields.io/npm/types/hookgres?color=163a5f"></a>
+    <a href="https://github.com/NickolasBenakis/hookgres/actions/workflows/ci.yml?query=branch%3Amain"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/NickolasBenakis/hookgres/ci.yml?branch=main&label=CI"></a>
+    <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/npm/l/hookgres?color=163a5f"></a>
+  </p>
 
-- **Standard Webhooks signatures.** Receivers can verify with Hookgres's
-  `verifyWebhook` or any [Standard Webhooks](https://www.standardwebhooks.com)
-  library, in any language.
-- **Transactional outbox.** Queue a webhook inside your own transaction; it
-  only sends if your transaction commits.
-- **Durable retries.** 8 attempts over about 28 hours by default, with
-  `FOR UPDATE SKIP LOCKED` so any number of workers can run at once without
-  sending a delivery twice.
-- **Endpoint health.** Endpoints that fail continuously for 5 days are disabled
-  automatically, and re-enabled with one call.
-- **Multi-tenant.** Every endpoint and message belongs to a `tenantId` (your
-  customer), and each event goes only to that tenant's endpoints.
-- **Full delivery log.** Every attempt's status code, response body, error and
-  timing is stored for your dashboard and support team.
+  <p>
+    <a href="https://hookgres.dev">Website</a>
+    ·
+    <a href="https://hookgres.dev/docs/">Docs</a>
+    ·
+    <a href="https://hookgres.dev/docs/playground">Playground</a>
+    ·
+    <a href="https://hookgres.dev/llms.txt">llms.txt</a>
+    ·
+    <a href="CHANGELOG.md">Changelog</a>
+  </p>
+</div>
 
-**[Documentation](https://hookgres.dev/docs/)** · [Getting started](https://hookgres.dev/docs/getting-started) · [Playground](https://hookgres.dev/docs/playground) · [API](https://hookgres.dev/docs/reference/api)
+<br>
+
+Hookgres is a TypeScript library that sends webhooks to your customers from
+your own Postgres. It signs them with
+[Standard Webhooks](https://www.standardwebhooks.com), retries failures for
+about 28 hours, disables endpoints that stay down, and logs every attempt. It's
+the sending half of Svix or Hookdeck as a dependency instead of a vendor: no
+extra servers, no queue to run, no per-message bill.
+
+```ts
+await hookgres.send(
+  { tenantId: "acme", eventType: "invoice.paid", payload: { id: "in_123" } },
+  { client }, // your transaction's client: nothing is sent unless you commit
+);
+```
 
 ## Install
 
 ```sh
 npm install hookgres pg
+# or: pnpm add hookgres pg · yarn add hookgres pg · bun add hookgres pg
 ```
 
-Requires Node 22.12+ and Postgres 14+. Works with both `import` and `require()`.
+Needs Node.js 22.12+ and Postgres 14+. No Postgres extensions, and no runtime
+dependencies besides `pg`. Works with both `import` and `require()`.
+
+Using a coding agent? Give it this line:
+
+```text
+Add Hookgres webhooks to this app: hookgres.dev/llms.txt
+```
 
 ## Quick start
 
@@ -40,14 +69,14 @@ import { Hookgres } from "hookgres";
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const hookgres = new Hookgres({ pool });
 
-await hookgres.migrate(); // creates the "hookgres" schema; safe to run on every boot
-hookgres.start(); // background delivery worker
+await hookgres.migrate(); // creates the "hookgres" schema; safe on every boot
+hookgres.start(); // delivery worker in this process
 
-// Your customer registers an endpoint (show them the secret once).
+// A customer registers an endpoint. Show them endpoint.secret once.
 const endpoint = await hookgres.createEndpoint({
   tenantId: "acme",
   url: "https://acme.example.com/webhooks",
-  eventTypes: ["invoice.paid", "invoice.refunded"], // omit for all events
+  eventTypes: ["invoice.paid"], // omit for every event
 });
 
 // Anywhere in your app:
@@ -58,11 +87,13 @@ await hookgres.send({
   idempotencyKey: "invoice.paid:in_123", // optional, dedupes per tenant
 });
 
-// On shutdown: finishes in-flight deliveries.
-await hookgres.stop();
+await hookgres.stop(); // on shutdown: lets in-flight requests finish
 ```
 
 ### Send inside your transaction
+
+Pass your transaction's client and the webhook is queued in the same commit as
+the change that caused it. Roll back and nothing is sent.
 
 ```ts
 const client = await pool.connect();
@@ -73,7 +104,7 @@ try {
     { tenantId, eventType: "invoice.paid", payload: { id } },
     { client },
   );
-  await client.query("COMMIT"); // webhook is queued only if this commits
+  await client.query("COMMIT");
 } catch (error) {
   await client.query("ROLLBACK");
   throw error;
@@ -82,32 +113,12 @@ try {
 }
 ```
 
-### Serverless or cron instead of a long-running worker
+### Verify on the receiving side
 
-```ts
-// e.g. a cron route hit every minute
-let processed: number;
-do processed = await hookgres.runOnce();
-while (processed > 0);
-```
-
-## What receivers get
-
-A `POST` with a JSON envelope:
-
-```json
-{
-  "type": "invoice.paid",
-  "timestamp": "2026-11-08T15:04:05.000Z",
-  "data": { "invoiceId": "in_123", "amount": 4200 }
-}
-```
-
-and the Standard Webhooks headers `webhook-id` (the message id, identical
-across retries so receivers can deduplicate), `webhook-timestamp` and
-`webhook-signature`.
-
-Verifying on the receiving side (needs the raw body):
+Receivers get a `POST` with a JSON body (`type`, `timestamp`, `data`) and the
+headers `webhook-id`, `webhook-timestamp` and `webhook-signature`. They can
+verify it with any Standard Webhooks library, in any language, or with the
+helper Hookgres ships:
 
 ```ts
 import { verifyWebhook } from "hookgres";
@@ -116,127 +127,126 @@ app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
   const event = verifyWebhook({
     secret: process.env.WEBHOOK_SECRET!,
     headers: req.headers,
-    body: req.body,
+    body: req.body, // the raw body, not parsed JSON
   }); // throws WebhookVerificationError if invalid or older than 5 minutes
   res.sendStatus(204);
 });
 ```
 
+No long-running process? Drain the queue from a cron job with
+[`runOnce()`](https://hookgres.dev/docs/guides/workers#cron-or-serverless).
+
+## Features
+
+- **Standard Webhooks signatures.** Receivers verify with `verifyWebhook` or
+  any Standard Webhooks library.
+- **Transactional outbox.** `send(input, { client })` joins your transaction.
+- **Durable retries.** 8 attempts over about 28 hours by default. Workers claim
+  deliveries with `FOR UPDATE SKIP LOCKED`, so you can run as many as you like
+  without sending a delivery twice.
+- **Endpoint health.** An endpoint that fails for 5 days straight is disabled.
+  One call re-enables it.
+- **Multi-tenant.** Every endpoint and message belongs to a `tenantId`, and an
+  event only goes to that tenant's endpoints.
+- **Delivery log and replay.** Status code, response body, error and timing for
+  every attempt, in tables you can query. `replayDelivery(id)` sends it again.
+- **Secret rotation.** After `rotateEndpointSecret`, the old secret keeps
+  signing for a grace period, 24 hours by default.
+- **Idempotency keys.** Sending twice with the same key creates one message.
+
 ## Delivery semantics
 
-| Situation                                         | Behaviour                                                          |
+| Situation                                         | What happens                                                       |
 | ------------------------------------------------- | ------------------------------------------------------------------ |
 | `2xx` response                                    | Succeeded.                                                         |
 | Non-`2xx`, redirect, timeout (15s), network error | Retried after 5s, 5m, 30m, 2h, 5h, 10h, 10h, then marked `failed`. |
 | Every attempt failing for 5 days                  | Endpoint disabled; its queued deliveries are marked `failed`.      |
 | Worker crashes mid-delivery                       | The lock expires and another worker retries it.                    |
 
-Delivery is **at least once**: a worker can crash after the receiver
-responds but before the result is saved, so receivers should deduplicate on
-`webhook-id`.
+Delivery is at least once, so receivers should deduplicate on `webhook-id`.
+The schedule, timeout and disable window are all
+[configurable](https://hookgres.dev/docs/reference/configuration).
 
-## API
+## Hookgres or a hosted service?
 
-| Method                                                                                                       | Purpose                                                                 |
-| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `migrate()`                                                                                                  | Create or upgrade tables (advisory-locked).                             |
-| `createEndpoint`, `getEndpoint`, `listEndpoints(tenantId)`, `updateEndpoint`, `deleteEndpoint`               | Manage endpoints. `updateEndpoint(id, { disabled: false })` re-enables. |
-| `rotateEndpointSecret(id, { graceMs })`                                                                      | New secret; the old one also signs for `graceMs` (default 24h).         |
-| `send(input, { client })`                                                                                    | Queue a message for matching endpoints.                                 |
-| `getMessage`, `getDelivery`, `listDeliveries({ messageId, endpointId, status })`, `listAttempts(deliveryId)` | Delivery log.                                                           |
-| `replayDelivery(id)`                                                                                         | Re-send a succeeded or failed delivery.                                 |
-| `start()`, `stop()`, `runOnce()`, `close()`                                                                  | Worker lifecycle.                                                       |
-| `verifyWebhook`, `sign`, `generateSecret`                                                                    | Signing helpers.                                                        |
+|                     | Hookgres                                        | Hosted (Svix Cloud, Hookdeck)     |
+| ------------------- | ----------------------------------------------- | --------------------------------- |
+| Runs on             | Your app and your Postgres                      | The vendor's cloud                |
+| Cost                | MIT licensed, no per-message fees               | A vendor plan                     |
+| Atomic with your DB | Yes, `send()` joins your transaction            | No, an API call after your commit |
+| Delivery log        | Tables in your database, joinable with your own | The vendor's dashboard and API    |
+| Customer portal     | Build it on `listDeliveries` and `listAttempts` | Ready-made                        |
+| Regions             | Wherever your workers run                       | The vendor's regions              |
 
-### Options
+A hosted service suits you better if you need a ready-made customer portal,
+delivery from many regions, or want webhook traffic off your database. Coming
+from Svix? [The migration guide](https://hookgres.dev/docs/guides/migrating-from-svix)
+shows how to keep your customers' secrets.
 
-```ts
-new Hookgres({
-  pool, // or connectionString
-  schema: "hookgres",
-  retrySchedule: [5_000, 300_000 /* ... */], // ms before each retry
-  requestTimeoutMs: 15_000,
-  disableEndpointAfterMs: 5 * 24 * 3600_000, // null to never disable
-  concurrency: 10, // parallel requests per worker
-  pollIntervalMs: 1_000,
-  fetch, // custom fetch, e.g. with an SSRF guard
-  onError: console.error,
-});
-```
-
-## Security note
-
-Hookgres sends requests to URLs your users provide. In production, stop
-endpoints from reaching your internal network (SSRF): pass a `fetch` that
-blocks private IP ranges, or route deliveries through an egress proxy. The
-[production guide](https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf)
-has an example.
+On pg-boss or graphile-worker already? You can build webhooks on a job queue,
+but you'd still need signing, endpoint health, secret rotation, a delivery log
+and replay. Hookgres is those parts, built on the same `SKIP LOCKED` technique.
 
 ## Performance
 
-One laptop (Apple Silicon, Postgres 16 in Docker), 20,000 webhooks, 4 workers
-with 50 concurrent requests each, local receiver:
+On one laptop (Apple Silicon, Postgres 16 in Docker), 4 workers with 50
+concurrent requests each delivered 20,000 webhooks to a local receiver at
+about 5,500 per second, with none lost or duplicated. `send()` alone queued
+about 13,000 messages per second. Run it yourself with `pnpm bench`. In
+production, throughput depends mostly on how fast receivers respond.
 
-| Metric                      | Result             |
-| --------------------------- | ------------------ |
-| `send()` throughput         | ~13,000 messages/s |
-| Delivery throughput         | ~5,500 webhooks/s  |
-| Lost or duplicated webhooks | 0                  |
+## Documentation
 
-Run it yourself with `pnpm bench` (`LOAD_N`, `LOAD_WORKERS` and
-`LOAD_CONCURRENCY` to tune). Real-world throughput depends mostly on how fast
-receivers respond.
+| Page                                                                     | Covers                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------- |
+| [Getting started](https://hookgres.dev/docs/getting-started)             | From install to a verified webhook in five minutes. |
+| [Sending webhooks](https://hookgres.dev/docs/guides/sending)             | Transactional sends, idempotency, payloads.         |
+| [Verifying webhooks](https://hookgres.dev/docs/guides/verifying)         | Express, Next.js, Hono, Fastify, other languages.   |
+| [Retries, failures and replay](https://hookgres.dev/docs/guides/retries) | The schedule, statuses, endpoint health.            |
+| [Running workers](https://hookgres.dev/docs/guides/workers)              | Background loop, many workers, cron or serverless.  |
+| [Going to production](https://hookgres.dev/docs/guides/production)       | SSRF protection, monitoring, cleanup.               |
+| [API reference](https://hookgres.dev/docs/reference/api)                 | Every method, option and type.                      |
+| [FAQ](https://hookgres.dev/docs/faq)                                     | Supabase, Neon, ORMs, ordering, payload size.       |
 
 ## Try it
 
-The playground runs Postgres and a small web app where you send events to
-three fake customer endpoints (one healthy, one flaky, one down) and watch
-deliveries succeed, retry, fail and get replayed:
+The playground runs Postgres and a small app where you send events to three
+fake customer endpoints (healthy, flaky and down) and watch deliveries
+succeed, retry, fail and get replayed:
 
 ```sh
 git clone https://github.com/NickolasBenakis/hookgres && cd hookgres
-docker compose up    # then open http://localhost:3000
+docker compose up # then open http://localhost:3000
 ```
 
-## Examples
+[`examples/`](examples) has a short runnable file for each feature:
+[basic](examples/basic.ts), [transactional](examples/transactional.ts),
+[retries and replay](examples/retries-and-replay.ts),
+[serverless](examples/serverless.ts) and
+[secret rotation](examples/secret-rotation.ts).
 
-Each example is a short runnable file (most share the tiny receiver in
-[`examples/receiver.ts`](examples/receiver.ts)). Start Postgres with
-`docker compose up -d postgres`, run `pnpm build`, then
-`node examples/<file>`. Set `DATABASE_URL` to use your own database.
+## Contributing
 
-| Example                                                   | Shows                                                  |
-| --------------------------------------------------------- | ------------------------------------------------------ |
-| [`basic.ts`](examples/basic.ts)                           | A sender and a verifying receiver in one file.         |
-| [`transactional.ts`](examples/transactional.ts)           | A rolled-back transaction sends nothing.               |
-| [`retries-and-replay.ts`](examples/retries-and-replay.ts) | Retries, the attempt log, and replaying a delivery.    |
-| [`serverless.ts`](examples/serverless.ts)                 | Draining the queue from a cron job with `runOnce()`.   |
-| [`secret-rotation.ts`](examples/secret-rotation.ts)       | Rotating a secret without breaking receivers.          |
-| [`playground/`](examples/playground)                      | The interactive playground behind `docker compose up`. |
-
-## Development
+Bug reports, docs fixes and pull requests are welcome. CI runs the suite on
+every Postgres version from 14 to 18 and on Node.js 22, 24 and 26, and checks
+delivered webhooks against the official Standard Webhooks library.
 
 ```sh
 pnpm install
-pnpm test        # starts Postgres in Docker via testcontainers (or set DATABASE_URL)
-pnpm examples    # runs every example and checks the playground (needs DATABASE_URL or docker compose up -d postgres)
-pnpm coverage    # tests with coverage thresholds
+pnpm test # starts Postgres in Docker via testcontainers, or set DATABASE_URL
 pnpm typecheck && pnpm lint
-pnpm smoke       # packs the library and runs the example from the tarball
-pnpm bench       # load test: no lost or duplicated webhooks
-pnpm docs:dev    # docs at http://localhost:5173/docs/
-pnpm site:build  # landing page + docs in .site-dist/, as deployed to hookgres.dev
 ```
 
-CI runs the suite on Postgres 14–18 and Node 22, 24 and 26, and checks
-webhooks against the official
-[Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks)
-library.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the full setup and the pull request
+checklist.
 
 ## Security
 
-Report vulnerabilities privately to nickolasbenele@gmail.com (see
-[SECURITY.md](SECURITY.md)).
+Hookgres sends requests to URLs your users provide, so in production you need
+to stop them from reaching your internal network. The
+[production guide](https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf)
+shows how. Report vulnerabilities privately, as described in
+[SECURITY.md](SECURITY.md).
 
 ## License
 

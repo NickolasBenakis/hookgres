@@ -25,7 +25,16 @@ pnpm add hookgres pg
 yarn add hookgres pg
 ```
 
+```sh [bun]
+bun add hookgres pg
+```
+
 :::
+
+The package is [`hookgres` on npm](https://www.npmjs.com/package/hookgres).
+It ships its own TypeScript types. `pg` is a peer dependency, so install it
+alongside, as above. Any of these package managers works, but Hookgres runs on
+Node.js; [other runtimes aren't tested](/faq#does-it-run-on-bun-or-deno).
 
 Need a database? The repository's `docker-compose.yml` starts one:
 
