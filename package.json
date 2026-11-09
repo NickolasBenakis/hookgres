@@ -56,13 +56,18 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "site:build": "node scripts/build-site.mjs",
-    "prepublishOnly": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"
+    "prepublishOnly": "pnpm typecheck && pnpm lint && pnpm build && pnpm test",
+    "changeset": "changeset",
+    "ci:version": "changeset version",
+    "ci:publish": "changeset publish"
   },
   "peerDependencies": {
     "pg": "^8.11.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",

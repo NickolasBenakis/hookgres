@@ -126,3 +126,53 @@ jobs:
           exit 1
       - if: always()
         run: docker compose down --volumes
+
+  # On main, after every check passes: keep a "Version Packages" pull request
+  # open while there are changesets, and publish to npm when it is merged.
+  # Publishing uses npm trusted publishing (OIDC), so there is no npm token.
+  release:
+    name: Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, test, package, playground]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write # tags and GitHub releases
+      pull-requests: write # the Version Packages pull request
+      id-token: write # npm trusted publishing
+    # prepublishOnly runs the test suite again before publishing.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # npm 11.5.1+ is required for trusted publishing
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: changesets/action@v1
+        with:
+          version: pnpm ci:version
+          publish: pnpm ci:publish
+          title: Version Packages
+          commit: Version Packages
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
