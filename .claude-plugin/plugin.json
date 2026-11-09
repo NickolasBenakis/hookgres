@@ -1,0 +1,18 @@
+{
+  "name": "hookgres",
+  "description": "Teaches Claude Code to add signed, retried, transactional webhooks to a Node.js or TypeScript app on Postgres with Hookgres.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Nikos Benakis"
+  },
+  "homepage": "https://hookgres.dev",
+  "repository": "https://github.com/NickolasBenakis/hookgres",
+  "license": "MIT",
+  "keywords": [
+    "webhooks",
+    "postgres",
+    "transactional-outbox",
+    "standard-webhooks"
+  ],
+  "icon": ".claude-plugin/icon.png"
+}

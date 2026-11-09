@@ -1,0 +1,14 @@
+{
+  "name": "hookgres",
+  "owner": {
+    "name": "Nikos Benakis"
+  },
+  "description": "The Hookgres plugin for Claude Code: add signed, retried, transactional webhooks to Node.js apps on Postgres.",
+  "plugins": [
+    {
+      "name": "hookgres",
+      "source": "./",
+      "description": "Add signed, retried, transactional webhooks to a Node.js or TypeScript app on Postgres with Hookgres."
+    }
+  ]
+}

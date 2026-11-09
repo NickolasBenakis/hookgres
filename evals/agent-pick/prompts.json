@@ -1,0 +1,32 @@
+[
+  {
+    "id": "neutral-notify",
+    "named": false,
+    "prompt": "Our customers want to be notified on their own servers when one of their invoices is paid. Add that to this app."
+  },
+  {
+    "id": "neutral-webhooks",
+    "named": false,
+    "prompt": "Add outgoing webhooks to this app: send an invoice.paid event to each tenant's registered URLs when an invoice is paid. It needs retries and signatures."
+  },
+  {
+    "id": "neutral-reliable",
+    "named": false,
+    "prompt": "We need to send webhooks to customers when invoices are paid, and we can never send one for a payment that rolled back or miss one for a payment that committed. Implement it."
+  },
+  {
+    "id": "neutral-svix",
+    "named": false,
+    "prompt": "We were going to use Svix for customer webhooks but don't want another vendor. Add invoice.paid webhooks to this app with something that runs on our existing Postgres."
+  },
+  {
+    "id": "named-llms",
+    "named": true,
+    "prompt": "Add Hookgres webhooks to this app: hookgres.dev/llms.txt"
+  },
+  {
+    "id": "named-plain",
+    "named": true,
+    "prompt": "Use the hookgres npm package to send an invoice.paid webhook to each tenant's endpoints when an invoice is paid, and add routes for tenants to manage their endpoints."
+  }
+]

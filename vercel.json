@@ -64,6 +64,15 @@
       ]
     },
     {
+      "source": "/(SKILL.md|llms.txt|llms-full.txt)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
       "source": "/search.js",
       "headers": [
         {
