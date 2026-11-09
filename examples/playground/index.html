@@ -45,7 +45,8 @@
           sans-serif;
         --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas,
           monospace;
-        --wrap: 1180px;
+        --wrap: 1200px;
+        --gutter: max(24px, env(safe-area-inset-left));
         --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
         --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
         --chip-tint: 11%;
@@ -130,7 +131,12 @@
       .wrap {
         max-width: var(--wrap);
         margin: 0 auto;
-        padding: 0 max(20px, env(safe-area-inset-left)) 0 max(20px, env(safe-area-inset-right));
+        padding: 0 var(--gutter);
+      }
+      @media (max-width: 400px) {
+        :root {
+          --gutter: max(16px, env(safe-area-inset-left));
+        }
       }
       .sr-only {
         position: absolute;
@@ -141,7 +147,8 @@
         white-space: nowrap;
       }
 
-      /* Navigation: content scrolls underneath, so the bar is translucent. */
+      /* Header: the landing page's (56px, translucent, one hairline). Search
+         lives on hookgres.dev, so here the live status takes its place. */
       .nav {
         position: sticky;
         top: 0;
@@ -154,39 +161,52 @@
       .nav .wrap {
         display: flex;
         align-items: center;
-        gap: 18px;
-        height: 52px;
+        gap: 32px;
+        height: 56px;
       }
       .brand {
         display: inline-flex;
+        flex: none;
         align-items: center;
         gap: 9px;
+        color: var(--ink);
         font-weight: 600;
-        font-size: 17px;
+        font-size: 16px;
         letter-spacing: -0.02em;
+      }
+      .brand:hover {
+        text-decoration: none;
       }
       .brand svg {
         width: 22px;
         height: 22px;
         border-radius: 6px;
       }
-      .brand .crumb {
-        color: var(--ink-3);
-        font-weight: 500;
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        font-size: 14px;
+      }
+      .nav-links a {
+        color: var(--ink-2);
+        transition: color 150ms var(--ease);
+      }
+      .nav-links a[aria-current="page"] {
+        color: var(--ink);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .nav-links a:hover {
+          color: var(--ink);
+          text-decoration: none;
+        }
       }
       .nav-end {
         display: flex;
         align-items: center;
-        gap: 18px;
+        gap: 16px;
         margin-left: auto;
         font-size: 13px;
-      }
-      .nav-end > a {
-        color: var(--ink-2);
-      }
-      .nav-end > a:hover {
-        color: var(--ink);
-        text-decoration: none;
       }
       .live {
         display: inline-flex;
@@ -194,6 +214,7 @@
         gap: 7px;
         color: var(--ink-2);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
       .live::before {
         content: "";
@@ -212,18 +233,60 @@
       .live[data-state="lost"]::before {
         background: var(--bad);
       }
-      @media (max-width: 560px) {
-        .nav-end .docs {
+      .nav .cta {
+        display: inline-flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 14px;
+        border-radius: 999px;
+        font-size: 13.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        color: var(--accent-ink);
+        background: var(--accent);
+        user-select: none;
+        transition:
+          background-color 150ms var(--ease),
+          transform 150ms var(--ease);
+      }
+      .nav .cta:hover {
+        text-decoration: none;
+      }
+      .nav .cta:active {
+        transform: scale(0.97);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .nav .cta:hover {
+          background: var(--accent-hover);
+        }
+      }
+      @media (max-width: 720px) {
+        .nav-links .hide-md {
           display: none;
         }
-        .nav .wrap,
-        .nav-end {
-          gap: 14px;
+        .nav .wrap {
+          gap: 24px;
+        }
+      }
+      @media (max-width: 560px) {
+        .nav-links .hide-sm {
+          display: none;
+        }
+        .nav .wrap {
+          gap: 18px;
         }
       }
       @media (max-width: 380px) {
-        .brand .crumb {
+        .nav-links {
           display: none;
+        }
+      }
+      /* Phones: the status keeps its dot and drops its words, which stay in
+         the DOM for screen readers ("Reconnecting…" is wide). */
+      @media (max-width: 480px) {
+        .live {
+          gap: 0;
+          font-size: 0;
         }
       }
 
@@ -297,20 +360,20 @@
 
       /* Intro */
       .intro {
-        padding: clamp(36px, 6vw, 64px) 0 clamp(28px, 4vw, 40px);
+        padding: clamp(28px, 4.5vw, 48px) 0 clamp(24px, 3vw, 32px);
       }
       h1 {
         font-family: var(--display);
-        font-size: clamp(32px, 1.3rem + 2.4vw, 48px);
-        line-height: 1.05;
-        letter-spacing: -0.035em;
+        font-size: clamp(30px, 1.2rem + 1.8vw, 42px);
+        line-height: 1.08;
+        letter-spacing: -0.032em;
         font-weight: 700;
         margin: 0;
         text-wrap: balance;
       }
       .lede {
-        font-size: clamp(16px, 0.95rem + 0.3vw, 19px);
-        line-height: 1.45;
+        font-size: clamp(16px, 0.95rem + 0.2vw, 18px);
+        line-height: 1.5;
         letter-spacing: -0.014em;
         color: var(--ink-2);
         max-width: 40em;
@@ -1147,17 +1210,22 @@
   <body>
     <header class="nav">
       <div class="wrap">
-        <span class="brand">
+        <a class="brand" href="https://hookgres.dev/" aria-label="Hookgres home">
           <svg viewBox="0 0 32 32" aria-hidden="true">
             <rect width="32" height="32" rx="7" fill="#163a5f" />
             <path d="M11 7v11a5 5 0 0 0 10 0v-3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" />
             <path d="M18 14l3-3 3 3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-          Hookgres <span class="crumb">Playground</span>
-        </span>
+          Hookgres
+        </a>
+        <nav class="nav-links" aria-label="Main">
+          <a href="https://hookgres.dev/docs/">Docs</a>
+          <a class="hide-md" href="/" aria-current="page">Playground</a>
+          <a class="hide-sm" href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
+        </nav>
         <div class="nav-end">
           <span class="live" id="live" role="status">Connecting…</span>
-          <a class="docs" href="https://hookgres.dev/docs/playground">Docs</a>
+          <a class="cta" href="https://hookgres.dev/docs/getting-started">Get started</a>
         </div>
       </div>
     </header>
