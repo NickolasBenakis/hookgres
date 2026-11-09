@@ -544,6 +544,10 @@
   @media (max-width: 900px) { .log-foot { grid-template-columns: minmax(0, 1fr); } }
   .log-foot .points { margin-top: 0; }
 
+  /* Playground recording: loads only near the viewport, plays only while visible. */
+  .demo-video-stage { margin-top: 36px; }
+  .demo-video-stage video { display: block; width: 100%; height: auto; aspect-ratio: 1280 / 800; background: var(--bg-alt); }
+
   /* Comparison */
   .table { width: 100%; margin-top: 36px; border-collapse: collapse; font-size: 15.5px; }
   .table th, .table td { text-align: left; padding: 15px 24px 15px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -874,6 +878,28 @@ hookgres.start();
 
   <section class="band">
     <div class="wrap">
+      <div class="head-row">
+        <div>
+          <p class="kicker">Playground</p>
+          <h2>One event, three endpoints, every attempt logged.</h2>
+          <p class="sub">Healthy succeeds, flaky recovers on its third attempt, and down fails until Hookgres disables it. One click turns it back on. Recorded in the playground, played at 2× speed.</p>
+        </div>
+        <a class="pill ghost" href="/docs/playground">Try the playground</a>
+      </div>
+      <div class="demo-video-stage">
+        <div class="window">
+          <div class="window-bar" aria-hidden="true"><div class="dots"><i></i><i></i><i></i></div><span class="title">localhost:3000</span><span class="meta">2× speed</span></div>
+          <video id="demo-video" muted loop playsinline preload="none" width="1280" height="800" data-poster="/media/playground-poster.jpg" aria-label="Recording of the Hookgres playground: an invoice.paid event goes to three endpoints. The healthy one succeeds, the flaky one succeeds on its third attempt, the down one fails and is disabled, then it is re-enabled.">
+            <source data-src="/media/playground-2x.webm" type="video/webm">
+            <source data-src="/media/playground-2x.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band alt">
+    <div class="wrap">
       <p class="kicker">Compared</p>
       <h2>A library, not a service.</h2>
       <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
@@ -890,7 +916,7 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="band alt cta">
+  <section class="band cta">
     <div class="wrap split">
       <div>
         <h2>Ship webhooks this afternoon.</h2>
@@ -928,6 +954,35 @@ hookgres.start();
 <script>
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (selector, root = document) => root.querySelector(selector);
+
+  // Playground recording: fetch it only when it's about to scroll into view, and play
+  // it only while it's on screen. Reduced motion or Save-Data: no autoplay, show controls.
+  {
+    const video = $("#demo-video");
+    const manual = reduceMotion || navigator.connection?.saveData === true;
+    if (video && "IntersectionObserver" in window) {
+      const load = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        load.disconnect();
+        video.poster = video.dataset.poster;
+        for (const source of video.querySelectorAll("source[data-src]")) source.src = source.dataset.src;
+        video.load();
+      }, { rootMargin: "600px 0px" });
+      if (manual) video.controls = true;
+      load.observe(video);
+      if (!manual) {
+        new IntersectionObserver(([entry]) => {
+          if (entry.isIntersecting) video.play().catch(() => {});
+          else video.pause();
+        }, { threshold: 0.25 }).observe(video);
+      }
+    } else if (video) {
+      video.poster = video.dataset.poster;
+      for (const source of video.querySelectorAll("source[data-src]")) source.src = source.dataset.src;
+      video.controls = true;
+      video.load();
+    }
+  }
 
   // The search shortcut hint matches the platform.
   {
