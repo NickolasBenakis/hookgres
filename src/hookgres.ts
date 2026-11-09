@@ -604,7 +604,8 @@ export class Hookgres {
    * `idempotencyKey` returns the original message with `deduplicated: true`.
    * Delivery happens later, in a worker (`start()`, `runOnce()` or
    * `drain()`). Throws a `HookgresValidationError` for an event type with
-   * `*`, a missing payload, or a payload containing `\u0000`.
+   * `*`, a missing payload, or a payload containing `\u0000` (through
+   * `fromPrisma`, that last one arrives as Prisma's own error).
    *
    * @example
    * const client = await pool.connect();
@@ -910,7 +911,7 @@ export class Hookgres {
    * after `stop()` starts a new loop.
    *
    * Only use it in a long-running process (server or worker). On serverless
-   * platforms the loop is frozen between requests: call `runOnce()` from a
+   * platforms the loop is frozen between requests: call `drain()` from a
    * cron route instead. Errors in the loop go to `onError` and never stop it.
    *
    * @example
@@ -1011,7 +1012,8 @@ export class Hookgres {
    * much time is left, plus a margin for the database queries (1s, or the
    * slowest batch so far if that took longer). Throws a
    * `HookgresValidationError` if `timeoutMs` is shorter than that, since no
-   * batch could run.
+   * batch could run. If `runOnce()` throws (only when a custom `onError`
+   * rethrows), `drain()` rethrows it.
    *
    * @example
    * // app/api/cron/webhooks/route.ts, called by a cron every minute

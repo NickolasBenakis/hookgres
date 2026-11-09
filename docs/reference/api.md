@@ -213,6 +213,8 @@ try {
 ```
 
 Database errors are passed through unchanged (`pg` errors with a `code`).
+Through `fromPrisma()`, every database error, including the `\u0000` one,
+arrives as Prisma's own error instead.
 
 ## ORM adapters
 

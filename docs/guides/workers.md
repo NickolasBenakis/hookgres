@@ -104,7 +104,7 @@ export async function GET() {
 
 Each batch can take up to `requestTimeoutMs` (15 seconds) if a receiver is
 slow, so `drain()` only starts a batch while at least that much time, plus a
-second, is left. It returns within `timeoutMs`; set it a few seconds below
+second, is left (or as long as the slowest batch so far took, if longer). It returns within `timeoutMs`; set it a few seconds below
 your function's time limit. A `timeoutMs` shorter than `requestTimeoutMs`
 plus a second throws, since no batch could run.
 
