@@ -34,9 +34,15 @@ function firstParagraph(relativePath: string): string | undefined {
   const file = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
   if (!existsSync(file)) return undefined;
   const blocks = readFileSync(file, "utf8").split(/\n\s*\n/);
-  const block = blocks.find(
-    (b) => /^[A-Za-z`*[]/.test(b.trim()) && !b.trim().startsWith("|"),
-  );
+  const block = blocks
+    .map((b) => b.trim())
+    .find(
+      (b) =>
+        /^[A-Za-z`*[]/.test(b) &&
+        !b.startsWith("```") &&
+        !b.startsWith(":::") &&
+        !b.startsWith("|"),
+    );
   if (!block) return undefined;
   const text = block
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")

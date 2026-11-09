@@ -23,11 +23,11 @@ a `fetch`. Sending them reliably needs more:
 
 ## Your options
 
-| Option                                                | What you get                      | What you run                                                    |
-| ----------------------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
-| `fetch` + a job queue (pg-boss, BullMQ)               | Retries, if you write them        | Your queue, plus signing, health, rotation and a log by hand    |
-| A webhook service (Svix, Hookdeck Outpost)            | Everything above, as an API       | Their cloud, or their server plus Redis and more if self-hosted |
-| A Postgres library ([Hookgres](https://hookgres.dev)) | Everything above, as a dependency | Nothing new: tables in your existing database                   |
+| Option                                                | What you get                      | What you run                                                                                                                             |
+| ----------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch` + a job queue (pg-boss, BullMQ)               | Retries, if you write them        | Your queue, plus signing, health, rotation and a log by hand                                                                             |
+| A webhook service (Svix, Hookdeck Outpost)            | Everything above, as an API       | Their cloud, or a self-hosted server with its own dependencies (Svix: Postgres, Redis optional; Outpost: Redis, a log store and a queue) |
+| A Postgres library ([Hookgres](https://hookgres.dev)) | Everything above, as a dependency | Nothing new: tables in your existing database                                                                                            |
 
 ## The part most setups get wrong
 

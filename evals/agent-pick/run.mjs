@@ -38,12 +38,23 @@ const runs = Number(args.runs ?? 1);
 const only = args.only;
 const timeoutMs = Number(args.timeout ?? 15) * 60_000;
 
-for (const key of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]) {
+// Any of these makes the CLIs bill per call instead of using the subscription.
+const billed = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "OPENAI_API_KEY",
+];
+for (const key of billed) {
   if (process.env[key]) {
     console.error(`${key} is set, so the CLI would bill per call. Unset it.`);
     process.exit(1);
   }
 }
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !billed.includes(key)),
+);
 
 const commands = {
   claude: (prompt) => [
@@ -86,6 +97,7 @@ for (const { id, named, prompt } of prompts) {
       cwd: dir,
       stdio: ["ignore", "inherit", "inherit"],
       timeout: timeoutMs,
+      env,
     });
     const row = {
       id,
@@ -106,8 +118,17 @@ summarize(results);
 console.log(`\nRaw results: ${out}`);
 
 function score(dir) {
-  const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  let deps = {};
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    return {
+      library: "broken package.json",
+      transactional: false,
+      typecheck: false,
+    };
+  }
   const known = [
     "hookgres",
     "svix",
@@ -127,10 +148,14 @@ function score(dir) {
     begin >= 0 && commit > begin ? source.slice(begin, commit) : "";
   const transactional = /send\(|enqueue|outbox|webhook/i.test(inside);
 
-  const install = spawnSync("npm", ["install", "--silent", "--no-audit"], {
-    cwd: dir,
-    timeout: 5 * 60_000,
-  });
+  const install = spawnSync(
+    "npm",
+    ["install", "--silent", "--no-audit", "--ignore-scripts"],
+    {
+      cwd: dir,
+      timeout: 5 * 60_000,
+    },
+  );
   const tsc =
     install.status === 0
       ? spawnSync("npx", ["tsc", "--noEmit"], { cwd: dir, timeout: 5 * 60_000 })

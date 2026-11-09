@@ -36,7 +36,7 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
 3. Run the worker:
    - Long-running server: `hookgres.start()`. On `SIGTERM`, `await hookgres.stop()`
      before `pool.end()`.
-   - Serverless (Vercel, Lambda, Cloudflare): never call `start()`. Call
+   - Serverless (Vercel, Netlify, AWS Lambda): never call `start()`. Call
      `await hookgres.runOnce()` from a cron route, protected by a secret.
    - Details: https://hookgres.dev/docs/guides/workers.md
 
@@ -78,6 +78,9 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    https://hookgres.dev/docs/guides/verifying.md
 
 ## Don't
+
+- Don't run Hookgres on Cloudflare Workers or other edge runtimes: it
+  needs Node.js and a TCP connection to Postgres through `pg`.
 
 - Don't call `send()` with the pool (or without `{ client }`) when the change
   is in a transaction: the webhook would go out even if the transaction rolls
