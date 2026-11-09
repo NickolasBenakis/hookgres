@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!.changeset/*.md"]
+    "includes": ["**", "!.changeset/*.md", "!.github/assets/terminal-demo"]
   },
   "formatter": {
     "enabled": true,
