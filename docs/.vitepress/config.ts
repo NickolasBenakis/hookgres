@@ -87,6 +87,8 @@ export default defineConfig({
   themeConfig: {
     logo: { src: "/logo.svg", alt: "" },
     siteTitle: "Hookgres",
+    // The brand goes to the landing page, as on hookgres.dev and the playground.
+    logoLink: { link: "https://hookgres.dev/", target: "_self" },
     // The same header as the landing page: Docs, Playground and GitHub, then
     // search and "Get started" (added in theme/index.ts).
     nav: [

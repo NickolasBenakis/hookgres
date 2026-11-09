@@ -364,8 +364,8 @@ button {
   }
 }
 
-/* The colour scheme follows the OS, as on the landing page; the phone menu
-   keeps VitePress's switch. */
+/* The colour scheme follows the OS, as on the landing page (appearance
+   "force-auto" in config.ts), so there is no theme switch. */
 .VPNavBar .VPNavBarAppearance,
 .VPNavBar .VPNavBarExtra,
 .VPNavBar .VPNavBarSocialLinks {

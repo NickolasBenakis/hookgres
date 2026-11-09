@@ -208,7 +208,11 @@ function onKeydown(event: KeyboardEvent) {
     if (event.target instanceof HTMLAnchorElement) return;
     event.preventDefault();
     open(items.value[selected.value]);
-  } else if (event.key === "Escape") {
+  } else if (
+    event.key === "Escape" ||
+    (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey))
+  ) {
+    // ⌘K/Ctrl+K toggles, as on the landing page.
     event.preventDefault();
     emit("close");
   } else if (event.key === "Tab") {

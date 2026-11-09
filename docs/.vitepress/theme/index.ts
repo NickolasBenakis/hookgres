@@ -13,7 +13,15 @@ export default {
     setup() {
       // Children mount first, so the sidebar has marked its current link by
       // now and the prerendered highlight in config.ts can step aside.
-      onMounted(() => document.documentElement.classList.add("hg-ready"));
+      onMounted(() => {
+        document.documentElement.classList.add("hg-ready");
+        // appearance "force-auto" sets .dark only once, at load. Follow later
+        // OS theme changes too, as the landing page does.
+        const dark = matchMedia("(prefers-color-scheme: dark)");
+        dark.addEventListener("change", (event) =>
+          document.documentElement.classList.toggle("dark", event.matches),
+        );
+      });
       return () =>
         h(DefaultTheme.Layout, null, {
           "nav-bar-content-after": () =>
