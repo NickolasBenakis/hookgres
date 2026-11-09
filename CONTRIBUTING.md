@@ -38,7 +38,17 @@ Node.js 22, 24 and 26.
 - Update the docs in `docs/` when you change behaviour or the API.
 - Schema changes go in a new entry at the end of `src/migrations.ts`. Never
   edit a migration that has shipped.
-- Add a line to `CHANGELOG.md` for user-facing changes.
+- For user-facing changes, run `pnpm changeset`, pick patch, minor or major,
+  and write one line for the changelog. Don't edit `CHANGELOG.md` by hand.
+
+## Releasing
+
+Releases are automated with [Changesets](https://github.com/changesets/changesets).
+When changesets land on `main`, CI opens (and keeps updating) a "Version
+Packages" pull request that bumps the version and writes `CHANGELOG.md`.
+Merging that pull request publishes to npm from CI, with a git tag and a
+GitHub release. Publishing uses npm trusted publishing, so there is no npm
+token to manage.
 
 ## Project layout
 
