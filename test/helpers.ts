@@ -6,6 +6,8 @@ import { afterAll, afterEach, beforeAll, inject } from "vitest";
 import { Hookgres, type HookgresOptions } from "../src/index.js";
 
 export interface ReceivedRequest {
+  method: string | undefined;
+  url: string | undefined;
   headers: IncomingHttpHeaders;
   body: string;
 }
@@ -15,6 +17,8 @@ export interface Receiver {
   requests: ReceivedRequest[];
   /** Decides the status code for each request (1-based request number). */
   respond: (n: number, request: ReceivedRequest) => number | Promise<number>;
+  /** Response body; defaults to `status <code>`. */
+  body?: string;
   close(): Promise<void>;
 }
 
@@ -23,6 +27,7 @@ export async function startReceiver(): Promise<Receiver> {
     url: "",
     requests: [] as ReceivedRequest[],
     respond: (() => 200) as Receiver["respond"],
+    body: undefined as string | undefined,
     close: async () => {},
   };
   const server: Server = createServer((req, res) => {
@@ -30,13 +35,15 @@ export async function startReceiver(): Promise<Receiver> {
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", async () => {
       const request = {
+        method: req.method,
+        url: req.url,
         headers: req.headers,
         body: Buffer.concat(chunks).toString(),
       };
       receiver.requests.push(request);
       const status = await receiver.respond(receiver.requests.length, request);
       res.writeHead(status, { "content-type": "text/plain" });
-      res.end(`status ${status}`);
+      res.end(receiver.body ?? `status ${status}`);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

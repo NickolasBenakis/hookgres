@@ -12,4 +12,5 @@ export {
   verifyWebhook,
   WebhookVerificationError,
 } from "./signing.js";
+export { isPrivateAddress } from "./ssrf.js";
 export type * from "./types.js";

@@ -244,9 +244,10 @@ checklist.
 ## Security
 
 Hookgres sends requests to URLs your users provide, so in production you need
-to stop them from reaching your internal network. The
+to stop them from reaching your internal network. Set
+`blockPrivateAddresses: true`; the
 [production guide](https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf)
-shows how. Report vulnerabilities privately, as described in
+explains what it checks. Report vulnerabilities privately, as described in
 [SECURITY.md](SECURITY.md).
 
 ## License
