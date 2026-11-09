@@ -544,6 +544,10 @@
   @media (max-width: 900px) { .log-foot { grid-template-columns: minmax(0, 1fr); } }
   .log-foot .points { margin-top: 0; }
 
+  /* Terminal recording: loads only near the viewport, plays only while visible. */
+  .demo-video-stage { margin-top: 36px; }
+  .demo-video-stage video { display: block; width: 100%; height: auto; aspect-ratio: 1240 / 860; border-radius: 14px; background: oklch(17% 0.01 258); box-shadow: var(--shadow); }
+
   /* Comparison */
   .table { width: 100%; margin-top: 36px; border-collapse: collapse; font-size: 15.5px; }
   .table th, .table td { text-align: left; padding: 15px 24px 15px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -874,6 +878,24 @@ hookgres.start();
 
   <section class="band">
     <div class="wrap">
+      <div class="head-row">
+        <div>
+          <p class="kicker">In your terminal</p>
+          <h2>Install it, send inside a transaction, watch it retry.</h2>
+          <p class="sub">The published package, a real Postgres and a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged. Played at 2× speed.</p>
+        </div>
+        <a class="pill ghost" href="/docs/getting-started">Get started</a>
+      </div>
+      <div class="demo-video-stage">
+        <video id="demo-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/terminal-demo-poster.jpg" aria-label="Terminal recording: npm install hookgres pg, an app that pays one invoice in a committed transaction and one in a rolled-back transaction, a receiver that answers 503 twice and then 204, and a psql query of the three logged attempts.">
+          <source data-src="/media/terminal-demo-2x.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </section>
+
+  <section class="band alt">
+    <div class="wrap">
       <p class="kicker">Compared</p>
       <h2>A library, not a service.</h2>
       <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
@@ -890,7 +912,7 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="band alt cta">
+  <section class="band cta">
     <div class="wrap split">
       <div>
         <h2>Ship webhooks this afternoon.</h2>
@@ -928,6 +950,40 @@ hookgres.start();
 <script>
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (selector, root = document) => root.querySelector(selector);
+
+  // Terminal recording: fetch it only when it's about to scroll into view, and play
+  // it only while it's on screen. Reduced motion or Save-Data: no autoplay, show controls.
+  {
+    const video = $("#demo-video");
+    const manual = reduceMotion || navigator.connection?.saveData === true;
+    let loaded = false;
+    const attach = () => {
+      if (loaded) return;
+      loaded = true;
+      video.poster = video.dataset.poster;
+      for (const source of video.querySelectorAll("source[data-src]")) source.src = source.dataset.src;
+      video.load();
+    };
+    if (video && manual) video.controls = true;
+    if (video && "IntersectionObserver" in window) {
+      const nearby = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        nearby.disconnect();
+        attach();
+      }, { rootMargin: "600px 0px" });
+      nearby.observe(video);
+      if (!manual) {
+        new IntersectionObserver(([entry]) => {
+          if (!entry.isIntersecting) return video.pause();
+          attach();
+          video.play().catch(() => {});
+        }, { threshold: 0.25 }).observe(video);
+      }
+    } else if (video) {
+      video.controls = true;
+      attach();
+    }
+  }
 
   // The search shortcut hint matches the platform.
   {
