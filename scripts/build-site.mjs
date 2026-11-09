@@ -2,6 +2,7 @@
 //   /         the static landing page from site/
 //   /docs/    the VitePress docs from docs/
 //   /docs/*.md, /llms.txt, /llms-full.txt   raw markdown for AI agents
+//   /search-index.json                     sections for the landing page's search
 // Deployed on Vercel; see vercel.json (build command and output directory).
 import { execFileSync } from "node:child_process";
 import {
@@ -63,6 +64,7 @@ const index = [
   "",
   "> Hookgres is an MIT-licensed TypeScript library for sending signed webhooks to your customers from the Postgres you already run: Standard Webhooks signatures, durable retries, endpoint health, secret rotation, replay and a delivery log. Install with `npm install hookgres pg`. Requires Node.js 22.12+ and Postgres 14+.",
   "",
+  ...agentInstructions(),
   "## Docs",
   "",
 ];
@@ -80,6 +82,14 @@ for (const file of pages) {
   index.push(`- [${title}](${site}/docs/${file})`);
   full.push(`<!-- ${site}/docs/${file} -->\n\n${markdown.trim()}\n`);
 }
+const agentLinks = agentInstructions()
+  .join("\n")
+  .matchAll(/hookgres\.dev\/docs\/([\w/-]+\.md)/g);
+for (const [, file] of agentLinks) {
+  if (!pages.includes(file)) {
+    throw new Error(`llms.txt instructions link to missing docs/${file}`);
+  }
+}
 index.push(
   "",
   "## Optional",
@@ -91,4 +101,189 @@ index.push(
 writeFileSync(join(out, "llms.txt"), index.join("\n"));
 writeFileSync(join(out, "llms-full.txt"), full.join("\n---\n\n"));
 
-console.log(`Site built in ${out}`);
+const searchIndex = JSON.stringify(buildSearchIndex());
+if (searchIndex.length > 150 * 1024) {
+  throw new Error(
+    `search-index.json is ${searchIndex.length} bytes; trim it below 150 KB`,
+  );
+}
+writeFileSync(join(out, "search-index.json"), searchIndex);
+
+console.log(
+  `Site built in ${out} (search-index.json ${(searchIndex.length / 1024).toFixed(1)} KB)`,
+);
+
+// Numbered steps for an agent asked to "add Hookgres webhooks to this app".
+// The landing page's one-line prompt points here, so keep it short and exact.
+function agentInstructions() {
+  const doc = (file) => `${site}/docs/${file}`;
+  return [
+    "## Instructions for AI agents",
+    "",
+    "To add Hookgres webhooks to an existing app:",
+    "",
+    '1. Install `hookgres` and `pg` (`npm install hookgres pg`). Create one instance from the app\'s existing pool: `const hookgres = new Hookgres({ pool })`, with `import { Hookgres } from "hookgres"`.',
+    "2. Call `await hookgres.migrate()` on startup. It is idempotent and takes an advisory lock. If the app's database role can't `CREATE`, run it from a deploy step instead.",
+    `3. Start the worker in a long-running process with \`hookgres.start()\`. On \`SIGTERM\`, \`await hookgres.stop()\` before \`pool.end()\` so in-flight requests finish. On serverless, call \`await hookgres.runOnce()\` from a cron route and never \`start()\`. See ${doc("guides/workers.md")}.`,
+    `4. Call \`hookgres.send({ tenantId, eventType, payload }, { client })\` inside the database transaction that makes the change, passing that transaction's client, so the webhook is queued only if it commits. Add \`idempotencyKey\` when a send can repeat. See ${doc("guides/sending.md")}.`,
+    `5. Add endpoint management routes scoped to the signed-in tenant: \`createEndpoint({ tenantId, url, eventTypes })\` (return \`endpoint.secret\` once), \`listEndpoints(tenantId)\`, \`updateEndpoint(id, patch)\`, \`deleteEndpoint(id)\` and \`rotateEndpointSecret(id)\`. Take \`tenantId\` from the session, never the request body, and check \`endpoint.tenantId\` before acting on an id. See ${doc("guides/endpoints.md")}.`,
+    `6. Block private network addresses before accepting customer URLs: pass a guarded \`fetch\` to \`new Hookgres({ pool, fetch })\` or route traffic through an egress proxy, as in ${doc("guides/production.md")}.`,
+    `7. Pass \`onError\` to the app's logger. Receivers verify with \`verifyWebhook({ secret, headers, body })\` on the raw body and deduplicate on \`webhook-id\`. See ${doc("guides/verifying.md")} and ${doc("reference/api.md")}.`,
+    "",
+  ];
+}
+
+// One entry per page and per h2/h3, for site/search.js. Anchor ids come from
+// the built VitePress HTML, so they always match what the docs actually serve.
+function buildSearchIndex() {
+  const index = { pages: [], sections: [] };
+  for (const file of pages) {
+    const path = file.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, "");
+    const url = `/docs/${path}`;
+    const html = readFileSync(
+      join(root, "docs/.vitepress/dist", file.replace(/\.md$/, ".html")),
+      "utf8",
+    );
+    const ids = [...html.matchAll(/<h([23]) id="([^"]+)" tabindex="-1">/g)].map(
+      ([, level, id]) => ({ level: Number(level), id }),
+    );
+    const parts = splitSections(readFileSync(join(docsDir, file), "utf8"));
+    const headed = parts.filter((part) => part.level > 1);
+    if (
+      headed.length !== ids.length ||
+      headed.some((part, i) => part.level !== ids[i].level)
+    ) {
+      throw new Error(
+        `search index: headings in docs/${file} don't match the built HTML`,
+      );
+    }
+    const page = index.pages.push({ t: parts[0].heading || path }) - 1;
+    let parent = "";
+    let next = 0;
+    for (const part of parts) {
+      const entry = { p: page, h: "", u: url, b: part.text };
+      if (part.level > 1) {
+        const { id } = ids[next++];
+        if (part.level === 2) parent = part.heading;
+        entry.h = part.heading;
+        entry.u = `${url}#${id}`;
+        if (part.level === 3) entry.ph = parent;
+      }
+      if (part.code.length) entry.k = part.code.join(" ");
+      index.sections.push(entry);
+    }
+  }
+  const links = index.pages.push({ t: "hookgres.dev" }) - 1;
+  for (const [h, u, b] of [
+    [
+      "Get started",
+      "/docs/getting-started",
+      "Install hookgres and pg, create the tables, start a worker and send your first webhook.",
+    ],
+    [
+      "Playground",
+      "/docs/playground",
+      "Run the playground app locally: send events, break endpoints, watch retries and replay.",
+    ],
+    [
+      "llms.txt",
+      "/llms.txt",
+      "Instructions and a docs index for AI coding agents. Prompt: Add Hookgres webhooks to this app: hookgres.dev/llms.txt",
+    ],
+    [
+      "llms-full.txt",
+      "/llms-full.txt",
+      "Every docs page in one markdown file, for AI agents and LLM context.",
+    ],
+    [
+      "GitHub",
+      "https://github.com/NickolasBenakis/hookgres",
+      "Source code, issues and examples. MIT licensed.",
+    ],
+    [
+      "npm",
+      "https://www.npmjs.com/package/hookgres",
+      "The hookgres package on npm. npm install hookgres pg",
+    ],
+  ]) {
+    index.sections.push({ p: links, h, u, b });
+  }
+  return index;
+}
+
+// Splits a docs page into its intro and one part per heading, as plain text.
+// Code blocks are dropped; their identifiers (runOnce, pollIntervalMs,
+// webhook_id) are kept as search keywords.
+function splitSections(markdown) {
+  const parts = [{ level: 1, heading: "", lines: [], code: new Set() }];
+  let fence = null;
+  for (const line of markdown
+    .replace(/\r\n/g, "\n")
+    .replace(/^---\n[\s\S]*?\n---\n/, "")
+    .split("\n")) {
+    const part = parts.at(-1);
+    const marker = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      // Only a bare run of at least as many fence characters closes a block.
+      if (marker?.[1].startsWith(fence) && !marker[2].trim()) fence = null;
+      else
+        for (const [word] of line.matchAll(
+          /\b[a-z]+(?:[A-Z][a-z]+)+\b|\b[a-z]+(?:_[a-z]+)+\b/g,
+        ))
+          part.code.add(word);
+      continue;
+    }
+    if (marker) {
+      fence = marker[1];
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+?)\s*$/);
+    if (heading) {
+      const text = plain(heading[2].replace(/\s*\{#[^}]+\}$/, ""));
+      if (heading[1].length === 1) {
+        if (parts.length > 1) {
+          throw new Error(`search index: a second h1 "${text}" in a docs page`);
+        }
+        part.heading = text;
+      } else
+        parts.push({
+          level: heading[1].length,
+          heading: text,
+          lines: [],
+          code: new Set(),
+        });
+      continue;
+    }
+    if (/^\s*:::/.test(line) || /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(line))
+      continue;
+    part.lines.push(plain(line.replace(/^\s*(?:[-*+]|\d+\.|>)\s+/, "")));
+  }
+  return parts.map(({ level, heading, lines, code }) => {
+    const text = lines.join(" ").replace(/\s+/g, " ").trim();
+    return {
+      level,
+      heading,
+      text,
+      code: [...code].filter((word) => !text.includes(word)).slice(0, 16),
+    };
+  });
+}
+
+// Markdown inline syntax to text. Code spans are kept verbatim, so
+// `Promise<void>` and `webhook_id` survive the tag and emphasis stripping.
+function plain(markdown) {
+  return markdown
+    .split(/(`[^`]*`)/)
+    .map((chunk, i) =>
+      i % 2
+        ? chunk.slice(1, -1).replaceAll("\\|", "|")
+        : chunk
+            .replace(/<[^>]+>/g, "")
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+            .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+            .replace(/\*\*|(?<!\w)_|_(?!\w)|(?<![\s*])\*|\*(?![\s*])/g, "")
+            .replace(/\s*\|\s*/g, " "),
+    )
+    .join("")
+    .trim();
+}
