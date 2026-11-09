@@ -1,0 +1,32 @@
+<!doctype html>
+<!--
+  Source for social-preview.png (1280x640), the GitHub repo's social preview.
+  Re-render from the repo root with:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+    --force-device-scale-factor=1 --window-size=1280,640 --user-data-dir="$TMPDIR/sp" \
+    --screenshot="$PWD/.github/assets/social-preview.png" "file://$PWD/.github/assets/social-preview.html"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hookgres social preview</title>
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1280px; height: 640px; overflow: hidden; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px;
+    background: oklch(0% 0 0); color: oklch(72% 0.008 286);
+    font: 30px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, Roboto, sans-serif;
+    letter-spacing: -0.012em; -webkit-font-smoothing: antialiased; text-align: center;
+  }
+  img { width: 620px; height: auto; }
+  p { margin: 0; max-width: 900px; text-wrap: balance; }
+  .url { font: 22px ui-monospace, "SF Mono", Menlo, monospace; color: oklch(60% 0.008 286); letter-spacing: 0; }
+</style>
+</head>
+<body>
+  <img src="logo-dark.svg" alt="Hookgres">
+  <p>Signed, retried, logged webhooks from the Postgres you already run.</p>
+  <div class="url">hookgres.dev</div>
+</body>
+</html>
