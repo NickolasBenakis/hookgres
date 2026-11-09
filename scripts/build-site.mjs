@@ -118,10 +118,13 @@ index.push(
   "## Optional",
   "",
   `- [Full documentation in one file](${site}/llms-full.txt)`,
+  `- [Agent skill (SKILL.md)](${site}/SKILL.md)`,
   "- [Source code](https://github.com/NickolasBenakis/hookgres)",
   "",
 );
 writeFileSync(join(out, "llms.txt"), index.join("\n"));
+// The agent skill (also the Claude Code plugin in skills/hookgres) at /SKILL.md.
+cpSync(join(root, "skills/hookgres/SKILL.md"), join(out, "SKILL.md"));
 writeFileSync(join(out, "llms-full.txt"), full.join("\n---\n\n"));
 
 const searchIndex = JSON.stringify(buildSearchIndex());

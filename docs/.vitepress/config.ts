@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
@@ -26,6 +27,30 @@ function currentLinkStyle(relativePath: string) {
     .replace(/\.md$/, "");
   const item = `html:not(.hg-ready) .VPSidebar .VPSidebarItem.is-link:has(> .item > a.link[href="/docs/${path}"])`;
   return `${item} > .item{background-color:var(--vp-c-brand-soft)}${item} > .item .text{color:var(--vp-c-brand-1)}`;
+}
+
+// The first prose paragraph of a docs page, as plain text of at most 160 chars.
+function firstParagraph(relativePath: string): string | undefined {
+  const file = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
+  if (!existsSync(file)) return undefined;
+  const blocks = readFileSync(file, "utf8").split(/\n\s*\n/);
+  const block = blocks
+    .map((b) => b.trim())
+    .find(
+      (b) =>
+        /^[A-Za-z`*[]/.test(b) &&
+        !b.startsWith("```") &&
+        !b.startsWith(":::") &&
+        !b.startsWith("|"),
+    );
+  if (!block) return undefined;
+  const text = block
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[`*_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= 160) return text;
+  return `${text.slice(0, 157).replace(/\s+\S*$/, "")}…`;
 }
 
 export default defineConfig({
@@ -66,6 +91,10 @@ export default defineConfig({
   transformPageData(pageData) {
     if (pageData.relativePath === "index.md")
       pageData.frontmatter.aside = false;
+    // Each page's own meta description (search results, AI search), taken
+    // from its first paragraph instead of repeating the site description.
+    const lead = firstParagraph(pageData.relativePath);
+    if (lead) pageData.description = lead;
   },
   transformHead({ pageData }) {
     return [["style", {}, currentLinkStyle(pageData.relativePath)]];
@@ -137,6 +166,23 @@ export default defineConfig({
           { text: "API", link: "/reference/api" },
           { text: "Configuration", link: "/reference/configuration" },
           { text: "Database schema", link: "/reference/schema" },
+        ],
+      },
+      {
+        text: "Common questions",
+        items: [
+          {
+            text: "How to send webhooks from Postgres",
+            link: "/answers/send-webhooks-from-postgres",
+          },
+          {
+            text: "Transactional outbox in Node.js",
+            link: "/answers/transactional-outbox-nodejs",
+          },
+          {
+            text: "A Svix alternative",
+            link: "/answers/svix-alternative",
+          },
         ],
       },
       { text: "FAQ", link: "/faq" },

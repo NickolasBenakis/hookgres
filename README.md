@@ -63,6 +63,13 @@ Using a coding agent? Give it this line:
 Add Hookgres webhooks to this app: hookgres.dev/llms.txt
 ```
 
+In Claude Code, you can install the Hookgres skill instead:
+
+```text
+/plugin marketplace add NickolasBenakis/hookgres
+/plugin install hookgres@hookgres
+```
+
 ## Quick start
 
 ```ts

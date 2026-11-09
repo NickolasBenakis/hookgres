@@ -11,3 +11,4 @@ DECISIONS.md
 .env*
 # Private notes; a separate private repository lives here.
 private/
+evals/agent-pick/results-*.jsonl
