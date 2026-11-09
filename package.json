@@ -73,14 +73,10 @@
     "ci:publish": "changeset publish"
   },
   "peerDependencies": {
-    "@prisma/client": ">=5.0.0",
     "kysely": ">=0.27.0",
     "pg": "^8.11.0"
   },
   "peerDependenciesMeta": {
-    "@prisma/client": {
-      "optional": true
-    },
     "kysely": {
       "optional": true
     }
