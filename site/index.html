@@ -700,7 +700,15 @@ hookgres.start();
       <div class="demo tx-demo" data-state="idle">
         <div class="code">
           <div class="bar"><span>billing.ts</span><span class="bar-hint">Choose how the transaction ends</span></div>
-<pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(<span class="s">"UPDATE invoices SET status = 'paid' WHERE id = $1"</span>, [id]);</span><span class="ln tx-send"><span class="k">await</span> hookgres.send({ tenantId, eventType: <span class="s">"invoice.paid"</span>, payload: { id } }, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word">"COMMIT"</span>);</span></pre>
+<pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(
+  <span class="s">`UPDATE invoices SET status = 'paid'
+   WHERE id = $1`</span>,
+  [id],
+);</span><span class="ln tx-send"><span class="k">await</span> hookgres.send({
+  tenantId,
+  eventType: <span class="s">"invoice.paid"</span>,
+  payload: { id },
+}, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word">"COMMIT"</span>);</span></pre>
         </div>
         <div class="flow" aria-hidden="true">
           <div class="node"><b>Postgres</b><small class="tx-db">waiting</small></div>
