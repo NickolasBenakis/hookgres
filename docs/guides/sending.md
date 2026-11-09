@@ -62,6 +62,16 @@ The transactional guarantee needs Hookgres's tables in the same database as
 your data. They live in their own schema, so they don't mix with your tables.
 :::
 
+### Using an ORM
+
+If your app makes its changes through an ORM, `send()` needs a client that
+runs on the ORM's transaction. These guides show how to get one, and how to
+share a pool between the ORM and Hookgres:
+
+- [Drizzle](/guides/drizzle)
+- [Prisma](/guides/prisma)
+- [Kysely](/guides/kysely)
+
 ## Idempotency
 
 Set `idempotencyKey` when the same event could be sent more than once, for

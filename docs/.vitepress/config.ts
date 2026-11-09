@@ -110,6 +110,9 @@ export default defineConfig({
         text: "Guides",
         items: [
           { text: "Sending webhooks", link: "/guides/sending" },
+          { text: "Drizzle", link: "/guides/drizzle" },
+          { text: "Prisma", link: "/guides/prisma" },
+          { text: "Kysely", link: "/guides/kysely" },
           { text: "Endpoints and tenants", link: "/guides/endpoints" },
           { text: "Running workers", link: "/guides/workers" },
           { text: "Retries, failures and replay", link: "/guides/retries" },
