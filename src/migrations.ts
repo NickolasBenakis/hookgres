@@ -71,4 +71,27 @@ CREATE TABLE {{schema}}.attempts (
 CREATE INDEX attempts_delivery_idx ON {{schema}}.attempts (delivery_id, created_at);
 `,
   },
+  {
+    version: 2,
+    // For cleanup(). Skipped when messages already has a valid index that
+    // starts with created_at, e.g. one built by hand with CREATE INDEX
+    // CONCURRENTLY on a large table (see the production guide). A failed
+    // concurrent build leaves an invalid index; replace it.
+    sql: `
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+    WHERE i.indrelid = '{{schema}}.messages'::regclass
+      AND a.attname = 'created_at'
+      AND i.indisvalid
+  ) THEN
+    DROP INDEX IF EXISTS {{schema}}.messages_created_idx;
+    CREATE INDEX messages_created_idx ON {{schema}}.messages (created_at);
+  END IF;
+END $$;
+`,
+  },
 ];

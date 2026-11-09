@@ -11,11 +11,13 @@ import {
 } from "./ssrf.js";
 import type {
   Attempt,
+  AttemptEvent,
   CleanupOptions,
   CreateEndpointInput,
   Delivery,
   DeliveryStatus,
   Endpoint,
+  EndpointDisabledEvent,
   ListDeliveriesInput,
   Message,
   Queryable,
@@ -68,6 +70,15 @@ export interface HookgresOptions {
   disableEndpointAfterMs?: number | null;
   /** How long the worker sleeps when there is nothing to do. Defaults to 1s. */
   pollIntervalMs?: number;
+  /**
+   * Wake workers in every process as soon as a webhook is queued, with
+   * Postgres LISTEN/NOTIFY, instead of waiting up to `pollIntervalMs`. Each
+   * started worker holds one pool connection for LISTEN. Leave it off behind
+   * PgBouncer in transaction mode or other proxies that don't support LISTEN.
+   * Polling keeps running either way. Defaults to `false`.
+   * @see https://hookgres.dev/docs/guides/workers#instant-wake-up-with-listen-notify
+   */
+  notify?: boolean;
   /** Max deliveries the worker sends in parallel. Defaults to 10. */
   concurrency?: number;
   /**
@@ -94,14 +105,25 @@ export interface HookgresOptions {
    */
   fetch?: typeof fetch;
   userAgent?: string;
-  /** Called for unexpected worker errors. Defaults to `console.error`. */
+  /** Called for unexpected worker errors, and for idle-connection errors on a pool Hookgres created from `connectionString`. Defaults to `console.error`. */
   onError?: (error: unknown) => void;
+  /**
+   * Called after every HTTP attempt, e.g. to record metrics. Runs inline in
+   * the worker, so keep it fast. Errors it throws (or a promise it rejects)
+   * are reported with `process.emitWarning` and never affect delivery.
+   * @see https://hookgres.dev/docs/guides/production#metrics-and-tracing
+   */
+  onAttempt?: (event: AttemptEvent) => void;
+  /** Called when Hookgres disables an endpoint after failing for `disableEndpointAfterMs`. Errors are handled like `onAttempt`'s. */
+  onEndpointDisabled?: (event: EndpointDisabledEvent) => void;
 }
 
 interface ClaimedDelivery {
   id: string;
   lock_token: string;
   attempt_count: number;
+  endpoint_id: string;
+  tenant_id: string;
   message_id: string;
   event_type: string;
   payload: unknown;
@@ -113,7 +135,7 @@ interface ClaimedDelivery {
   disabled: boolean;
 }
 
-interface AttemptOutcome {
+interface HttpResult {
   ok: boolean;
   statusCode: number | null;
   responseBody: string | null;
@@ -157,12 +179,18 @@ export class Hookgres {
   private readonly closeTransport: () => void;
   private readonly userAgent: string;
   private readonly onError: (error: unknown) => void;
+  private readonly onAttempt: HookgresOptions["onAttempt"];
+  private readonly onEndpointDisabled: HookgresOptions["onEndpointDisabled"];
+  /** NOTIFY channel, or `null` when `notify` is off. */
+  private readonly channel: string | null;
 
   private running = false;
   private loopPromise: Promise<void> | null = null;
   private wakeUp: (() => void) | null = null;
   private wakePending = false;
   private generation = 0;
+  /** Ends the LISTEN connection or its reconnect wait, during stop(). */
+  private stopListener: (() => void) | null = null;
 
   constructor(options: HookgresOptions) {
     if (options.pool) {
@@ -236,6 +264,19 @@ export class Hookgres {
     this.onError =
       options.onError ??
       ((error) => console.error("[hookgres] worker error:", error));
+    // node-postgres emits "error" on the pool when an idle client's connection
+    // drops; without a listener that crashes the process. A pool the caller
+    // passed in is theirs to handle.
+    if (this.ownsPool) this.pool.on("error", (error) => this.onError(error));
+    this.onAttempt = options.onAttempt;
+    this.onEndpointDisabled = options.onEndpointDisabled;
+    // The listener holds a pool connection while the worker runs; with only
+    // one, claims and sends would wait for it forever.
+    if (options.notify && (this.pool.options?.max ?? 10) < 2) {
+      throw new Error("notify needs a pool with max of at least 2");
+    }
+    // Postgres channel names are at most 63 bytes; pg_notify rejects longer.
+    this.channel = options.notify ? `${schema}_wake`.slice(0, 63) : null;
   }
 
   // ---------------------------------------------------------------- schema
@@ -424,6 +465,20 @@ export class Hookgres {
     }
     const payload = JSON.stringify(input.payload);
     const idempotencyKey = input.idempotencyKey ?? null;
+    const values = [
+      newId("msg"),
+      input.tenantId,
+      input.eventType,
+      payload,
+      idempotencyKey,
+    ];
+    // NOTIFY is transactional: it goes out when the caller's transaction
+    // commits, and not at all on rollback.
+    let notify = "";
+    if (this.channel) {
+      values.push(this.channel);
+      notify = `, n AS (SELECT pg_notify($6, '') FROM (SELECT 1 FROM d LIMIT 1) x)`;
+    }
 
     const { rows } = await queryWithNulHint(
       db,
@@ -451,9 +506,11 @@ export class Hookgres {
             )
           )
          RETURNING 1
-       )
-       SELECT m.*, (SELECT count(*) FROM d)::int AS delivery_count FROM m`,
-      [newId("msg"), input.tenantId, input.eventType, payload, idempotencyKey],
+       )${notify}
+       SELECT m.*, (SELECT count(*) FROM d)::int AS delivery_count
+              ${notify ? ", (SELECT count(*) FROM n) AS notified" : ""}
+       FROM m`,
+      values,
     );
 
     if (rows[0]) {
@@ -597,8 +654,7 @@ export class Hookgres {
    * or is still in flight.
    */
   async replayDelivery(id: string): Promise<Delivery | null> {
-    const { rows } = await this.pool.query(
-      `UPDATE ${this.t.deliveries}
+    const update = `UPDATE ${this.t.deliveries}
        SET status = 'pending', attempt_count = 0, next_attempt_at = now(),
            locked_until = NULL, lock_token = NULL, last_error = NULL, updated_at = now()
        WHERE id = $1 AND status IN ('succeeded', 'failed')
@@ -608,9 +664,14 @@ export class Hookgres {
            WHERE m.id = message_id
            FOR SHARE
          )
-       RETURNING *`,
-      [id],
-    );
+       RETURNING *`;
+    const { rows } = this.channel
+      ? await this.pool.query(
+          `WITH r AS (${update})
+           SELECT r.*, pg_notify($2, '') FROM r`,
+          [id, this.channel],
+        )
+      : await this.pool.query(update, [id]);
     if (!rows[0]) return null;
     this.wake();
     return toDelivery(rows[0]);
@@ -624,17 +685,25 @@ export class Hookgres {
     this.running = true;
     const generation = ++this.generation;
     const previous = this.loopPromise;
+    const active = () => this.running && generation === this.generation;
     this.loopPromise = (async () => {
       // If a stop() is still draining, let the old loop finish first.
       await previous;
-      await this.loop(generation);
+      await Promise.all([
+        this.loop(active),
+        this.channel ? this.listen(this.channel, active) : null,
+      ]);
     })();
   }
 
-  /** Stops the loop and waits for in-flight deliveries to finish. */
+  /**
+   * Stops the loop, closes the LISTEN connection (with `notify`) and waits
+   * for in-flight deliveries to finish.
+   */
   async stop(): Promise<void> {
     this.running = false;
     this.wake();
+    this.stopListener?.();
     const loop = this.loopPromise;
     await loop;
     if (this.loopPromise === loop) this.loopPromise = null;
@@ -665,22 +734,116 @@ export class Hookgres {
     return claimed.length;
   }
 
-  private async loop(generation: number): Promise<void> {
-    const active = () => this.running && generation === this.generation;
+  private async loop(active: () => boolean): Promise<void> {
     while (active()) {
       let processed = 0;
       try {
         processed = await this.runOnce();
       } catch (error) {
-        try {
-          this.onError(error);
-        } catch {
-          // A throwing onError must not kill the loop.
-        }
+        this.reportError(error);
       }
       if (active() && processed < this.concurrency) {
         await this.sleep(this.pollIntervalMs);
       }
+    }
+  }
+
+  private reportError(error: unknown): void {
+    try {
+      this.onError(error);
+    } catch {
+      // A throwing onError must not kill the loop or the listener.
+    }
+  }
+
+  /**
+   * Holds one connection that LISTENs on the wake-up channel and wakes the
+   * loop on every notification. If the connection drops, reconnects with
+   * backoff (0.5s doubling to 30s); polling keeps delivering meanwhile.
+   */
+  private async listen(channel: string, active: () => boolean): Promise<void> {
+    let failures = 0;
+    while (active()) {
+      let client: pg.PoolClient | undefined;
+      let lost: unknown;
+      try {
+        client = await this.pool.connect();
+        const c = client;
+        const closed = new Promise<unknown>((resolve) => {
+          // Without an "error" listener, a dropped connection would crash
+          // the process.
+          c.on("error", resolve);
+          c.on("end", () => resolve(new Error("connection ended")));
+          this.stopListener = () => resolve(undefined);
+        });
+        // stop() may have run while we were connecting.
+        if (active()) {
+          c.on("notification", () => this.wake());
+          await c.query(`LISTEN "${channel}"`);
+          failures = 0;
+          // Catch up on anything queued while we weren't listening.
+          this.wake();
+          lost = await closed;
+        }
+      } catch (error) {
+        lost = error;
+      } finally {
+        this.stopListener = null;
+        // Destroy rather than return it: a pooled connection must not keep
+        // listening.
+        client?.release(true);
+      }
+      if (!active()) return;
+      this.reportError(
+        new Error("Hookgres LISTEN connection lost; reconnecting", {
+          cause: lost,
+        }),
+      );
+      failures++;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(
+          done,
+          Math.min(30 * SECOND, 250 * 2 ** failures),
+        );
+        const self = this;
+        function done() {
+          clearTimeout(timer);
+          self.stopListener = null;
+          resolve();
+        }
+        this.stopListener = done;
+      });
+    }
+  }
+
+  /** Calls a user hook. Its errors never reach the delivery code. */
+  private callHook<E>(
+    name: string,
+    hook: ((event: E) => void) | undefined,
+    event: E,
+  ): void {
+    if (!hook) return;
+    const warn = (error: unknown) => {
+      let detail: string;
+      try {
+        detail = error instanceof Error ? error.message : String(error);
+      } catch {
+        detail = "unprintable error";
+      }
+      process.emitWarning(`Hookgres ${name} hook threw: ${detail}`, {
+        code: "HOOKGRES_HOOK_ERROR",
+      });
+    };
+    try {
+      const result: unknown = hook(event);
+      // Any thenable, so a rejected promise from another realm or library
+      // can't become an unhandled rejection.
+      const then = (result as { then?: unknown } | null)?.then;
+      if (typeof then === "function") {
+        then.call(result, undefined, warn);
+      }
+    } catch (error) {
+      warn(error);
     }
   }
 
@@ -725,7 +888,8 @@ export class Hookgres {
            updated_at = now()
        FROM due, ${this.t.messages} m, ${this.t.endpoints} e
        WHERE d.id = due.id AND m.id = d.message_id AND e.id = d.endpoint_id
-       RETURNING d.id, d.lock_token, d.attempt_count, m.id AS message_id,
+       RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
+                 m.tenant_id, m.id AS message_id,
                  m.event_type, m.payload, m.created_at AS message_created_at,
                  e.url, e.secret,
                  CASE WHEN e.previous_secret_expires_at > now()
@@ -769,11 +933,23 @@ export class Hookgres {
     // Postgres text can't hold NUL; binary response bodies would make the
     // write fail and the delivery re-send forever.
     const responseBody = outcome.responseBody?.replaceAll("\u0000", "") ?? null;
+    const event = {
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      endpointId: delivery.endpoint_id,
+      tenantId: delivery.tenant_id,
+      eventType: delivery.event_type,
+      attemptNumber,
+      statusCode: outcome.statusCode,
+      error: outcome.error,
+      durationMs: outcome.durationMs,
+    };
 
     // Each write only applies while this worker still holds the claim
-    // (lock_token), so a stale worker can't overwrite a newer result.
+    // (lock_token), so a stale worker can't overwrite a newer result. Hooks
+    // only fire for results that were written.
     if (outcome.ok) {
-      await this.pool.query(
+      const { rowCount } = await this.pool.query(
         `WITH d AS (
            UPDATE ${this.t.deliveries}
            SET status = 'succeeded', locked_until = NULL, lock_token = NULL,
@@ -784,10 +960,12 @@ export class Hookgres {
            INSERT INTO ${this.t.attempts}
              (delivery_id, attempt_number, status_code, response_body, error, duration_ms)
            SELECT d.id, $3, $4, $5, NULL, $6 FROM d
+         ), e AS (
+           UPDATE ${this.t.endpoints}
+           SET failing_since = NULL, updated_at = now()
+           WHERE id IN (SELECT endpoint_id FROM d) AND failing_since IS NOT NULL
          )
-         UPDATE ${this.t.endpoints}
-         SET failing_since = NULL, updated_at = now()
-         WHERE id IN (SELECT endpoint_id FROM d) AND failing_since IS NOT NULL`,
+         SELECT 1 FROM d`,
         [
           delivery.id,
           delivery.lock_token,
@@ -797,6 +975,13 @@ export class Hookgres {
           outcome.durationMs,
         ],
       );
+      if (rowCount) {
+        this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
+          ...event,
+          outcome: "succeeded",
+          nextAttemptAt: null,
+        });
+      }
       return;
     }
 
@@ -807,7 +992,11 @@ export class Hookgres {
     const delayMs = Math.round(
       baseDelayMs * (1 + this.retryJitter * (2 * Math.random() - 1)),
     );
-    await this.pool.query(
+    const { rows } = await this.pool.query<{
+      next_attempt_at: Date;
+      disabled_now: boolean | null;
+      disabled_reason: string | null;
+    }>(
       `WITH d AS (
          UPDATE ${this.t.deliveries}
          SET status = CASE WHEN $8::boolean THEN 'failed' ELSE 'pending' END,
@@ -817,12 +1006,19 @@ export class Hookgres {
              last_error = $6,
              updated_at = now()
          WHERE id = $1 AND lock_token = $2
-         RETURNING id, endpoint_id
+         RETURNING id, endpoint_id, next_attempt_at
        ), a AS (
          INSERT INTO ${this.t.attempts}
            (delivery_id, attempt_number, status_code, response_body, error, duration_ms)
          SELECT d.id, $3, $4, $5, $6, $7 FROM d
-       )
+       ), prev AS (
+         -- Locks the endpoint and reads whether it was already disabled, so
+         -- only the worker that disables it reports it.
+         SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
+         FROM ${this.t.endpoints} ep
+         WHERE ep.id IN (SELECT endpoint_id FROM d)
+         FOR UPDATE
+       ), e AS (
        UPDATE ${this.t.endpoints}
        SET failing_since = COALESCE(failing_since, now()),
            disabled = disabled OR (
@@ -837,7 +1033,13 @@ export class Hookgres {
              ELSE disabled_reason
            END,
            updated_at = now()
-       WHERE id IN (SELECT endpoint_id FROM d)`,
+       FROM prev
+       WHERE id = prev.endpoint_id
+       RETURNING disabled AND NOT prev.was_disabled AS disabled_now,
+                 disabled_reason
+       )
+       SELECT d.next_attempt_at, e.disabled_now, e.disabled_reason
+       FROM d LEFT JOIN e ON true`,
       [
         delivery.id,
         delivery.lock_token,
@@ -851,9 +1053,27 @@ export class Hookgres {
         this.disableEndpointAfterMs,
       ],
     );
+    const result = rows[0];
+    if (!result) return;
+    this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
+      ...event,
+      outcome: isFinal ? "failed" : "retrying",
+      nextAttemptAt: isFinal ? null : result.next_attempt_at,
+    });
+    if (result.disabled_now) {
+      this.callHook<EndpointDisabledEvent>(
+        "onEndpointDisabled",
+        this.onEndpointDisabled,
+        {
+          endpointId: delivery.endpoint_id,
+          tenantId: delivery.tenant_id,
+          reason: result.disabled_reason ?? "",
+        },
+      );
+    }
   }
 
-  private async attempt(delivery: ClaimedDelivery): Promise<AttemptOutcome> {
+  private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
     const envelope: WebhookEnvelope = {
       type: delivery.event_type,
       timestamp: new Date(delivery.message_created_at).toISOString(),

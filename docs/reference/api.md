@@ -119,11 +119,14 @@ Returns `null` if it doesn't exist or is still `pending` or `delivering`.
 ### `start(): void`
 
 Starts the delivery loop in this process. Calling it again does nothing.
+With the `notify` option, it also takes one pool connection that LISTENs for
+wake-ups. See [Instant wake-up](/guides/workers#instant-wake-up-with-listen-notify).
 
 ### `stop(): Promise<void>`
 
-Stops claiming deliveries and waits for in-flight requests to finish. You can
-call `start()` again afterwards.
+Stops claiming deliveries, closes the LISTEN connection if there is one, and
+waits for in-flight requests to finish. You can call `start()` again
+afterwards.
 
 ### `close(): Promise<void>`
 
@@ -242,6 +245,30 @@ interface Attempt {
   error: string | null;
   durationMs: number;
   createdAt: Date;
+}
+
+// Passed to the onAttempt option after every HTTP attempt.
+interface AttemptEvent {
+  deliveryId: string;
+  messageId: string;
+  endpointId: string;
+  tenantId: string;
+  eventType: string;
+  attemptNumber: number; // starts again at 1 after a replay
+  outcome: AttemptOutcome;
+  statusCode: number | null; // null for timeouts and network errors
+  error: string | null; // null on success
+  durationMs: number;
+  nextAttemptAt: Date | null; // set only when outcome is "retrying"
+}
+
+type AttemptOutcome = "succeeded" | "retrying" | "failed";
+
+// Passed to the onEndpointDisabled option.
+interface EndpointDisabledEvent {
+  endpointId: string;
+  tenantId: string;
+  reason: string; // the endpoint's new disabledReason
 }
 
 interface WebhookEnvelope<T = unknown> {

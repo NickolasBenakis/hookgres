@@ -122,6 +122,37 @@ export interface ListDeliveriesInput {
   limit?: number;
 }
 
+/** What happened to a delivery after one attempt. */
+export type AttemptOutcome = "succeeded" | "retrying" | "failed";
+
+/** Passed to the `onAttempt` hook after every HTTP attempt. */
+export interface AttemptEvent {
+  deliveryId: string;
+  messageId: string;
+  endpointId: string;
+  tenantId: string;
+  eventType: string;
+  /** 1 for the first attempt. Starts again at 1 after a replay. */
+  attemptNumber: number;
+  /** `retrying` means another attempt is due at `nextAttemptAt`. */
+  outcome: AttemptOutcome;
+  /** `null` for timeouts, network errors and blocked addresses. */
+  statusCode: number | null;
+  /** `null` on success, otherwise e.g. `HTTP 500` or `Timed out after 15000ms`. */
+  error: string | null;
+  durationMs: number;
+  /** When the next attempt is due. Only set when `outcome` is `retrying`. */
+  nextAttemptAt: Date | null;
+}
+
+/** Passed to the `onEndpointDisabled` hook when Hookgres disables an endpoint. */
+export interface EndpointDisabledEvent {
+  endpointId: string;
+  tenantId: string;
+  /** The endpoint's new `disabledReason`. */
+  reason: string;
+}
+
 /** The JSON body POSTed to endpoints (Standard Webhooks envelope). */
 export interface WebhookEnvelope<T = unknown> {
   type: string;
