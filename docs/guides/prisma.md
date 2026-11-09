@@ -84,8 +84,8 @@ this adapter for your own queries with user input in the text.
 Use the interactive form of `$transaction`, the one that takes a callback:
 
 ```ts
-import { hookgres, prisma } from "./db.ts";
-import { hookgresClient } from "./hookgres-client.ts";
+import { hookgres, prisma } from "./db.js";
+import { hookgresClient } from "./hookgres-client.js";
 
 export async function markPaid(invoiceId: string) {
   return prisma.$transaction(async (tx) => {

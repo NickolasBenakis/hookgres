@@ -66,8 +66,8 @@ inside your payload.
 ## Send inside a transaction
 
 ```ts
-import { db, hookgres } from "./db.ts";
-import { hookgresClient } from "./hookgres-client.ts";
+import { db, hookgres } from "./db.js";
+import { hookgresClient } from "./hookgres-client.js";
 
 export async function markPaid(invoiceId: string) {
   return db.transaction().execute(async (trx) => {

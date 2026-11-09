@@ -14,7 +14,7 @@ Create the pool once and give it to both Drizzle and Hookgres, for example in
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Hookgres } from "hookgres";
 import pg from "pg";
-import * as schema from "./schema.ts";
+import * as schema from "./schema.js";
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Use the same options for both Drizzle instances below.
@@ -76,8 +76,8 @@ export const invoices = pgTable("invoices", {
 
 ```ts
 import { eq } from "drizzle-orm";
-import { hookgres, transaction } from "./db.ts";
-import { invoices } from "./schema.ts";
+import { hookgres, transaction } from "./db.js";
+import { invoices } from "./schema.js";
 
 export async function markPaid(invoiceId: string) {
   return transaction(async (tx, client) => {
