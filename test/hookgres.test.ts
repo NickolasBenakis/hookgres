@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  inject,
+  it,
+  vi,
+} from "vitest";
 import { Hookgres, verifyWebhook, type WebhookEnvelope } from "../src/index.js";
 import {
   closedPortUrl,
@@ -750,5 +758,212 @@ describe("configuration and edge cases", () => {
         `ALTER TABLE "${ctx.schema}".attempts DROP CONSTRAINT boom`,
       );
     }
+  });
+});
+
+describe("cleanup", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  async function backdate(ids: string[], days: number) {
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".messages
+       SET created_at = now() - make_interval(days => $2)
+       WHERE id = ANY ($1)`,
+      [ids, days],
+    );
+  }
+
+  async function messageIds(): Promise<string[]> {
+    const { rows } = await ctx.pool.query(
+      `SELECT id FROM "${ctx.schema}".messages ORDER BY id`,
+    );
+    return rows.map((r) => r.id);
+  }
+
+  it("deletes old finished messages in batches and keeps unfinished ones", async () => {
+    const hw = ctx.create({ retrySchedule: [] });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = (n) => (n === 2 ? 500 : 200);
+    const send = async (tenantId = "acme") =>
+      (await hw.send({ tenantId, eventType: "e", payload: {} })).message.id;
+
+    const finished = [await send(), await send(), await send()];
+    const noDeliveries = await send("nobody");
+    const recent = await send();
+    await drain(hw);
+    const pending = await send();
+    const inFlight = await send();
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries SET status = 'delivering' WHERE message_id = $1`,
+      [inFlight],
+    );
+    await backdate([...finished, noDeliveries, pending, inFlight], 40);
+    const [oldDelivery] = await hw.listDeliveries({ messageId: finished[0] });
+
+    const deleted = await hw.cleanup({ olderThan: 30 * DAY_MS, batchSize: 2 });
+
+    expect(deleted).toBe(4);
+    expect(await messageIds()).toEqual([recent, pending, inFlight].sort());
+    expect(await hw.getDelivery(oldDelivery?.id as string)).toBeNull();
+    expect(await hw.listAttempts(oldDelivery?.id as string)).toEqual([]);
+    expect(await hw.cleanup({ olderThan: 30 * DAY_MS })).toBe(0);
+  });
+
+  it("accepts a Date cutoff", async () => {
+    const hw = ctx.create();
+    const a = await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    const b = await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await backdate([a.message.id], 10);
+
+    const cutoff = new Date(Date.now() - 5 * DAY_MS);
+    expect(await hw.cleanup({ olderThan: cutoff })).toBe(1);
+    expect(await messageIds()).toEqual([b.message.id]);
+  });
+
+  it("validates its options", async () => {
+    const hw = ctx.create();
+    await expect(hw.cleanup({ olderThan: -1 })).rejects.toThrow(/olderThan/);
+    await expect(
+      hw.cleanup({ olderThan: Number.POSITIVE_INFINITY }),
+    ).rejects.toThrow(/olderThan/);
+    await expect(hw.cleanup({ olderThan: new Date("nope") })).rejects.toThrow(
+      /invalid Date/,
+    );
+    await expect(hw.cleanup({ olderThan: 0, batchSize: 0 })).rejects.toThrow(
+      /batchSize/,
+    );
+    await expect(hw.cleanup({ olderThan: 0, batchSize: 1.5 })).rejects.toThrow(
+      /batchSize/,
+    );
+  });
+});
+
+describe("retry jitter", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Fails one attempt and returns the scheduled delay in ms. */
+  async function scheduledDelay(hw: Hookgres): Promise<number> {
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    await hw.runOnce();
+    // next_attempt_at and updated_at are both set from the same now().
+    const { rows } = await ctx.pool.query(
+      `SELECT extract(epoch FROM next_attempt_at - updated_at) * 1000 AS ms
+       FROM "${ctx.schema}".deliveries WHERE message_id = $1`,
+      [message.id],
+    );
+    return Math.round(Number(rows[0].ms));
+  }
+
+  it("spreads the delay by up to the jitter fraction (default 0.1)", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    expect(await scheduledDelay(ctx.create({ retrySchedule: [60_000] }))).toBe(
+      54_000,
+    );
+  });
+
+  it("uses the upper end of the range", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.75);
+    const hw = ctx.create({ retrySchedule: [60_000], retryJitter: 0.5 });
+    expect(await scheduledDelay(hw)).toBe(75_000);
+  });
+
+  it("keeps the exact delay when disabled", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const hw = ctx.create({ retrySchedule: [60_000], retryJitter: 0 });
+    expect(await scheduledDelay(hw)).toBe(60_000);
+  });
+
+  it("keeps a zero delay at zero", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.99);
+    const hw = ctx.create({ retrySchedule: [0], retryJitter: 1 });
+    expect(await scheduledDelay(hw)).toBe(0);
+  });
+
+  it("stays within range with real randomness", async () => {
+    const delay = await scheduledDelay(
+      ctx.create({ retrySchedule: [60_000], retryJitter: 0.2 }),
+    );
+    expect(delay).toBeGreaterThanOrEqual(48_000);
+    expect(delay).toBeLessThanOrEqual(72_000);
+  });
+
+  it("validates the option", () => {
+    for (const retryJitter of [-0.1, 1.1, Number.NaN]) {
+      expect(() => ctx.create({ retryJitter })).toThrow(/retryJitter/);
+    }
+    expect(() => ctx.create({ retryJitter: 1 })).not.toThrow();
+  });
+});
+
+describe("wildcard event types", () => {
+  it("matches any event type under the prefix, at any depth", async () => {
+    const hw = ctx.create();
+    const invoices = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+      eventTypes: ["invoice.*"],
+    });
+    const lines = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+      eventTypes: ["user.created", "invoice.line.*"],
+    });
+    const endpointsFor = async (eventType: string) => {
+      const { message } = await hw.send({
+        tenantId: "acme",
+        eventType,
+        payload: {},
+      });
+      const deliveries = await hw.listDeliveries({ messageId: message.id });
+      return deliveries.map((d) => d.endpointId).sort();
+    };
+
+    expect(await endpointsFor("invoice.paid")).toEqual([invoices.id]);
+    expect(await endpointsFor("invoice.line.created")).toEqual(
+      [invoices.id, lines.id].sort(),
+    );
+    expect(await endpointsFor("user.created")).toEqual([lines.id]);
+    expect(await endpointsFor("invoice")).toEqual([]);
+    expect(await endpointsFor("invoices.paid")).toEqual([]);
+    expect(await endpointsFor("invoice.line")).toEqual([invoices.id]);
+  });
+
+  it("rejects misplaced or bare wildcards", async () => {
+    const hw = ctx.create();
+    for (const pattern of ["*.paid", "invoice*", "invoice.*.paid", ".*"]) {
+      await expect(
+        hw.createEndpoint({
+          tenantId: "acme",
+          url: receiver.url,
+          eventTypes: [pattern],
+        }),
+      ).rejects.toThrow(/last segment/);
+    }
+    await expect(
+      hw.createEndpoint({
+        tenantId: "acme",
+        url: receiver.url,
+        eventTypes: ["*"],
+      }),
+    ).rejects.toThrow(/pass null/);
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await expect(
+      hw.updateEndpoint(ep.id, { eventTypes: ["a.*.b"] }),
+    ).rejects.toThrow(/last segment/);
+  });
+
+  it("rejects a wildcard in a sent event type", async () => {
+    const hw = ctx.create();
+    await expect(
+      hw.send({ tenantId: "acme", eventType: "invoice.*", payload: {} }),
+    ).rejects.toThrow(/only allowed in an endpoint/);
   });
 });

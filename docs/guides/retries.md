@@ -42,6 +42,20 @@ new Hookgres({
 The schedule is read when each attempt finishes, so changing it affects
 deliveries that are already queued too.
 
+### Jitter
+
+Each wait is spread randomly by up to 10%, so a 5 minute wait becomes
+somewhere between 4.5 and 5.5 minutes. When a receiver goes down, the
+deliveries that failed together then come back spread out instead of all at
+once. Change the fraction with `retryJitter`, or set it to `0` for exact
+waits:
+
+```ts
+new Hookgres({ pool, retryJitter: 0.25 }); // 5m becomes 3.75m to 6.25m
+```
+
+A wait of `0` stays `0`. The table above shows the waits before jitter.
+
 ## Delivery statuses
 
 | Status       | Meaning                                              |

@@ -23,6 +23,12 @@ const endpoint = await hookgres.createEndpoint({
 The URL must be `http:` or `https:`. `eventTypes` can't be an empty array; use
 `null` for "everything".
 
+An event type ending in `.*` is a wildcard. `invoice.*` matches every event
+type that starts with `invoice.`, at any depth: `invoice.paid` and
+`invoice.line.created`, but not `invoice` itself. The `*` must be the whole
+last segment, so `*.paid`, `invoice*` and a bare `*` are rejected. Event
+types passed to `send()` can't contain `*`.
+
 The generated secret is `whsec_` followed by 24 random bytes in base64. Show
 it to your customer when they create the endpoint, the way Stripe and Svix
 do. If you bring your own secret, it must use the same format, with 24 to 64

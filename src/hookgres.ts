@@ -11,6 +11,7 @@ import {
 } from "./ssrf.js";
 import type {
   Attempt,
+  CleanupOptions,
   CreateEndpointInput,
   Delivery,
   DeliveryStatus,
@@ -52,6 +53,12 @@ export interface HookgresOptions {
   schema?: string;
   /** Delay in ms before each retry. Its length + 1 is the max attempt count. */
   retrySchedule?: number[];
+  /**
+   * Spreads each retry delay randomly by up to this fraction, so endpoints
+   * that failed together don't get retried together. `0.1` turns a 60s delay
+   * into 54s to 66s. `0` disables it. Must be between 0 and 1. Defaults to 0.1.
+   */
+  retryJitter?: number;
   /** Per-request timeout in ms. Defaults to 15s. */
   requestTimeoutMs?: number;
   /**
@@ -138,6 +145,7 @@ export class Hookgres {
     migrations: string;
   };
   private readonly retrySchedule: number[];
+  private readonly retryJitter: number;
   private readonly requestTimeoutMs: number;
   private readonly disableEndpointAfterMs: number | null;
   private readonly pollIntervalMs: number;
@@ -185,6 +193,14 @@ export class Hookgres {
     this.retrySchedule = options.retrySchedule ?? DEFAULT_RETRY_SCHEDULE;
     if (this.retrySchedule.some((ms) => !Number.isFinite(ms) || ms < 0)) {
       throw new Error("retrySchedule must contain non-negative numbers");
+    }
+    this.retryJitter = options.retryJitter ?? 0.1;
+    if (
+      !Number.isFinite(this.retryJitter) ||
+      this.retryJitter < 0 ||
+      this.retryJitter > 1
+    ) {
+      throw new Error("retryJitter must be a number between 0 and 1");
     }
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15 * SECOND;
     this.disableEndpointAfterMs =
@@ -398,6 +414,11 @@ export class Hookgres {
    */
   async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
     const db: Queryable = options.client ?? this.pool;
+    if (input.eventType.includes("*")) {
+      throw new Error(
+        `Invalid event type "${input.eventType}": "*" is only allowed in an endpoint's eventTypes`,
+      );
+    }
     if (input.payload === undefined) {
       throw new Error("send() requires a JSON-serialisable payload");
     }
@@ -419,7 +440,16 @@ export class Hookgres {
          JOIN ${this.t.endpoints} e
            ON e.tenant_id = m.tenant_id
           AND NOT e.disabled
-          AND (e.event_types IS NULL OR m.event_type = ANY (e.event_types))
+          AND (
+            e.event_types IS NULL
+            OR m.event_type = ANY (e.event_types)
+            -- "invoice.*" matches any event type starting with "invoice."
+            OR EXISTS (
+              SELECT 1 FROM unnest(e.event_types) AS p (pattern)
+              WHERE right(p.pattern, 2) = '.*'
+                AND starts_with(m.event_type, left(p.pattern, -1))
+            )
+          )
          RETURNING 1
        )
        SELECT m.*, (SELECT count(*) FROM d)::int AS delivery_count FROM m`,
@@ -461,6 +491,59 @@ export class Hookgres {
       [id],
     );
     return rows[0] ? toMessage(rows[0]) : null;
+  }
+
+  /**
+   * Deletes messages created before `olderThan` whose deliveries are all
+   * finished (none `pending` or `delivering`), with their deliveries and
+   * attempts. Works in batches of `batchSize` (default 1000) until none are
+   * left, and returns how many messages it deleted.
+   * @see https://hookgres.dev/docs/guides/production#clean-up-old-rows
+   */
+  async cleanup(options: CleanupOptions): Promise<number> {
+    const { olderThan } = options;
+    const batchSize = options.batchSize ?? 1000;
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new Error("cleanup batchSize must be a positive integer");
+    }
+    let cutoff: Date;
+    if (olderThan instanceof Date) {
+      if (Number.isNaN(olderThan.getTime())) {
+        throw new Error("cleanup olderThan is an invalid Date");
+      }
+      cutoff = olderThan;
+    } else if (Number.isFinite(olderThan) && olderThan >= 0) {
+      // Use the database clock, like every other timestamp Hookgres writes.
+      const { rows } = await this.pool.query<{ cutoff: Date }>(
+        "SELECT now() - make_interval(secs => $1::double precision / 1000) AS cutoff",
+        [olderThan],
+      );
+      cutoff = (rows[0] as { cutoff: Date }).cutoff;
+    } else {
+      throw new Error(
+        "cleanup olderThan must be a Date or a non-negative number of ms",
+      );
+    }
+
+    let deleted = 0;
+    for (;;) {
+      const { rowCount } = await this.pool.query(
+        `DELETE FROM ${this.t.messages}
+         WHERE id IN (
+           SELECT m.id FROM ${this.t.messages} m
+           WHERE m.created_at < $1
+             AND NOT EXISTS (
+               SELECT 1 FROM ${this.t.deliveries} d
+               WHERE d.message_id = m.id AND d.status IN ('pending', 'delivering')
+             )
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED
+         )`,
+        [cutoff, batchSize],
+      );
+      deleted += rowCount ?? 0;
+      if ((rowCount ?? 0) < batchSize) return deleted;
+    }
   }
 
   // ------------------------------------------------------------ deliveries
@@ -519,6 +602,12 @@ export class Hookgres {
        SET status = 'pending', attempt_count = 0, next_attempt_at = now(),
            locked_until = NULL, lock_token = NULL, last_error = NULL, updated_at = now()
        WHERE id = $1 AND status IN ('succeeded', 'failed')
+         -- Blocks cleanup() from deleting the message under this replay.
+         AND EXISTS (
+           SELECT 1 FROM ${this.t.messages} m
+           WHERE m.id = message_id
+           FOR SHARE
+         )
        RETURNING *`,
       [id],
     );
@@ -712,7 +801,12 @@ export class Hookgres {
     }
 
     const isFinal = attemptNumber > this.retrySchedule.length;
-    const delayMs = isFinal ? 0 : (this.retrySchedule[attemptNumber - 1] ?? 0);
+    const baseDelayMs = isFinal
+      ? 0
+      : (this.retrySchedule[attemptNumber - 1] ?? 0);
+    const delayMs = Math.round(
+      baseDelayMs * (1 + this.retryJitter * (2 * Math.random() - 1)),
+    );
     await this.pool.query(
       `WITH d AS (
          UPDATE ${this.t.deliveries}
@@ -852,6 +946,18 @@ function normaliseEventTypes(
     throw new Error(
       "eventTypes must not be empty; pass null to receive every event type",
     );
+  }
+  for (const type of eventTypes) {
+    if (type === "*") {
+      throw new Error(
+        'eventTypes must not contain "*"; pass null to receive every event type',
+      );
+    }
+    if (type.includes("*") && !/^[^*]+\.\*$/.test(type)) {
+      throw new Error(
+        `Invalid event type pattern "${type}": "*" is only allowed as the last segment, as in "invoice.*"`,
+      );
+    }
   }
   return [...new Set(eventTypes)];
 }

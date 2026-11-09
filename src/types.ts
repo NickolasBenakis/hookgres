@@ -29,7 +29,10 @@ export interface CreateEndpointInput {
   tenantId: string;
   url: string;
   description?: string;
-  /** Omit or pass `null` to receive every event type. */
+  /**
+   * Omit or pass `null` to receive every event type. `"invoice.*"` matches
+   * every event type that starts with `"invoice."`.
+   */
   eventTypes?: string[] | null;
   /** Bring your own `whsec_...` secret. Generated when omitted. */
   secret?: string;
@@ -103,6 +106,13 @@ export interface Attempt {
   error: string | null;
   durationMs: number;
   createdAt: Date;
+}
+
+export interface CleanupOptions {
+  /** Delete messages created before this `Date`, or more than this many ms ago. */
+  olderThan: Date | number;
+  /** Messages deleted per statement. Defaults to 1000. */
+  batchSize?: number;
 }
 
 export interface ListDeliveriesInput {
