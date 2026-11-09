@@ -65,8 +65,10 @@ your data. They live in their own schema, so they don't mix with your tables.
 ### Using an ORM
 
 If your app makes its changes through an ORM, `send()` needs a client that
-runs on the ORM's transaction. These guides show how to get one, and how to
-share a pool between the ORM and Hookgres:
+runs on the ORM's transaction. For Kysely and Prisma, Hookgres ships one:
+`fromKysely(trx)` from `hookgres/kysely` and `fromPrisma(tx)` from
+`hookgres/prisma`. These guides show how to use them, and how to share a pool
+between the ORM and Hookgres:
 
 - [Drizzle](/guides/drizzle)
 - [Prisma](/guides/prisma)

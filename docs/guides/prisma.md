@@ -50,42 +50,22 @@ model Invoice {
 ```
 
 `send()` accepts any `client` with a node-postgres style
-`query(text, values)` method. A Prisma transaction doesn't have one, so add
-this small adapter, for example in `hookgres-client.ts`:
+`query(text, values)` method. A Prisma transaction doesn't have one, so wrap
+it with `fromPrisma(tx)` from `hookgres/prisma`.
 
-```ts
-import type { Queryable } from "hookgres";
-import type { QueryResult, QueryResultRow } from "pg";
-import type { Prisma } from "../generated/prisma/client.ts";
-
-/** Lets `hookgres.send()` run its query through a Prisma interactive transaction. */
-export function hookgresClient(
-  tx: Pick<Prisma.TransactionClient, "$queryRawUnsafe">,
-): Queryable {
-  return {
-    async query<R extends QueryResultRow>(
-      text: string,
-      values: unknown[] = [],
-    ): Promise<QueryResult<R>> {
-      const rows = await tx.$queryRawUnsafe<R[]>(text, ...values);
-      // send() only reads `rows`.
-      return { rows, rowCount: rows.length, command: "", oid: 0, fields: [] };
-    },
-  };
-}
-```
-
+How it works: `fromPrisma()` runs Hookgres's query with
+`tx.$queryRawUnsafe(text, ...values)`, on the transaction's connection.
 `$queryRawUnsafe` is safe here: the query text is fixed by Hookgres, and the
-values are sent as bound parameters, never pasted into the SQL. Don't reuse
-this adapter for your own queries with user input in the text.
+values are sent as bound parameters, never pasted into the SQL. Hookgres
+doesn't depend on Prisma; `fromPrisma()` only calls that one method.
 
 ## Send inside a transaction
 
 Use the interactive form of `$transaction`, the one that takes a callback:
 
 ```ts
+import { fromPrisma } from "hookgres/prisma";
 import { hookgres, prisma } from "./db.js";
-import { hookgresClient } from "./hookgres-client.js";
 
 export async function markPaid(invoiceId: string) {
   return prisma.$transaction(async (tx) => {
@@ -100,7 +80,7 @@ export async function markPaid(invoiceId: string) {
         eventType: "invoice.paid",
         payload: { invoiceId },
       },
-      { client: hookgresClient(tx) },
+      { client: fromPrisma(tx) },
     );
   });
 }
@@ -119,7 +99,7 @@ export async function markPaidThenFail(invoiceId: string) {
     });
     await hookgres.send(
       { tenantId: "acme", eventType: "invoice.paid", payload: { invoiceId } },
-      { client: hookgresClient(tx) },
+      { client: fromPrisma(tx) },
     );
     throw new Error("Payment provider declined"); // rolls back both
   });
@@ -128,7 +108,7 @@ export async function markPaidThenFail(invoiceId: string) {
 
 After this throws, the invoice is still `open` and no message exists.
 
-The adapter takes anything with `$queryRawUnsafe`, so it also accepts the
+`fromPrisma()` takes anything with `$queryRawUnsafe`, so it also accepts the
 `tx` of a client extended with `$extends`.
 
 ## Migrations and workers
@@ -142,14 +122,14 @@ Hookgres manages its own tables. `prisma migrate reset` can drop schemas in
 development, so call `migrate()` again after a reset.
 
 Start the worker with `hookgres.start()` in a long-running process, or call
-`runOnce()` from a cron job. See [Running workers](/guides/workers).
+`drain()` from a cron job. See [Running workers](/guides/workers).
 `prisma.$disconnect()` doesn't end a pool you passed to `PrismaPg`, so on
 shutdown call `await hookgres.stop()`, then `await prisma.$disconnect()`,
 then `await pool.end()`.
 
 ## Pitfalls
 
-- **Using `prisma` instead of `tx`.** `hookgresClient(prisma)` runs outside
+- **Using `prisma` instead of `tx`.** `fromPrisma(prisma)` runs outside
   your transaction, so the webhook is queued even if the transaction rolls
   back. Pass the `tx` your callback received.
 - **Passing the pool.** `send(input, { client: pool })` also runs outside

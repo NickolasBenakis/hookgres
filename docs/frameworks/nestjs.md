@@ -234,8 +234,9 @@ export class InvoicesController {
 ```
 
 The `idempotencyKey` means paying the same invoice twice queues one webhook.
-With TypeORM, Prisma or another ORM, pass the transaction's underlying `pg`
-client; see [Sending webhooks](/guides/sending#inside-your-transaction).
+With Prisma, pass `fromPrisma(tx)` from `hookgres/prisma` as `client`; with
+TypeORM or another ORM, pass the transaction's underlying `pg` client. See
+[Sending webhooks](/guides/sending#using-an-orm).
 
 ## Endpoint management routes
 
@@ -265,7 +266,11 @@ import {
   Patch,
   Post,
 } from "@nestjs/common";
-import { type Endpoint, Hookgres } from "hookgres";
+import {
+  type Endpoint,
+  Hookgres,
+  HookgresValidationError,
+} from "hookgres";
 import { TenantId } from "./tenant-id.decorator.js";
 
 interface CreateEndpointBody {
@@ -325,8 +330,7 @@ export class WebhookEndpointsController {
         eventTypes: body.eventTypes ?? null,
       });
     } catch (error) {
-      // Validation errors are plain Errors; database errors carry a `code`.
-      if (!(error instanceof Error) || "code" in error) throw error;
+      if (!(error instanceof HookgresValidationError)) throw error;
       throw new BadRequestException(error.message);
     }
     return { ...view(endpoint), secret: endpoint.secret };
@@ -348,8 +352,7 @@ export class WebhookEndpointsController {
       });
       return updated && view(updated);
     } catch (error) {
-      // Validation errors are plain Errors; database errors carry a `code`.
-      if (!(error instanceof Error) || "code" in error) throw error;
+      if (!(error instanceof HookgresValidationError)) throw error;
       throw new BadRequestException(error.message);
     }
   }
@@ -372,7 +375,9 @@ export class WebhookEndpointsController {
 ```
 
 `createEndpoint()` and `updateEndpoint()` throw for an invalid or blocked URL
-and for an empty `eventTypes` array, which these routes return as `400` with the message. Database errors, which carry a `code`, are rethrown and become `500`s.
+and for an invalid `eventTypes` array with a `HookgresValidationError`, which
+these routes return as `400` with its message. Any other error, such as a
+database error, is rethrown and becomes a `500`.
 Validate the bodies with `ValidationPipe` and DTO classes as usual; the
 interfaces here only give them types. Only the fields you pass to
 `updateEndpoint()` change; `undefined` ones are left alone. After a rotation,

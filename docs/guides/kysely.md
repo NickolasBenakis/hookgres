@@ -27,47 +27,21 @@ export const hookgres = new Hookgres({ pool });
 ```
 
 `send()` accepts any `client` with a node-postgres style
-`query(text, values)` method. A Kysely transaction doesn't have one, so add
-this small adapter. It runs Hookgres's query through Kysely with
-`CompiledQuery.raw()`, on the transaction's connection. Put it in
-`hookgres-client.ts`:
+`query(text, values)` method. A Kysely transaction doesn't have one, so wrap
+it with `fromKysely(trx)` from `hookgres/kysely`.
 
-```ts
-import type { Queryable } from "hookgres";
-import { CompiledQuery, type Kysely } from "kysely";
-import type { QueryResult, QueryResultRow } from "pg";
-
-/** Lets `hookgres.send()` run its query through a Kysely transaction. */
-export function hookgresClient(trx: {
-  withoutPlugins(): Pick<Kysely<unknown>, "executeQuery">;
-}): Queryable {
-  return {
-    async query<R extends QueryResultRow>(
-      text: string,
-      values: unknown[] = [],
-    ): Promise<QueryResult<R>> {
-      // withoutPlugins(): plugins such as CamelCasePlugin would rename the
-      // columns send() reads.
-      const { rows } = await trx
-        .withoutPlugins()
-        .executeQuery<R>(CompiledQuery.raw(text, values));
-      // send() only reads `rows`.
-      return { rows, rowCount: rows.length, command: "", oid: 0, fields: [] };
-    },
-  };
-}
-```
-
-The query text and values come from Hookgres, and the values are sent as
-bound parameters. `withoutPlugins()` matters if you use plugins such as
-`CamelCasePlugin`: they would rename the columns `send()` reads, and the keys
-inside your payload.
+How it works: `fromKysely()` runs Hookgres's query through Kysely with
+`CompiledQuery.raw()`, on the transaction's connection. The query text and
+values come from Hookgres, and the values are sent as bound parameters. It
+calls `trx.withoutPlugins()` first, because plugins such as `CamelCasePlugin`
+would rename the columns `send()` reads, and the keys inside your payload.
+It uses the `kysely` your app installed; Hookgres doesn't depend on it.
 
 ## Send inside a transaction
 
 ```ts
+import { fromKysely } from "hookgres/kysely";
 import { db, hookgres } from "./db.js";
-import { hookgresClient } from "./hookgres-client.js";
 
 export async function markPaid(invoiceId: string) {
   return db.transaction().execute(async (trx) => {
@@ -84,7 +58,7 @@ export async function markPaid(invoiceId: string) {
         eventType: "invoice.paid",
         payload: { invoiceId },
       },
-      { client: hookgresClient(trx) },
+      { client: fromKysely(trx) },
     );
   });
 }
@@ -104,7 +78,7 @@ export async function markPaidThenFail(invoiceId: string) {
       .execute();
     await hookgres.send(
       { tenantId: "acme", eventType: "invoice.paid", payload: { invoiceId } },
-      { client: hookgresClient(trx) },
+      { client: fromKysely(trx) },
     );
     throw new Error("Payment provider declined"); // rolls back both
   });
@@ -113,7 +87,7 @@ export async function markPaidThenFail(invoiceId: string) {
 
 After this throws, the invoice is still `open` and no message exists.
 
-The adapter works the same way with a controlled transaction from
+`fromKysely()` works the same way with a controlled transaction from
 `db.startTransaction()`: pass the `trx` it returns.
 
 ## Migrations and workers
@@ -126,14 +100,14 @@ its own tables. If you generate types with a tool that introspects every
 schema, exclude `hookgres`.
 
 Start the worker with `hookgres.start()` in a long-running process, or call
-`runOnce()` from a cron job. See [Running workers](/guides/workers).
+`drain()` from a cron job. See [Running workers](/guides/workers).
 `db.destroy()` ends the pool you passed to `PostgresDialect`, so on shutdown
 call `await hookgres.stop()` first, then `await db.destroy()`, and don't call
 `pool.end()` as well.
 
 ## Pitfalls
 
-- **Passing `db` instead of `trx`.** `hookgresClient(db)` runs on a
+- **Passing `db` instead of `trx`.** `fromKysely(db)` runs on a
   different connection, outside your transaction, so the webhook is queued
   even if the transaction rolls back. Pass the `trx` your callback received.
 - **Passing the pool.** `send(input, { client: pool })` has the same

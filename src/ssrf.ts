@@ -3,6 +3,7 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Readable } from "node:stream";
+import { HookgresValidationError } from "./errors.js";
 
 /** Addresses no webhook should reach: private, loopback, link-local, reserved. */
 const BLOCKED = new BlockList();
@@ -97,7 +98,7 @@ export class AddressGuard {
   constructor(option: BlockPrivateAddressesOption) {
     if (typeof option !== "object") return;
     if (!Array.isArray(option.allow)) {
-      throw new Error(
+      throw new HookgresValidationError(
         'blockPrivateAddresses.allow must be an array of IPs or CIDRs, e.g. { allow: ["10.1.2.0/24"] }. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf',
       );
     }
@@ -106,7 +107,7 @@ export class AddressGuard {
         typeof entry !== "string" ||
         !addCidr(entry, { ipv4: this.allow4, ipv6: this.allow6 })
       ) {
-        throw new Error(
+        throw new HookgresValidationError(
           `Invalid blockPrivateAddresses.allow entry ${JSON.stringify(entry)}: use an IP address or CIDR, like "10.1.2.0/24" or "fd00::5"`,
         );
       }
@@ -134,12 +135,12 @@ export class AddressGuard {
       host.endsWith(".localhost") ||
       this.isBlocked(host)
     ) {
-      throw new Error(
+      throw new HookgresValidationError(
         `Endpoint URL points to a private address: ${url.href} (blockPrivateAddresses is on). Use a public URL; to allow specific internal IPs, pass blockPrivateAddresses: { allow: ["10.1.2.0/24"] }, and leave it off in local development. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf`,
       );
     }
     if (isBadPort(url)) {
-      throw new Error(
+      throw new HookgresValidationError(
         `Endpoint URL uses a blocked port: ${url.href} (blockPrivateAddresses is on). Use a standard web port like 443. See https://hookgres.dev/docs/guides/production#block-internal-addresses-ssrf`,
       );
     }

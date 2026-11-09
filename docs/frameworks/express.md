@@ -79,7 +79,10 @@ app.use("/api", requireTenant, invoices, endpoints);
 const server = app.listen(Number(process.env.PORT ?? 3000));
 hookgres.start();
 
+let shuttingDown = false;
 async function shutdown() {
+  if (shuttingDown) return; // e.g. SIGINT while a SIGTERM shutdown runs
+  shuttingDown = true;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await hookgres.stop();
   await pool.end();
@@ -144,8 +147,10 @@ invoices.post("/invoices/:id/pay", async (req, res) => {
 ```
 
 The `idempotencyKey` means paying the same invoice twice queues one webhook.
-If you use an ORM, pass the transaction's underlying `pg` client; see
-[Sending webhooks](/guides/sending#inside-your-transaction).
+With Kysely or Prisma, pass `fromKysely(trx)` from `hookgres/kysely` or
+`fromPrisma(tx)` from `hookgres/prisma` as `client`; with another ORM, pass
+the transaction's underlying `pg` client. See
+[Sending webhooks](/guides/sending#using-an-orm).
 
 ## Endpoint management routes
 
@@ -164,7 +169,7 @@ rotated, and never in lists.
 ```ts
 // src/routes/endpoints.ts
 import { Router } from "express";
-import type { Endpoint } from "hookgres";
+import { type Endpoint, HookgresValidationError } from "hookgres";
 import { hookgres } from "../hookgres.js";
 
 export const endpoints = Router();
@@ -204,8 +209,7 @@ endpoints.post("/webhook-endpoints", async (req, res) => {
       eventTypes: eventTypes ?? null,
     });
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     res.status(400).json({ error: error.message });
     return;
   }
@@ -228,8 +232,7 @@ endpoints.patch("/webhook-endpoints/:id", async (req, res) => {
     });
     res.json(updated && view(updated));
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     res.status(400).json({ error: error.message });
   }
 });
@@ -256,7 +259,9 @@ endpoints.post("/webhook-endpoints/:id/rotate-secret", async (req, res) => {
 ```
 
 `createEndpoint()` and `updateEndpoint()` throw for an invalid or blocked URL
-and for an empty `eventTypes` array, which these routes return as `400` with the message. Database errors, which carry a `code`, are rethrown and become `500`s.
+and for an invalid `eventTypes` array with a `HookgresValidationError`, which
+these routes return as `400` with its message. Any other error, such as a
+database error, is rethrown and becomes a `500`.
 Validate the body with your usual schema library before it gets here. Only the
 fields you pass to `updateEndpoint()` change; `undefined` ones are left alone.
 After a rotation, Hookgres signs with both the old and new secret for 24 hours;

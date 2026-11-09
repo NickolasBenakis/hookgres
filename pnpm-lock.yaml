@@ -34,6 +34,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^5.1.0
         version: 5.1.0(vitest@5.1.0)
+      kysely:
+        specifier: ^0.29.8
+        version: 0.29.8
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -1544,6 +1547,10 @@ packages:
 
   jsonc-parser@3.3.1:
     resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
+
+  kysely@0.29.8:
+    resolution: {integrity: sha512-ixHU1H4R+LeC5Y0nAhYgiGRFpFRHm2DXKEmJSs/vbes9sKXyssyzxzE/NYiOJX5fY0BL28biCre3GqlCqUwyXQ==}
+    engines: {node: '>=22.0.0'}
 
   launch-editor@2.14.2:
     resolution: {integrity: sha512-NHJEb30MGBCkmZXLZwz25t37QR4aY03ZzPYUJXOJaOa92uWwExI9SBQUuIznBYc1xkD7cJNGX7oc3Nl3sq2kQQ==}
@@ -3607,6 +3614,8 @@ snapshots:
   js-tokens@10.0.0: {}
 
   jsonc-parser@3.3.1: {}
+
+  kysely@0.29.8: {}
 
   launch-editor@2.14.2:
     dependencies:

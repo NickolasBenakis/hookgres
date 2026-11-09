@@ -1,6 +1,7 @@
 /**
- * No long-running worker: call `runOnce()` from a cron job or a scheduled
- * serverless function until there is nothing left to send.
+ * No long-running worker: call `drain()` from a cron job or a scheduled
+ * serverless function. It calls `runOnce()` until there is nothing left to
+ * send or time runs out.
  *
  *   docker compose up -d postgres && pnpm build && node examples/serverless.ts
  */
@@ -29,18 +30,11 @@ for (let i = 1; i <= 25; i++) {
   });
 }
 
-/** What your cron route (for example `/api/cron/webhooks`) would run. */
-async function drainWebhooks(): Promise<number> {
-  let total = 0;
-  let processed: number;
-  do {
-    processed = await hookgres.runOnce(); // up to `concurrency` deliveries
-    total += processed;
-  } while (processed > 0);
-  return total;
-}
+// What your cron route (for example `/api/cron/webhooks`) would run, with
+// timeoutMs a few seconds under the function's time limit.
+const delivered = await hookgres.drain({ timeoutMs: 50_000 });
 
-console.log(`cron run delivered ${await drainWebhooks()} webhooks`);
+console.log(`cron run delivered ${delivered} webhooks`);
 console.log(`receiver got ${receiver.received.length}`);
 if (receiver.received.length !== 25) throw new Error("Expected 25 webhooks");
 

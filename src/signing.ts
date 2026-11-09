@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { HookgresValidationError } from "./errors.js";
 
 /**
  * Signing follows the Standard Webhooks spec (https://www.standardwebhooks.com):
@@ -37,7 +38,7 @@ export function assertSecret(secret: string): string {
       ? Buffer.from(raw, "base64").length
       : 0;
   if (bytes < 24 || bytes > 64) {
-    throw new Error(
+    throw new HookgresValidationError(
       "Invalid webhook secret: expected whsec_ followed by base64 of 24-64 bytes. Omit `secret` to have one generated, or create one with generateSecret()",
     );
   }
@@ -50,7 +51,7 @@ function secretKey(secret: string): Buffer {
     : secret;
   const key = Buffer.from(raw, "base64");
   if (key.length === 0) {
-    throw new Error(
+    throw new HookgresValidationError(
       "Invalid webhook secret: expected the endpoint's whsec_ secret, as returned by createEndpoint()",
     );
   }

@@ -11,7 +11,7 @@ npm install hookgres pg hono @hono/node-server
 
 Hookgres needs Node.js and a TCP connection to Postgres, so it doesn't run on
 Cloudflare Workers or other edge runtimes. On a serverless platform, call
-`runOnce()` from a scheduled function instead of `start()`; see
+`drain()` from a scheduled function instead of `start()`; see
 [Running workers](/guides/workers#cron-or-serverless).
 
 ## One instance
@@ -103,7 +103,10 @@ const server = serve({
 });
 hookgres.start();
 
+let shuttingDown = false;
 async function shutdown() {
+  if (shuttingDown) return; // e.g. SIGINT while a SIGTERM shutdown runs
+  shuttingDown = true;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await hookgres.stop();
   await pool.end();
@@ -166,8 +169,10 @@ invoices.post("/invoices/:id/pay", async (c) => {
 ```
 
 The `idempotencyKey` means paying the same invoice twice queues one webhook.
-If you use an ORM, pass the transaction's underlying `pg` client; see
-[Sending webhooks](/guides/sending#inside-your-transaction).
+With Kysely or Prisma, pass `fromKysely(trx)` from `hookgres/kysely` or
+`fromPrisma(tx)` from `hookgres/prisma` as `client`; with another ORM, pass
+the transaction's underlying `pg` client. See
+[Sending webhooks](/guides/sending#using-an-orm).
 
 ## Endpoint management routes
 
@@ -186,7 +191,7 @@ rotated, and never in lists.
 ```ts
 // src/routes/endpoints.ts
 import { Hono } from "hono";
-import type { Endpoint } from "hookgres";
+import { type Endpoint, HookgresValidationError } from "hookgres";
 import type { Env } from "../env.js";
 import { hookgres } from "../hookgres.js";
 
@@ -217,7 +222,9 @@ endpoints.get("/webhook-endpoints", async (c) => {
 });
 
 endpoints.post("/webhook-endpoints", async (c) => {
-  const { url, description, eventTypes } = await c.req.json();
+  const body = await c.req.json().catch(() => null);
+  if (body === null) return c.json({ error: "Body must be JSON" }, 400);
+  const { url, description, eventTypes } = body;
   let endpoint: Endpoint;
   try {
     endpoint = await hookgres.createEndpoint({
@@ -227,8 +234,7 @@ endpoints.post("/webhook-endpoints", async (c) => {
       eventTypes: eventTypes ?? null,
     });
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     return c.json({ error: error.message }, 400);
   }
   return c.json({ ...view(endpoint), secret: endpoint.secret }, 201);
@@ -237,7 +243,9 @@ endpoints.post("/webhook-endpoints", async (c) => {
 endpoints.patch("/webhook-endpoints/:id", async (c) => {
   const endpoint = await ownEndpoint(c.req.param("id"), c.get("tenantId"));
   if (!endpoint) return c.notFound();
-  const { url, description, eventTypes, disabled } = await c.req.json();
+  const body = await c.req.json().catch(() => null);
+  if (body === null) return c.json({ error: "Body must be JSON" }, 400);
+  const { url, description, eventTypes, disabled } = body;
   try {
     const updated = await hookgres.updateEndpoint(endpoint.id, {
       url,
@@ -247,8 +255,7 @@ endpoints.patch("/webhook-endpoints/:id", async (c) => {
     });
     return c.json(updated && view(updated));
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     return c.json({ error: error.message }, 400);
   }
 });
@@ -269,7 +276,10 @@ endpoints.post("/webhook-endpoints/:id/rotate-secret", async (c) => {
 ```
 
 `createEndpoint()` and `updateEndpoint()` throw for an invalid or blocked URL
-and for an empty `eventTypes` array, which these routes return as `400` with the message. Database errors, which carry a `code`, are rethrown and become `500`s.
+and for an invalid `eventTypes` array with a `HookgresValidationError`, which
+these routes return as `400` with its message. A body that isn't JSON is a
+`400` too. Any other error, such as a database error, is rethrown and becomes
+a `500`.
 Validate the body with your usual schema library, such as
 `@hono/zod-validator`, before it gets here. Only the fields you pass to
 `updateEndpoint()` change; `undefined` ones are left alone. After a rotation,

@@ -148,7 +148,7 @@ app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
 ```
 
 No long-running process? Drain the queue from a cron job with
-[`runOnce()`](https://hookgres.dev/docs/guides/workers#cron-or-serverless).
+[`drain()`](https://hookgres.dev/docs/guides/workers#cron-or-serverless).
 
 ## Features
 
