@@ -45,18 +45,33 @@ describe("migrate", () => {
     expect(rows[0].n).toBe(migrations.length);
   });
 
+  /**
+   * Names of the indexes on this schema's messages table that are on
+   * created_at alone. Reads the catalogs directly: pg_indexes calls
+   * pg_get_indexdef, which fails when other test files drop schemas at the
+   * same time.
+   */
+  async function createdAtIndexes(schema: string): Promise<string[]> {
+    const { rows } = await ctx.pool.query(
+      `SELECT c.relname
+       FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indexrelid
+       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+       WHERE i.indrelid = $1::regclass AND i.indnatts = 1
+         AND a.attname = 'created_at'
+       ORDER BY c.relname`,
+      [`"${schema}".messages`],
+    );
+    return rows.map((r) => r.relname);
+  }
+
   async function schemaState(schema: string) {
     const versions = await ctx.pool.query(
       `SELECT version FROM "${schema}".schema_migrations ORDER BY version`,
     );
-    const index = await ctx.pool.query(
-      `SELECT indexdef FROM pg_indexes
-       WHERE schemaname = $1 AND indexname = 'messages_created_idx'`,
-      [schema],
-    );
     return {
       versions: versions.rows.map((r) => r.version),
-      index: index.rows[0]?.indexdef,
+      indexes: await createdAtIndexes(schema),
     };
   }
 
@@ -64,9 +79,10 @@ describe("migrate", () => {
     const schema = `${ctx.schema}_fresh`;
     try {
       await ctx.create({ schema }).migrate();
-      const state = await schemaState(schema);
-      expect(state.versions).toEqual([1, 2]);
-      expect(state.index).toMatch(/\(created_at\)/);
+      expect(await schemaState(schema)).toEqual({
+        versions: [1, 2],
+        indexes: ["messages_created_idx"],
+      });
     } finally {
       await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     }
@@ -95,9 +111,10 @@ describe("migrate", () => {
 
       const hw = ctx.create({ schema });
       await hw.migrate();
-      const state = await schemaState(schema);
-      expect(state.versions).toEqual([1, 2]);
-      expect(state.index).toMatch(/\(created_at\)/);
+      expect(await schemaState(schema)).toEqual({
+        versions: [1, 2],
+        indexes: ["messages_created_idx"],
+      });
       // The upgraded schema works.
       await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
       await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
@@ -107,17 +124,6 @@ describe("migrate", () => {
       await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     }
   });
-
-  async function createdAtIndexes(schema: string): Promise<string[]> {
-    const { rows } = await ctx.pool.query(
-      `SELECT indexname FROM pg_indexes
-       WHERE schemaname = $1 AND tablename = 'messages'
-         AND indexdef LIKE '%(created_at)'
-       ORDER BY indexname`,
-      [schema],
-    );
-    return rows.map((r) => r.indexname);
-  }
 
   it("skips the index if one on created_at was already built by hand", async () => {
     const schema = `${ctx.schema}_byhand`;
