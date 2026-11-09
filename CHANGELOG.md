@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- [#13](https://github.com/NickolasBenakis/hookgres/pull/13) [`ef45cc9`](https://github.com/NickolasBenakis/hookgres/commit/ef45cc90ce9f81991007acad3d176355e3f275fa) Thanks [@NickolasBenakis](https://github.com/NickolasBenakis)! - Add the opt-in `blockPrivateAddresses` option, which refuses to send webhooks to private and internal addresses (checked at endpoint creation and on every delivery, after DNS), and export `isPrivateAddress`.
+
 ## 0.1.1
 
 ### Patch Changes
