@@ -374,8 +374,8 @@ button {
   }
 }
 
-/* The colour scheme follows the OS, as on the landing page (appearance
-   "force-auto" in config.ts), so there is no theme switch. */
+/* hg-theme-toggle (theme/index.ts) replaces VitePress's sliding switch in the
+   bar; the mobile menu keeps VitePress's. The "..." menu and social links go. */
 .VPNavBar .VPNavBarAppearance,
 .VPNavBar .VPNavBarExtra,
 .VPNavBar .VPNavBarSocialLinks {
@@ -539,6 +539,60 @@ button {
   content: "";
   position: absolute;
   inset: -6px -2px;
+}
+
+/* Theme switch: the landing page's .theme-toggle, showing the current theme. */
+.hg-theme-toggle {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  color: var(--hg-ink-3);
+  cursor: pointer;
+  transition:
+    color var(--hg-fast) var(--hg-ease),
+    background-color var(--hg-fast) var(--hg-ease),
+    transform var(--hg-fast) var(--hg-ease);
+}
+
+.hg-theme-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.hg-theme-toggle svg {
+  width: 17px;
+  height: 17px;
+}
+
+.hg-theme-toggle:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hg-theme-toggle:hover {
+    color: var(--hg-ink);
+    background: color-mix(in oklab, var(--hg-ink) 7%, transparent);
+  }
+}
+
+.dark .hg-theme-toggle .sun,
+html:not(.dark) .hg-theme-toggle .moon {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .hg-theme-toggle {
+    display: none;
+  }
 }
 
 /* Get started: the landing page's small primary pill. */

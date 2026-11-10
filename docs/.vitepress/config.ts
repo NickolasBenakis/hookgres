@@ -60,9 +60,9 @@ export default defineConfig({
   base: "/docs/",
   ignoreDeadLinks: "localhostLinks",
   cleanUrls: true,
-  // Follow the OS colour scheme like the landing page, ignoring any choice
-  // stored by older versions of these docs.
-  appearance: "force-auto",
+  // Follow the OS colour scheme until the reader picks one with the switch.
+  // The landing page reads and writes the same stored choice.
+  appearance: true,
   lastUpdated: true,
   sitemap: { hostname: "https://hookgres.dev/docs/" },
   head: [
@@ -84,6 +84,14 @@ export default defineConfig({
         media: "(prefers-color-scheme: dark)",
         content: "#000000",
       },
+    ],
+    // Before first paint: apply the stored theme and match the toolbar colour.
+    // VitePress's own appearance script throws when storage is blocked, so
+    // this one doesn't rely on it.
+    [
+      "script",
+      {},
+      `{let v;try{v=localStorage.getItem("vitepress-theme-appearance")}catch{}const d=v==="dark"||(v!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);for(const m of document.querySelectorAll('meta[name="theme-color"]'))m.content=d?"#000000":"#fafbfd"}`,
     ],
   ],
   // The docs home is a hub that wants the full width. Set here rather than in

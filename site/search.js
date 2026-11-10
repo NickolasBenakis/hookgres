@@ -69,24 +69,22 @@ html:has(dialog.hgs[open]) { overflow: hidden; }
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-@media (prefers-color-scheme: dark) {
-  .hgs {
-    --hgs-bg: var(--surface, #1c1c1e);
-    --hgs-ink: var(--ink, #f5f5f7);
-    --hgs-ink-2: var(--ink-2, #a1a1a6);
-    --hgs-ink-3: var(--ink-3, #98989d);
-    --hgs-line: var(--line, #38383a);
-    --hgs-accent: var(--accent, #6cb0f5);
-    --hgs-active: color-mix(in oklab, var(--hgs-accent) 16%, transparent);
-    --hgs-chip: color-mix(in oklab, var(--hgs-ink) 10%, transparent);
-    --hgs-scrim: rgb(0 0 0 / 0.45);
-    --hgs-glass: color-mix(in oklab, var(--hgs-bg) 70%, transparent);
-    --hgs-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 64px rgb(0 0 0 / 0.6);
-  }
+:root[data-theme="dark"] .hgs {
+  --hgs-bg: var(--surface, #1c1c1e);
+  --hgs-ink: var(--ink, #f5f5f7);
+  --hgs-ink-2: var(--ink-2, #a1a1a6);
+  --hgs-ink-3: var(--ink-3, #98989d);
+  --hgs-line: var(--line, #38383a);
+  --hgs-accent: var(--accent, #6cb0f5);
+  --hgs-active: color-mix(in oklab, var(--hgs-accent) 16%, transparent);
+  --hgs-chip: color-mix(in oklab, var(--hgs-ink) 10%, transparent);
+  --hgs-scrim: rgb(0 0 0 / 0.45);
+  --hgs-glass: color-mix(in oklab, var(--hgs-bg) 70%, transparent);
+  --hgs-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 64px rgb(0 0 0 / 0.6);
 }
 .hgs[open] { display: flex; flex-direction: column; align-items: center; }
 .hgs::backdrop { background: transparent; }
-@media (prefers-reduced-transparency: reduce) { .hgs { --hgs-glass: var(--hgs-bg); } }
+@media (prefers-reduced-transparency: reduce) { .hgs, :root[data-theme="dark"] .hgs { --hgs-glass: var(--hgs-bg); } }
 .hgs *, .hgs *::before, .hgs *::after { box-sizing: border-box; }
 .hgs-scrim { position: absolute; inset: 0; background: var(--hgs-scrim); }
 .hgs-panel {

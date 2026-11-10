@@ -25,8 +25,51 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script>
+  // Theme: the visitor's choice, else the OS setting. Set before first paint so
+  // there is no flash. The key is the one VitePress uses, so the landing page
+  // and the docs share the choice; "auto" means follow the OS.
+  {
+    const KEY = "vitepress-theme-appearance";
+    const root = document.documentElement;
+    const os = matchMedia("(prefers-color-scheme: dark)");
+    const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
+    const resolve = () => { const v = read(); return v === "dark" || v === "light" ? v : os.matches ? "dark" : "light"; };
+    const sync = () => {
+      const dark = root.dataset.theme === "dark";
+      for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = dark ? "#000000" : "#fafbfd";
+      for (const b of document.querySelectorAll("[data-theme-toggle]")) { b.setAttribute("aria-pressed", String(dark)); b.title = dark ? "Switch to light theme" : "Switch to dark theme"; }
+    };
+    const apply = (theme) => {
+      if (root.dataset.theme === theme) return;
+      // Switch every colour at once instead of a ragged cascade of transitions.
+      const freeze = document.createElement("style");
+      freeze.textContent = "*,*::before,*::after{transition:none!important}";
+      document.head.append(freeze);
+      root.dataset.theme = theme;
+      sync();
+      getComputedStyle(root).color;
+      requestAnimationFrame(() => freeze.remove());
+    };
+    root.dataset.theme = resolve();
+    sync();
+    document.addEventListener("DOMContentLoaded", sync);
+    os.addEventListener("change", () => apply(resolve()));
+    addEventListener("storage", (event) => { if (event.key === KEY) apply(resolve()); });
+    // A page restored by Back/Forward missed changes made on other pages.
+    addEventListener("pageshow", (event) => { if (event.persisted) apply(resolve()); });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest?.("[data-theme-toggle]")) return;
+      const next = root.dataset.theme === "dark" ? "light" : "dark";
+      // Picking what the OS already gives goes back to following the OS.
+      try { localStorage.setItem(KEY, next === (os.matches ? "dark" : "light") ? "auto" : next); } catch {}
+      apply(next);
+    });
+  }
+</script>
 <style>
   :root {
+    color-scheme: light;
     /* One brand hue: neutrals, code panels and shadows share it with the accent. */
     --h: 258;
     --bg: oklch(98.8% 0.003 var(--h));
@@ -68,36 +111,35 @@
     --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
     --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: oklch(0% 0 0);
-      --bg-alt: oklch(15.5% 0.008 var(--h));
-      --surface: oklch(19% 0.01 var(--h));
-      --ink: oklch(96.5% 0.004 var(--h));
-      --ink-2: oklch(72% 0.014 var(--h));
-      --ink-3: oklch(66% 0.012 var(--h));
-      --line: oklch(28% 0.012 var(--h));
-      --accent: oklch(72% 0.14 var(--h));
-      --accent-hover: oklch(78% 0.12 var(--h));
-      --accent-ink: oklch(17% 0.04 var(--h));
-      --ok: oklch(76% 0.15 152);
-      --warn: oklch(80% 0.14 75);
-      --bad: oklch(70% 0.17 27);
-      --code-bg: oklch(17% 0.016 var(--h));
-      --code-line: oklch(27% 0.018 var(--h));
-      --shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
-      --sheen: inset 0 1px 0 oklch(100% 0 0 / 0.07);
-      --raised: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.1);
-      --raised-hover: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.16);
-      --material: linear-gradient(oklch(21.5% 0.005 var(--h)), oklch(19% 0.005 var(--h)));
-      --glass: color-mix(in oklch, var(--bg) 66%, transparent);
-      --button-sheen: inset 0 1px 0 oklch(100% 0 0 / 0.28);
-    }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(0% 0 0);
+    --bg-alt: oklch(15.5% 0.008 var(--h));
+    --surface: oklch(19% 0.01 var(--h));
+    --ink: oklch(96.5% 0.004 var(--h));
+    --ink-2: oklch(72% 0.014 var(--h));
+    --ink-3: oklch(66% 0.012 var(--h));
+    --line: oklch(28% 0.012 var(--h));
+    --accent: oklch(72% 0.14 var(--h));
+    --accent-hover: oklch(78% 0.12 var(--h));
+    --accent-ink: oklch(17% 0.04 var(--h));
+    --ok: oklch(76% 0.15 152);
+    --warn: oklch(80% 0.14 75);
+    --bad: oklch(70% 0.17 27);
+    --code-bg: oklch(17% 0.016 var(--h));
+    --code-line: oklch(27% 0.018 var(--h));
+    --shadow: 0 0 0 1px oklch(100% 0 0 / 0.08);
+    --sheen: inset 0 1px 0 oklch(100% 0 0 / 0.07);
+    --raised: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.1);
+    --raised-hover: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.16);
+    --material: linear-gradient(oklch(21.5% 0.005 var(--h)), oklch(19% 0.005 var(--h)));
+    --glass: color-mix(in oklch, var(--bg) 66%, transparent);
+    --button-sheen: inset 0 1px 0 oklch(100% 0 0 / 0.28);
   }
 
   @media (min-resolution: 2dppx) { :root { --hair: 0.5px; } }
   /* People who turn on Reduce Transparency get solid bars. */
-  @media (prefers-reduced-transparency: reduce) { :root { --glass: var(--bg); } }
+  @media (prefers-reduced-transparency: reduce) { :root, :root[data-theme="dark"] { --glass: var(--bg); } }
 
   *, *::before, *::after { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; scroll-padding-top: 72px; }
@@ -152,6 +194,17 @@
     padding: 4px 6px; border-radius: 6px; background: var(--material); box-shadow: var(--raised);
   }
   .search-trigger:active { transform: scale(0.98); }
+  .theme-toggle {
+    position: relative; display: grid; place-items: center;
+    width: 32px; height: 32px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
+    background: transparent; color: var(--ink-3);
+    transition: color 150ms var(--ease), background-color 150ms var(--ease), transform 150ms var(--ease);
+  }
+  .theme-toggle::before { content: ""; position: absolute; inset: -6px; }
+  .theme-toggle svg { width: 17px; height: 17px; }
+  .theme-toggle:active { transform: scale(0.94); }
+  @media (hover: hover) and (pointer: fine) { .theme-toggle:hover { color: var(--ink); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
+  :root[data-theme="dark"] .theme-toggle .sun, :root:not([data-theme="dark"]) .theme-toggle .moon { display: none; }
   @media (hover: hover) and (pointer: fine) { .search-trigger:hover { color: var(--ink-2); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
   .pill {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -570,7 +623,7 @@
   footer .footer-inner a { color: var(--ink-2); }
 
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .packet.go, .packet.drop, .sim-slot .attempt, .sig-value.fresh { animation: none; }
     .packet.go { opacity: 0; }
@@ -596,6 +649,10 @@
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3.25 3.25"/></svg>
         <span class="search-label">Search docs</span>
         <kbd aria-hidden="true" data-search-kbd>⌘K</kbd>
+      </button>
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme">
+        <svg class="sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="3.5"/><path d="M10 2v1.5M10 16.5V18M2 10h1.5M16.5 10H18M4.34 4.34l1.06 1.06M14.6 14.6l1.06 1.06M4.34 15.66l1.06-1.06M14.6 5.4l1.06-1.06"/></svg>
+        <svg class="moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M16.5 12.2A6.75 6.75 0 0 1 7.8 3.5a6.75 6.75 0 1 0 8.7 8.7Z"/></svg>
       </button>
       <a class="pill small" href="/docs/getting-started">Get started</a>
     </div>
