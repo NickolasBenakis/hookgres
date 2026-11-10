@@ -613,6 +613,23 @@
   .table td.us { color: var(--ink); font-weight: 500; }
   @media (max-width: 640px) { .table { font-size: 14px; } .table th, .table td { padding-right: 12px; } }
 
+  .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; }
+  .waitlist h3 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); text-wrap: balance; }
+  .waitlist > p { margin: 10px 0 0; font-size: 16px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
+  .waitlist-form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .waitlist-form input {
+    flex: 1 1 240px; min-width: 0; height: 44px; padding: 0 16px;
+    font: inherit; font-size: 16px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    transition: border-color 150ms var(--ease);
+  }
+  .waitlist-form input::placeholder { color: var(--ink-3); }
+  .waitlist-form input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
+  .waitlist-form input[aria-invalid="true"] { border-color: var(--bad); }
+  .waitlist .waitlist-note[data-error] { color: var(--bad); }
+  @media (hover: hover) and (pointer: fine) { .waitlist-form .pill:hover { background: var(--accent-hover); } }
+  .waitlist .waitlist-note { margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
+
   /* Closing */
   .cta h2 { font-size: clamp(32px, 1rem + 2.6vw, 48px); }
   .cta .actions { margin-top: 28px; }
@@ -968,9 +985,20 @@ hookgres.start();
           <tr><th scope="row">Part of your transaction</th><td class="us">Yes</td><td>No, a separate API call</td></tr>
           <tr><th scope="row">Price</th><td class="us">Free, MIT licensed</td><td>Usually per message or tier</td></tr>
           <tr><th scope="row">Where payloads go</th><td class="us">Only to your customers</td><td>Also to the provider</td></tr>
-          <tr><th scope="row">Customer portal</th><td class="us">Build on the delivery log</td><td>Often included</td></tr>
+          <tr><th scope="row">Customer portal</th><td class="us">Build on the delivery log, or <a href="#portal">join the waitlist</a></td><td>Often included</td></tr>
         </tbody>
       </table>
+
+      <div class="waitlist" id="portal">
+        <h3>Customer portal, coming to Hookgres Pro</h3>
+        <p>Let your customers add endpoints, see every delivery and replay failures, styled to match your app. Join the waitlist for early access.</p>
+        <form class="waitlist-form" id="waitlist-form" data-form-url="https://tally.so/r/TALLY_FORM_ID" novalidate>
+          <label class="sr-only" for="waitlist-email">Email</label>
+          <input id="waitlist-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@company.com" required>
+          <button class="pill large" type="submit">Join the waitlist</button>
+        </form>
+        <p class="waitlist-note" id="waitlist-note">We'll only email you about Hookgres Pro. Unsubscribe anytime. The form is hosted by <a href="https://tally.so">Tally</a>.</p>
+      </div>
     </div>
   </section>
 
@@ -1056,6 +1084,44 @@ hookgres.start();
     } else if (video) {
       video.controls = true;
       attach();
+    }
+  }
+
+  // Portal waitlist. The site's CSP blocks third-party scripts and form
+  // posts, so the email is handed to the hosted Tally form as a URL
+  // parameter, where the visitor confirms it and can answer optional
+  // questions. Nothing is stored or sent from this page.
+  {
+    const form = document.getElementById("waitlist-form");
+    const input = document.getElementById("waitlist-email");
+    const note = document.getElementById("waitlist-note");
+    const noteText = note?.innerHTML;
+    if (form && input && note) {
+      const clearError = () => {
+        input.removeAttribute("aria-invalid");
+        input.removeAttribute("aria-describedby");
+        if (note.hasAttribute("data-error")) {
+          note.removeAttribute("data-error");
+          note.innerHTML = noteText;
+        }
+      };
+      input.addEventListener("input", clearError);
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const email = input.value.trim();
+        if (!email || !input.checkValidity()) {
+          input.setAttribute("aria-invalid", "true");
+          input.setAttribute("aria-describedby", "waitlist-note");
+          note.setAttribute("data-error", "");
+          note.textContent = "Enter a valid email address, like you@company.com.";
+          input.focus();
+          return;
+        }
+        const url = new URL(form.dataset.formUrl);
+        url.searchParams.set("email", email);
+        url.searchParams.set("source", "landing");
+        location.assign(url.href);
+      });
     }
   }
 

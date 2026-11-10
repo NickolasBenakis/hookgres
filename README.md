@@ -204,6 +204,9 @@ The schedule, timeout and disable window are all
 | Customer portal     | Build it on `listDeliveries` and `listAttempts` | Ready-made                        |
 | Regions             | Wherever your workers run                       | The vendor's regions              |
 
+A customer portal is coming to Hookgres Pro:
+[join the waitlist](https://hookgres.dev/#portal).
+
 A hosted service suits you better if you need a ready-made customer portal,
 delivery from many regions, or want webhook traffic off your database. Coming
 from Svix? [The migration guide](https://hookgres.dev/docs/guides/migrating-from-svix)
