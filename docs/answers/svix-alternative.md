@@ -7,17 +7,17 @@ uses your existing database.
 
 ## How they differ
 
-|                                   | Hookgres                     | Svix                                                       |
-| --------------------------------- | ---------------------------- | ---------------------------------------------------------- |
-| What it is                        | A TypeScript library         | A hosted API, or a self-hosted Rust server                 |
-| Where it runs                     | Your app, your Postgres      | Their cloud, or your server plus Postgres (Redis optional) |
-| Part of your database transaction | Yes                          | No, a separate API call                                    |
-| Signatures                        | Standard Webhooks            | Standard Webhooks                                          |
-| Retries                           | About 28 hours, configurable | Yes                                                        |
-| Delivery log                      | Rows in your database        | In their dashboard and API                                 |
-| Customer portal                   | Build on the delivery log    | Included                                                   |
-| Price                             | Free, MIT                    | Free tier, then per message or plan                        |
-| Languages                         | Node.js / TypeScript         | SDKs for many languages                                    |
+|                                   | Hookgres                                                                 | Svix                                                       |
+| --------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| What it is                        | A TypeScript library                                                     | A hosted API, or a self-hosted Rust server                 |
+| Where it runs                     | Your app, your Postgres                                                  | Their cloud, or your server plus Postgres (Redis optional) |
+| Part of your database transaction | Yes                                                                      | No, a separate API call                                    |
+| Signatures                        | Standard Webhooks                                                        | Standard Webhooks                                          |
+| Retries                           | About 28 hours, configurable                                             | Yes                                                        |
+| Delivery log                      | Rows in your database                                                    | In their dashboard and API                                 |
+| Customer portal                   | Build on the delivery log ([Pro waitlist](https://hookgres.dev/#portal)) | Included                                                   |
+| Price                             | Free, MIT                                                                | Free tier, then per message or plan                        |
+| Languages                         | Node.js / TypeScript                                                     | SDKs for many languages                                    |
 
 ## When Svix is the better choice
 

@@ -62,7 +62,8 @@ Hookgres is a good fit if you:
 
 A hosted service may suit you better if you need a ready-made customer-facing
 portal, delivery from many regions, or don't want webhook traffic touching
-your database.
+your database. A customer portal is coming to Hookgres Pro:
+[join the waitlist](https://hookgres.dev/#portal).
 
 ## What it doesn't do
 

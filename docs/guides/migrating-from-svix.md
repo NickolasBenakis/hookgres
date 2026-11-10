@@ -20,6 +20,9 @@ will notice is the request body format, covered below.
 | Endpoint secret (`whsec_...`)     | Endpoint secret (`whsec_...`) |
 | Channels, transformations, portal | Not built in                  |
 
+A customer portal is coming to Hookgres Pro.
+[Join the waitlist](https://hookgres.dev/#portal) for early access.
+
 ## Code
 
 ```ts
