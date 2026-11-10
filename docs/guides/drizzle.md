@@ -135,7 +135,7 @@ default), so it leaves those tables alone. Don't add `hookgres` to
 tables.
 
 Start the worker with `hookgres.start()` in a long-running process, or call
-`runOnce()` from a cron job. See [Running workers](/guides/workers). On
+`drain()` from a cron job. See [Running workers](/guides/workers). On
 shutdown, call `await hookgres.stop()` before `await pool.end()`.
 
 ## Pitfalls

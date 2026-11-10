@@ -7,7 +7,7 @@
   "rules": [
     "Pass the transaction's client to send(): hookgres.send(input, { client }) inside BEGIN/COMMIT, so the webhook is queued only if the transaction commits.",
     "Create one Hookgres instance per process from the app's pg Pool, and call await hookgres.migrate() on startup.",
-    "Long-running servers call hookgres.start() and await hookgres.stop() on SIGTERM. Serverless apps never call start(); they call await hookgres.runOnce() from a cron route.",
+    "Long-running servers call hookgres.start() and await hookgres.stop() on SIGTERM. Serverless apps never call start(); they call await hookgres.drain({ timeoutMs }) from a cron route.",
     "Pass blockPrivateAddresses: true in production so customer endpoint URLs can't reach internal addresses.",
     "Endpoint routes take tenantId from the session, never the request body, and check endpoint.tenantId after getEndpoint(id) before updating, deleting or rotating."
   ]

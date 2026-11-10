@@ -1,11 +1,13 @@
 # API
 
-Everything is exported from `hookgres`:
+Everything is exported from `hookgres`, except the
+[ORM adapters](#orm-adapters):
 
 ```ts
 import {
   Hookgres,
   DEFAULT_RETRY_SCHEDULE,
+  HookgresValidationError,
   verifyWebhook,
   sign,
   generateSecret,
@@ -16,6 +18,7 @@ import {
 ```
 
 Methods that look something up by id return `null` when it doesn't exist.
+Invalid arguments throw a [`HookgresValidationError`](#hookgresvalidationerror).
 
 ## `new Hookgres(options)`
 
@@ -137,7 +140,22 @@ Calls `stop()`, then closes the pool if Hookgres created it from
 
 Claims up to `concurrency` due deliveries, sends them, waits for all of them,
 and returns how many it claimed. Use it from cron or serverless functions
-instead of `start()`.
+instead of `start()`, usually through `drain()`.
+
+### `drain({ timeoutMs }): Promise<number>`
+
+Calls `runOnce()` until a batch finds nothing due, and returns the total it
+processed. It returns within `timeoutMs`: a batch can take up to
+`requestTimeoutMs`, so it only starts one while at least `requestTimeoutMs`
+plus 1 second is left (or the slowest batch so far, if that took longer).
+`timeoutMs` must be at least `requestTimeoutMs + 1000`. Set it a few seconds
+below your function's time limit:
+
+```ts
+const delivered = await hookgres.drain({ timeoutMs: 50_000 }); // maxDuration 60
+```
+
+See [Cron or serverless](/guides/workers#cron-or-serverless).
 
 ## Signing helpers
 
@@ -172,6 +190,49 @@ otherwise returns it.
 ### `WebhookVerificationError`
 
 The error class `verifyWebhook` throws.
+
+## Errors
+
+### `HookgresValidationError`
+
+Thrown when an argument or option you passed is invalid: an endpoint URL
+that isn't `http(s)`, or with `blockPrivateAddresses` points to a private
+address or blocked port; an empty or malformed `eventTypes`; a malformed
+secret; a `send()` event type with `*`, a missing payload, or a payload with
+`\u0000`; invalid `cleanup()` or `drain()` arguments; and invalid
+`new Hookgres()` options. It extends `Error`, and its message says how to fix
+the problem, so routes can return it as a `400`:
+
+```ts
+try {
+  await hookgres.createEndpoint({ tenantId, url, eventTypes });
+} catch (error) {
+  if (!(error instanceof HookgresValidationError)) throw error; // a 500
+  return Response.json({ error: error.message }, { status: 400 });
+}
+```
+
+Database errors are passed through unchanged (`pg` errors with a `code`).
+Through `fromPrisma()`, every database error, including the `\u0000` one,
+arrives as Prisma's own error instead.
+
+## ORM adapters
+
+`send()`'s `client` option takes anything with a node-postgres style
+`query(text, values)`. These turn an ORM's transaction into one, so the
+webhook commits or rolls back with it:
+
+```ts
+import { fromKysely } from "hookgres/kysely";
+import { fromPrisma } from "hookgres/prisma";
+
+await hookgres.send(input, { client: fromKysely(trx) }); // Kysely transaction
+await hookgres.send(input, { client: fromPrisma(tx) }); // Prisma interactive transaction
+```
+
+Install `kysely` or `@prisma/client` yourself; Hookgres doesn't depend on
+them. See the [Kysely](/guides/kysely) and [Prisma](/guides/prisma) guides.
+Drizzle needs no adapter; see [Drizzle](/guides/drizzle).
 
 ## Other helpers
 
@@ -280,4 +341,4 @@ interface WebhookEnvelope<T = unknown> {
 
 `Queryable`, the type of `send()`'s `client` option, is anything with a
 node-postgres style `query(text, values)` method: a `pg.Pool`, `pg.PoolClient`
-or `pg.Client`.
+or `pg.Client`, or what `fromKysely()` and `fromPrisma()` return.

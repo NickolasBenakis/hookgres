@@ -67,7 +67,7 @@ try {
     [
       "--input-type=commonjs",
       "-e",
-      "const h = require('hookgres'); if (typeof h.Hookgres !== 'function') process.exit(1); console.log('require() ok')",
+      "const h = require('hookgres'); const p = require('hookgres/prisma'); if (typeof h.Hookgres !== 'function' || typeof p.fromPrisma !== 'function') process.exit(1); console.log('require() ok')",
     ],
     dir,
   );

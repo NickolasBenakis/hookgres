@@ -33,7 +33,7 @@ tables it doesn't know about.
 
 See [Running workers](/guides/workers). In short: call `start()` in one or more
 long-running processes, call `await hookgres.stop()` on `SIGTERM`, or use
-`runOnce()` from a cron job on serverless platforms.
+`drain()` from a cron job on serverless platforms.
 
 ## Block internal addresses (SSRF)
 

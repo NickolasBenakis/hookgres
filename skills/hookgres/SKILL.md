@@ -37,7 +37,9 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    - Long-running server: `hookgres.start()`. On `SIGTERM`, `await hookgres.stop()`
      before `pool.end()`.
    - Serverless (Vercel, Netlify, AWS Lambda): never call `start()`. Call
-     `await hookgres.runOnce()` from a cron route, protected by a secret.
+     `await hookgres.drain({ timeoutMs: 50_000 })` from a cron route,
+     protected by a secret, with `timeoutMs` a few seconds under the
+     function's time limit.
    - Details: https://hookgres.dev/docs/guides/workers.md
 
 4. Send inside the transaction that makes the change, passing that
@@ -62,8 +64,10 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    ```
 
    `client` can be anything with a node-postgres style `query(text, values)`
-   that runs inside the transaction. For Drizzle, Prisma or Kysely, see the
-   ORM guides linked from https://hookgres.dev/docs/guides/sending.md.
+   that runs inside the transaction. For Prisma pass
+   `{ client: fromPrisma(tx) }` (from `hookgres/prisma`), for Kysely
+   `{ client: fromKysely(trx) }` (from `hookgres/kysely`). For Drizzle, see
+   the ORM guides linked from https://hookgres.dev/docs/guides/sending.md.
 
 5. Endpoint management routes, scoped to the signed-in tenant:
    `createEndpoint({ tenantId, url, eventTypes })` (show `endpoint.secret`
@@ -71,7 +75,9 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    `deleteEndpoint(id)`, `rotateEndpointSecret(id)`. Take `tenantId` from the
    session, never from the request body. Before updating, deleting or
    rotating by id, load it with `getEndpoint(id)` and check that
-   `endpoint.tenantId` matches. https://hookgres.dev/docs/guides/endpoints.md
+   `endpoint.tenantId` matches. Return a `HookgresValidationError` as `400`
+   with its message; rethrow other errors.
+   https://hookgres.dev/docs/guides/endpoints.md
 
 6. Receivers verify with `verifyWebhook({ secret, headers, body })` on the raw
    request body and deduplicate on the `webhook-id` header.

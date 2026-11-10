@@ -88,26 +88,25 @@ is plenty for most setups.
 
 ## Cron or serverless
 
-On platforms without long-running processes, call `runOnce()` from a
-scheduled function. It claims one batch, sends it, waits for every request,
-and returns how many deliveries it handled.
+On platforms without long-running processes, call `drain()` from a
+scheduled function. It calls `runOnce()`, which claims one batch, sends it
+and waits for every request, until nothing is due or time runs out, and
+returns how many deliveries it handled.
 
 ```ts
-// For example a route your platform's cron calls every minute.
+// For example a route your platform's cron calls every minute,
+// with a 60-second function time limit.
 export async function GET() {
-  const deadline = Date.now() + 45_000; // stay under the function timeout
-  let total = 0;
-  let processed: number;
-  do {
-    processed = await hookgres.runOnce();
-    total += processed;
-  } while (processed > 0 && Date.now() < deadline);
-  return Response.json({ delivered: total });
+  const delivered = await hookgres.drain({ timeoutMs: 50_000 });
+  return Response.json({ delivered });
 }
 ```
 
 Each batch can take up to `requestTimeoutMs` (15 seconds) if a receiver is
-slow, so leave that much headroom below your function's time limit.
+slow, so `drain()` only starts a batch while at least that much time, plus a
+second, is left (or as long as the slowest batch so far took, if longer). It returns within `timeoutMs`; set it a few seconds below
+your function's time limit. A `timeoutMs` shorter than `requestTimeoutMs`
+plus a second throws, since no batch could run.
 
 With a one-minute cron, webhooks go out up to a minute late, and a 5-second
 retry becomes a 1-minute retry. If that matters, also call `runOnce()` right

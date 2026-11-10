@@ -186,6 +186,22 @@ export interface CleanupOptions {
   batchSize?: number;
 }
 
+/**
+ * Options for `drain()`.
+ *
+ * @example
+ * const delivered = await hookgres.drain({ timeoutMs: 50_000 }); // 60s function limit
+ */
+export interface DrainOptions {
+  /**
+   * Time in ms `drain()` may run. It returns before this, never starting a
+   * batch it can't finish in time (see `requestTimeoutMs`). Set it a few
+   * seconds below your function's time limit. Must be at least
+   * `requestTimeoutMs + 1000`.
+   */
+  timeoutMs: number;
+}
+
 /** Filters for `listDeliveries`. All are optional and combine with AND. */
 export interface ListDeliveriesInput {
   messageId?: string;

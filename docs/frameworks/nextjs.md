@@ -101,7 +101,7 @@ points to. The role needs `CREATE`; see
 
 Don't call `start()` in Next.js: on serverless platforms the loop stops when
 the function is frozen. Instead, a cron job calls a route handler that sends
-due deliveries with `runOnce()` until there are none left or time runs out.
+due deliveries with `drain()` until there are none left or time runs out.
 
 ```ts
 // app/api/cron/webhooks/route.ts
@@ -114,15 +114,9 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
-  // A batch can take up to requestTimeoutMs (15s), so stop starting new
-  // batches well before maxDuration.
-  const deadline = Date.now() + 40_000;
-  let delivered = 0;
-  let processed: number;
-  do {
-    processed = await hookgres.runOnce();
-    delivered += processed;
-  } while (processed > 0 && Date.now() < deadline);
+  // Returns within 50s: it only starts a batch (up to requestTimeoutMs,
+  // 15s) that can finish in time.
+  const delivered = await hookgres.drain({ timeoutMs: 50_000 });
   return Response.json({ delivered });
 }
 ```
@@ -200,8 +194,10 @@ export async function POST(
 `getTenantId()` stands for your auth: it returns the signed-in user's tenant
 from the session, such as their organisation id, or `null`. The
 `idempotencyKey` means paying the same invoice twice queues one webhook. If
-you use an ORM, pass the transaction's underlying `pg` client; see
-[Sending webhooks](/guides/sending#inside-your-transaction). The same code
+you use Kysely or Prisma, pass `fromKysely(trx)` from `hookgres/kysely` or
+`fromPrisma(tx)` from `hookgres/prisma` as `client`; with another ORM, pass
+the transaction's underlying `pg` client. See
+[Sending webhooks](/guides/sending#using-an-orm). The same code
 works in a server action.
 
 ## Endpoint management routes
@@ -245,7 +241,7 @@ export async function ownEndpoint(id: string, tenantId: string) {
 
 ```ts
 // app/api/webhook-endpoints/route.ts
-import type { Endpoint } from "hookgres";
+import { type Endpoint, HookgresValidationError } from "hookgres";
 import { getTenantId } from "@/lib/auth";
 import { view } from "@/lib/endpoints";
 import { hookgres } from "@/lib/hookgres";
@@ -260,7 +256,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const tenantId = await getTenantId();
   if (!tenantId) return new Response("Unauthorized", { status: 401 });
-  const { url, description, eventTypes } = await request.json();
+  const body = await request.json().catch(() => null);
+  if (body === null) {
+    return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+  const { url, description, eventTypes } = body;
   let endpoint: Endpoint;
   try {
     endpoint = await hookgres.createEndpoint({
@@ -270,8 +270,7 @@ export async function POST(request: Request) {
       eventTypes: eventTypes ?? null,
     });
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     return Response.json({ error: error.message }, { status: 400 });
   }
   return Response.json(
@@ -283,6 +282,7 @@ export async function POST(request: Request) {
 
 ```ts
 // app/api/webhook-endpoints/[id]/route.ts
+import { HookgresValidationError } from "hookgres";
 import { getTenantId } from "@/lib/auth";
 import { ownEndpoint, view } from "@/lib/endpoints";
 import { hookgres } from "@/lib/hookgres";
@@ -294,7 +294,11 @@ export async function PATCH(request: Request, { params }: Context) {
   if (!tenantId) return new Response("Unauthorized", { status: 401 });
   const endpoint = await ownEndpoint((await params).id, tenantId);
   if (!endpoint) return new Response("Not found", { status: 404 });
-  const { url, description, eventTypes, disabled } = await request.json();
+  const body = await request.json().catch(() => null);
+  if (body === null) {
+    return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+  const { url, description, eventTypes, disabled } = body;
   try {
     const updated = await hookgres.updateEndpoint(endpoint.id, {
       url,
@@ -304,8 +308,7 @@ export async function PATCH(request: Request, { params }: Context) {
     });
     return Response.json(updated && view(updated));
   } catch (error) {
-    // Validation errors are plain Errors; database errors carry a `code`.
-    if (!(error instanceof Error) || "code" in error) throw error;
+    if (!(error instanceof HookgresValidationError)) throw error;
     return Response.json({ error: error.message }, { status: 400 });
   }
 }
@@ -340,7 +343,10 @@ export async function POST(
 ```
 
 `createEndpoint()` and `updateEndpoint()` throw for an invalid or blocked URL
-and for an empty `eventTypes` array, which these routes return as `400` with the message. Database errors, which carry a `code`, are rethrown and become `500`s.
+and for an invalid `eventTypes` array with a `HookgresValidationError`, which
+these routes return as `400` with its message. A body that isn't JSON is a
+`400` too. Any other error, such as a database error, is rethrown and becomes
+a `500`.
 Validate the body with your usual schema library, such as zod, before it gets
 here. Only the fields you pass to `updateEndpoint()` change; `undefined` ones
 are left alone. After a rotation, Hookgres signs with both the old and new

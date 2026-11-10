@@ -1,4 +1,5 @@
 import pg, { type QueryResult, type QueryResultRow } from "pg";
+import { HookgresValidationError } from "./errors.js";
 import { newId } from "./ids.js";
 import { migrations } from "./migrations.js";
 import { assertSecret, generateSecret, sign } from "./signing.js";
@@ -16,6 +17,7 @@ import type {
   CreateEndpointInput,
   Delivery,
   DeliveryStatus,
+  DrainOptions,
   Endpoint,
   EndpointDisabledEvent,
   ListDeliveriesInput,
@@ -54,6 +56,9 @@ export const DEFAULT_RETRY_SCHEDULE = [
 ];
 
 const RESPONSE_BODY_LIMIT = 4096;
+
+/** Time `drain()` allows on top of `requestTimeoutMs` for a batch's queries. */
+const DRAIN_MARGIN_MS = SECOND;
 
 /** Base URL for the docs links in error messages. */
 const DOCS = "https://hookgres.dev/docs";
@@ -242,8 +247,8 @@ export class Hookgres {
    * query runs until you call a method. Create one instance per process and
    * share it.
    *
-   * Throws if neither `pool` nor `connectionString` is given, or an option is
-   * out of range.
+   * Throws a `HookgresValidationError` if neither `pool` nor
+   * `connectionString` is given, or an option is out of range.
    *
    * @example
    * const hookgres = new Hookgres({ pool }); // your app's pg.Pool
@@ -259,14 +264,14 @@ export class Hookgres {
       this.pool = new pg.Pool({ connectionString: options.connectionString });
       this.ownsPool = true;
     } else {
-      throw new Error(
+      throw new HookgresValidationError(
         `new Hookgres() needs either \`pool\` (your app's pg.Pool) or \`connectionString\`, e.g. new Hookgres({ pool }). See ${DOCS}/reference/configuration`,
       );
     }
 
     const schema = options.schema ?? "hookgres";
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) {
-      throw new Error(
+      throw new HookgresValidationError(
         `Invalid schema name "${schema}": use lowercase letters, digits and underscores (at most 63), or omit \`schema\` to use "hookgres". See ${DOCS}/reference/configuration`,
       );
     }
@@ -281,7 +286,7 @@ export class Hookgres {
 
     this.retrySchedule = options.retrySchedule ?? DEFAULT_RETRY_SCHEDULE;
     if (this.retrySchedule.some((ms) => !Number.isFinite(ms) || ms < 0)) {
-      throw new Error(
+      throw new HookgresValidationError(
         `retrySchedule must contain non-negative numbers (delays in ms), e.g. [5000, 300000, 1800000]. See ${DOCS}/guides/retries`,
       );
     }
@@ -291,7 +296,7 @@ export class Hookgres {
       this.retryJitter < 0 ||
       this.retryJitter > 1
     ) {
-      throw new Error(
+      throw new HookgresValidationError(
         `retryJitter must be a number between 0 and 1, e.g. 0.1 for +/-10% (0 disables jitter). See ${DOCS}/guides/retries`,
       );
     }
@@ -305,7 +310,7 @@ export class Hookgres {
     this.lockTimeoutMs =
       options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND;
     if (this.lockTimeoutMs <= this.requestTimeoutMs) {
-      throw new Error(
+      throw new HookgresValidationError(
         `lockTimeoutMs (${this.lockTimeoutMs}) must be greater than requestTimeoutMs (${this.requestTimeoutMs}): raise lockTimeoutMs, or omit it to use requestTimeoutMs + 30s. See ${DOCS}/reference/configuration`,
       );
     }
@@ -340,7 +345,7 @@ export class Hookgres {
     // The listener holds a pool connection while the worker runs; with only
     // one, claims and sends would wait for it forever.
     if (options.notify && (this.pool.options?.max ?? 10) < 2) {
-      throw new Error(
+      throw new HookgresValidationError(
         `notify needs a pool with max of at least 2, because the worker holds one connection for LISTEN: raise the pool's \`max\` or turn \`notify\` off. See ${DOCS}/guides/workers#instant-wake-up-with-listen-notify`,
       );
     }
@@ -404,8 +409,9 @@ export class Hookgres {
    * secret unless `input.secret` is given; show it to the tenant once.
    *
    * Take `tenantId` from the signed-in session, never from the request body.
-   * Throws for a non-http(s) URL, an invalid event type pattern or secret,
-   * and, with `blockPrivateAddresses`, a private or `localhost` URL.
+   * Throws a `HookgresValidationError` for a non-http(s) URL, an invalid
+   * event type pattern or secret, and, with `blockPrivateAddresses`, a
+   * private or `localhost` URL: return it to the caller as a 400.
    *
    * @example
    * const endpoint = await hookgres.createEndpoint({
@@ -596,7 +602,10 @@ export class Hookgres {
    * A tenant with no matching endpoints is not an error: the message is
    * stored and `deliveryCount` is 0. Sending again with the same
    * `idempotencyKey` returns the original message with `deduplicated: true`.
-   * Delivery happens later, in a worker (`start()` or `runOnce()`).
+   * Delivery happens later, in a worker (`start()`, `runOnce()` or
+   * `drain()`). Throws a `HookgresValidationError` for an event type with
+   * `*`, a missing payload, or a payload containing `\u0000` (through
+   * `fromPrisma`, that last one arrives as Prisma's own error).
    *
    * @example
    * const client = await pool.connect();
@@ -620,12 +629,12 @@ export class Hookgres {
   async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
     const db: Queryable = options.client ?? this.pool;
     if (input.eventType.includes("*")) {
-      throw new Error(
+      throw new HookgresValidationError(
         `Invalid event type "${input.eventType}": "*" is only allowed in an endpoint's eventTypes. Send one concrete event type like "invoice.paid"; endpoints subscribe to groups with "invoice.*". See ${DOCS}/guides/sending`,
       );
     }
     if (input.payload === undefined) {
-      throw new Error(
+      throw new HookgresValidationError(
         `send() requires a JSON-serialisable payload: pass the event data as \`payload\` (use null or {} for none). See ${DOCS}/guides/sending`,
       );
     }
@@ -745,14 +754,14 @@ export class Hookgres {
     const { olderThan } = options;
     const batchSize = options.batchSize ?? 1000;
     if (!Number.isInteger(batchSize) || batchSize < 1) {
-      throw new Error(
+      throw new HookgresValidationError(
         `cleanup batchSize must be a positive integer, e.g. 1000 (the default). See ${DOCS}/guides/production#clean-up-old-rows`,
       );
     }
     let cutoff: Date;
     if (olderThan instanceof Date) {
       if (Number.isNaN(olderThan.getTime())) {
-        throw new Error(
+        throw new HookgresValidationError(
           `cleanup olderThan is an invalid Date: pass a valid Date, or an age in ms like 30 * 24 * 60 * 60 * 1000. See ${DOCS}/guides/production#clean-up-old-rows`,
         );
       }
@@ -765,7 +774,7 @@ export class Hookgres {
       );
       cutoff = (rows[0] as { cutoff: Date }).cutoff;
     } else {
-      throw new Error(
+      throw new HookgresValidationError(
         `cleanup olderThan must be a Date or a non-negative number of ms, e.g. { olderThan: 30 * 24 * 60 * 60 * 1000 } for 30 days. See ${DOCS}/guides/production#clean-up-old-rows`,
       );
     }
@@ -902,7 +911,7 @@ export class Hookgres {
    * after `stop()` starts a new loop.
    *
    * Only use it in a long-running process (server or worker). On serverless
-   * platforms the loop is frozen between requests: call `runOnce()` from a
+   * platforms the loop is frozen between requests: call `drain()` from a
    * cron route instead. Errors in the loop go to `onError` and never stop it.
    *
    * @example
@@ -968,21 +977,13 @@ export class Hookgres {
   /**
    * Claims and sends one batch (up to `concurrency`) of due deliveries,
    * then returns how many it processed. Use it from a cron or serverless
-   * function instead of `start()`. Always waits for every claimed delivery to
-   * finish. Safe to run from several processes at once.
+   * function instead of `start()`, usually through `drain()`, which calls it
+   * until the queue is empty or time runs out. Always waits for every claimed
+   * delivery to finish. Safe to run from several processes at once.
    *
    * @example
-   * // A route your platform's cron calls every minute.
-   * export async function GET() {
-   *   const deadline = Date.now() + 45_000; // stay under the function timeout
-   *   let total = 0;
-   *   let processed: number;
-   *   do {
-   *     processed = await hookgres.runOnce();
-   *     total += processed;
-   *   } while (processed > 0 && Date.now() < deadline);
-   *   return Response.json({ delivered: total });
-   * }
+   * // Deliver right after the response, without waiting for the cron
+   * after(() => hookgres.runOnce());
    *
    * @see https://hookgres.dev/docs/guides/workers
    */
@@ -997,6 +998,55 @@ export class Hookgres {
     const failure = results.find((r) => r.status === "rejected");
     if (failure) throw (failure as PromiseRejectedResult).reason;
     return claimed.length;
+  }
+
+  /**
+   * Calls `runOnce()` until a batch finds nothing due, or until another batch
+   * might not finish within `timeoutMs`, and returns how many deliveries it
+   * processed in total. Use it from a cron route or scheduled function on
+   * serverless platforms, with `timeoutMs` a few seconds below the
+   * function's time limit.
+   *
+   * A batch can take up to `requestTimeoutMs` (15s by default) when a
+   * receiver is slow, so `drain()` only starts a batch while at least that
+   * much time is left, plus a margin for the database queries (1s, or the
+   * slowest batch so far if that took longer). Throws a
+   * `HookgresValidationError` if `timeoutMs` is shorter than that, since no
+   * batch could run. If `runOnce()` throws (only when a custom `onError`
+   * rethrows), `drain()` rethrows it.
+   *
+   * @example
+   * // app/api/cron/webhooks/route.ts, called by a cron every minute
+   * export const maxDuration = 60;
+   *
+   * export async function GET() {
+   *   const delivered = await hookgres.drain({ timeoutMs: 50_000 });
+   *   return Response.json({ delivered });
+   * }
+   *
+   * @see https://hookgres.dev/docs/guides/workers#cron-or-serverless
+   */
+  async drain(options: DrainOptions): Promise<number> {
+    const { timeoutMs } = options;
+    const minimum = this.requestTimeoutMs + DRAIN_MARGIN_MS;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < minimum) {
+      throw new HookgresValidationError(
+        `drain() timeoutMs must be at least requestTimeoutMs + 1s (${minimum}ms), because one batch can take up to requestTimeoutMs: raise timeoutMs, or lower requestTimeoutMs. See ${DOCS}/guides/workers#cron-or-serverless`,
+      );
+    }
+    const deadline = performance.now() + timeoutMs;
+    let batchBudget = minimum;
+    let total = 0;
+    // The first batch always fits: timeoutMs >= minimum.
+    for (;;) {
+      const batchStarted = performance.now();
+      const processed = await this.runOnce();
+      total += processed;
+      if (processed === 0) return total;
+      const finished = performance.now();
+      batchBudget = Math.max(batchBudget, finished - batchStarted);
+      if (finished + batchBudget > deadline) return total;
+    }
   }
 
   private async loop(active: () => boolean): Promise<void> {
@@ -1413,7 +1463,7 @@ async function withNulHint<T>(query: Promise<T>): Promise<T> {
   } catch (error) {
     // 22P05 untranslatable_character: jsonb cannot store \u0000.
     if ((error as { code?: string }).code === "22P05") {
-      throw new Error(
+      throw new HookgresValidationError(
         `Payload contains a NUL character (\\u0000), which Postgres cannot store: remove it from the payload's strings before calling send(). See ${DOCS}/guides/sending`,
         { cause: error },
       );
@@ -1441,12 +1491,12 @@ function assertUrl(url: string, guard: AddressGuard | null): void {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(
+    throw new HookgresValidationError(
       `Invalid endpoint URL: ${url}. Pass an absolute URL like https://example.com/webhooks. See ${DOCS}/guides/endpoints`,
     );
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(
+    throw new HookgresValidationError(
       `Endpoint URL must use http or https: ${url}. See ${DOCS}/guides/endpoints`,
     );
   }
@@ -1458,18 +1508,18 @@ function normaliseEventTypes(
 ): string[] | null {
   if (eventTypes == null) return null;
   if (eventTypes.length === 0) {
-    throw new Error(
+    throw new HookgresValidationError(
       `eventTypes must not be empty; pass null to receive every event type. See ${DOCS}/guides/endpoints`,
     );
   }
   for (const type of eventTypes) {
     if (type === "*") {
-      throw new Error(
+      throw new HookgresValidationError(
         `eventTypes must not contain "*"; pass null to receive every event type. See ${DOCS}/guides/endpoints`,
       );
     }
     if (type.includes("*") && !/^[^*]+\.\*$/.test(type)) {
-      throw new Error(
+      throw new HookgresValidationError(
         `Invalid event type pattern "${type}": "*" is only allowed as the last segment, as in "invoice.*". See ${DOCS}/guides/endpoints`,
       );
     }

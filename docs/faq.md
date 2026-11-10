@@ -20,7 +20,9 @@ Pooler setups aren't part of CI yet.
 Hookgres needs a `pg.Pool` for itself. Your ORM can keep its own connection.
 For [transactional sends](/guides/sending#inside-your-transaction), pass
 `send()` a client with a node-postgres style `query(text, values)` method
-that runs inside your transaction. If your ORM can't give you one, call
+that runs inside your transaction. For Kysely and Prisma, `hookgres/kysely`
+and `hookgres/prisma` export adapters that turn their transaction into one;
+for Drizzle, pass its underlying `pg` client. If your ORM can't give you one, call
 `send()` right after the commit instead. You lose the outbox guarantee, but
 everything else works.
 
