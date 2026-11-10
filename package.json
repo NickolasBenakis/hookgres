@@ -62,6 +62,7 @@
     "coverage": "vitest run --coverage",
     "smoke": "node scripts/smoke.mjs",
     "bench": "pnpm build && node scripts/load-test.ts",
+    "db-cost": "pnpm build && node scripts/db-cost.ts",
     "examples": "pnpm build && node scripts/check-examples.mjs",
     "playground": "pnpm build && node examples/playground/server.ts",
     "docs:dev": "vitepress dev docs",
