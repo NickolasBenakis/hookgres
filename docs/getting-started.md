@@ -9,6 +9,32 @@ This page takes you from install to a verified webhook in about five minutes.
 - The [`pg`](https://node-postgres.com) driver, which Hookgres uses for
   connections.
 
+## Using a coding agent
+
+Claude Code, Codex, Cursor, Gemini CLI and other coding agents can set Hookgres
+up for you. Give your agent this line:
+
+```text
+Add Hookgres webhooks to this app: hookgres.dev/llms.txt
+```
+
+For more control, give it the full prompt instead:
+
+```text
+Add Hookgres (https://hookgres.dev) to this project so we can send signed webhooks to our customers. First read https://hookgres.dev/llms.txt. Then install hookgres and pg, run migrate() on startup, start the delivery worker with a graceful shutdown, add API routes for customers to manage their webhook endpoints scoped to their tenant, and call send() inside our existing database transactions where events happen. Pass blockPrivateAddresses: true so customer URLs can't reach private or internal addresses.
+```
+
+In Claude Code, you can install the Hookgres skill instead:
+
+```text
+/plugin marketplace add NickolasBenakis/hookgres
+/plugin install hookgres@hookgres
+```
+
+Once installed, the package also ships `AGENTS.md` and `llms.txt` in
+`node_modules/hookgres/`, so agents can read the integration steps offline.
+Review what the agent writes against the steps below.
+
 ## Install
 
 ::: code-group
