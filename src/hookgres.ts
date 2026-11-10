@@ -661,6 +661,23 @@ export class Hookgres {
    * @see https://hookgres.dev/docs/guides/sending
    */
   async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
+    if (this.redactPayloads && !options.client) {
+      // The insert and the redaction of a message with no deliveries must
+      // commit together, or a failed redaction would leave the payload stored.
+      const client = await this.pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await this.send(input, { client });
+        await client.query("COMMIT");
+        if (!result.deduplicated) this.wake();
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     const db: Queryable = options.client ?? this.pool;
     if (input.eventType.includes("*")) {
       throw new HookgresValidationError(
@@ -877,12 +894,31 @@ export class Hookgres {
         `deleteMessages needs at least one filter: tenantId, messageIds or payloadContains, e.g. { tenantId: "acme", payloadContains: { userId: "usr_123" } }. See ${DOCS}/guides/privacy`,
       );
     }
+    if (tenantId !== undefined && typeof tenantId !== "string") {
+      throw new HookgresValidationError(
+        `deleteMessages tenantId must be a string. See ${DOCS}/guides/privacy`,
+      );
+    }
     if (
-      payloadContains !== undefined &&
-      (payloadContains === null || typeof payloadContains !== "object")
+      messageIds !== undefined &&
+      (!Array.isArray(messageIds) ||
+        messageIds.some((id) => typeof id !== "string"))
     ) {
       throw new HookgresValidationError(
-        `deleteMessages payloadContains must be a JSON object or array, e.g. { userId: "usr_123" }. See ${DOCS}/guides/privacy`,
+        `deleteMessages messageIds must be an array of message id strings. See ${DOCS}/guides/privacy`,
+      );
+    }
+    // `payload @> '{}'` matches every payload, and an undefined value (say
+    // `{ userId: user.id }` with no user) would vanish in JSON.stringify and
+    // widen the filter the same way.
+    if (
+      payloadContains !== undefined &&
+      (payloadContains === null ||
+        typeof payloadContains !== "object" ||
+        isEmptyOrHasUndefined(payloadContains))
+    ) {
+      throw new HookgresValidationError(
+        `deleteMessages payloadContains must be a non-empty JSON object or array with no undefined values, e.g. { userId: "usr_123" }. See ${DOCS}/guides/privacy`,
       );
     }
     if (messageIds?.length === 0) return 0;
@@ -900,21 +936,28 @@ export class Hookgres {
     }
     values.push(batchSize);
 
+    const filterSql = where.join(" AND ");
     let deleted = 0;
-    // Until a batch finds nothing: stopping at a short batch could leave rows
-    // behind when something else deleted part of it concurrently.
     for (;;) {
       const { rowCount } = await this.query(
         `DELETE FROM ${this.t.messages}
          WHERE id IN (
            SELECT id FROM ${this.t.messages}
-           WHERE ${where.join(" AND ")}
+           WHERE ${filterSql}
            LIMIT $${values.length}
          )`,
         values,
       );
-      if (!rowCount) return deleted;
-      deleted += rowCount;
+      deleted += rowCount ?? 0;
+      if (rowCount) continue;
+      // An empty batch can also mean another transaction (cleanup(), or a
+      // second deleteMessages) deleted the rows this batch picked; only stop
+      // once nothing matches.
+      const { rows } = await this.query<{ left: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM ${this.t.messages} WHERE ${filterSql}) AS left`,
+        values.slice(0, -1),
+      );
+      if (!rows[0]?.left) return deleted;
     }
   }
 
@@ -1637,16 +1680,35 @@ async function withNulHint<T>(query: Promise<T>): Promise<T> {
   }
 }
 
+/** True for `{}`, `[]`, or a value with `undefined` anywhere inside. */
+function isEmptyOrHasUndefined(value: object): boolean {
+  const children = Object.values(value);
+  if (children.length === 0) return true;
+  return children.some(
+    (child) =>
+      child === undefined ||
+      (child !== null &&
+        typeof child === "object" &&
+        isEmptyOrHasUndefined(child as object)),
+  );
+}
+
 /**
  * Adds a hint to Postgres's `relation "hookgres.endpoints" does not exist`
- * (42P01). The error object is kept, so its class and `code` don't change.
+ * (42P01), or `column ... does not exist` (42703) after an upgrade that
+ * hasn't run `migrate()`. The error object is kept, so its class and `code`
+ * don't change.
  */
 function explainMissingTables(error: unknown, schema: string): unknown {
   if (!(error instanceof Error)) return error;
-  if ((error as { code?: string }).code !== "42P01") return error;
+  const code = (error as { code?: string }).code;
+  if (code !== "42P01" && code !== "42703") return error;
   if (error.message.includes("migrate()")) return error;
   const original = error.message;
-  error.message = `${original}. Hookgres's tables are missing from schema ${schema}: call \`await hookgres.migrate()\` once before using Hookgres (on startup, or in a deploy step). See ${DOCS}/getting-started`;
+  error.message =
+    code === "42P01"
+      ? `${original}. Hookgres's tables are missing from schema ${schema}: call \`await hookgres.migrate()\` once before using Hookgres (on startup, or in a deploy step). See ${DOCS}/getting-started`
+      : `${original}. Hookgres's tables in schema ${schema} may be from an older version: call \`await hookgres.migrate()\` after upgrading, before the new code serves traffic. See ${DOCS}/getting-started`;
   if (error.stack) error.stack = error.stack.replace(original, error.message);
   return error;
 }

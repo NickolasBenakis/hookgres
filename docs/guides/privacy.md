@@ -50,18 +50,26 @@ If payloads must carry personal data, turn on `redactPayloads`:
 const hookgres = new Hookgres({ pool, redactPayloads: true });
 ```
 
-Once every delivery of a message has succeeded, Hookgres sets its payload to
-`null` and `redactedAt` to the time. Messages that matched no endpoint are
-redacted right away. The delivery log stays: status codes, errors and
-timings are still there for support.
+When a delivery succeeds and it was the last of its message's deliveries
+still to succeed, Hookgres sets the message's payload to `null` and
+`redactedAt` to the time. Messages that matched no endpoint are redacted
+when they're sent. The delivery log stays: status codes, errors and timings
+are still there for support.
 
 - Payloads of failed deliveries are kept, so you can fix the endpoint and
   [replay](/guides/retries) them. `cleanup()` removes them at the end of your
   retention period.
 - A redacted delivery can't be replayed: `replayDelivery` throws a
-  `HookgresValidationError`. Send the event again instead.
-- Redaction runs right after the last success. If a worker crashes in
-  between, the payload stays until `cleanup()` deletes the message.
+  `HookgresValidationError`. Send the event again instead. In the rare case
+  that a replay and the redaction run at the same moment, the replay is
+  accepted, then marked `failed` with "Payload was redacted" instead of being
+  sent.
+- Redaction only happens after a success, so `cleanup()` is the backstop
+  for the payloads it misses: messages delivered before you turned the
+  option on, a message whose failing delivery went away with a deleted
+  endpoint, and a worker crash between the success and the redaction.
+- Turn it on only once every instance runs a version with this option, and
+  after `migrate()` has run. An older worker doesn't know about redaction.
 
 ## Limit stored response bodies
 
@@ -106,7 +114,13 @@ for (const endpoint of await hookgres.listEndpoints("acme")) {
 
 - Filters are `tenantId`, `messageIds` and `payloadContains`, combined with
   AND. At least one is required, so a call can't delete everything by
-  accident.
+  accident. `payloadContains` can't be empty or contain `undefined`, which
+  would match every payload.
+- `payloadContains` can't find redacted messages, because their payload is
+  gone. With `redactPayloads` on, a delivered message no longer holds the
+  person's data, but its attempts may still hold receiver responses: keep
+  `responseBodyLimit` low, or erase by `tenantId` or `messageIds` (store the
+  message ids you sent about a person if you need that).
 - `payloadContains` uses Postgres's `@>`: `{ userId: "usr_123" }` matches
   payloads with that key and value at the top level. Nest the filter to
   match deeper, as in `{ user: { id: "usr_123" } }`. Without `tenantId` it

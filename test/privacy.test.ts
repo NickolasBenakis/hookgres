@@ -201,6 +201,24 @@ describe("redactPayloads", () => {
   });
 });
 
+describe("upgrading without migrate()", () => {
+  it("says to run migrate() when a column is missing", async () => {
+    const schema = `${ctx.schema}_stale`;
+    try {
+      const hw = ctx.create({ schema });
+      await hw.migrate();
+      await ctx.pool.query(
+        `ALTER TABLE "${schema}".messages DROP COLUMN redacted_at`,
+      );
+      await expect(hw.runOnce()).rejects.toThrow(
+        /redacted_at.*migrate\(\)` after upgrading/,
+      );
+    } finally {
+      await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+});
+
 describe("responseBodyLimit", () => {
   it("stores no response bodies at 0", async () => {
     const hw = ctx.create({ responseBodyLimit: 0 });
@@ -313,6 +331,29 @@ describe("deleteMessages", () => {
     expect(await remaining()).toHaveLength(3);
   });
 
+  it("keeps going when another transaction deletes the rows a batch picked", async () => {
+    const { hw, ids } = await seed();
+    const other = await ctx.pool.connect();
+    try {
+      await other.query("BEGIN");
+      // Locks anna1, the row the first one-row batch would pick.
+      await other.query(`DELETE FROM "${ctx.schema}".messages WHERE id = $1`, [
+        ids.anna1,
+      ]);
+      const deleting = hw.deleteMessages({
+        tenantId: "acme",
+        payloadContains: { userId: "usr_anna" },
+        batchSize: 1,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await other.query("COMMIT");
+      expect(await deleting).toBe(1);
+    } finally {
+      other.release();
+    }
+    expect(await remaining()).toEqual([ids.bob, ids.globexAnna].sort());
+  });
+
   it("frees the idempotency key", async () => {
     const hw = ctx.create();
     const input = { tenantId: "acme", eventType: "e", payload: {} };
@@ -339,6 +380,24 @@ describe("deleteMessages", () => {
         payloadContains: null as unknown as Record<string, unknown>,
       }),
     ).rejects.toThrow(/payloadContains/);
+    // Filters that would match every payload.
+    for (const payloadContains of [
+      {},
+      [],
+      { userId: undefined },
+      { user: { id: undefined } },
+      { user: {} },
+    ]) {
+      await expect(hw.deleteMessages({ payloadContains })).rejects.toThrow(
+        /non-empty/,
+      );
+    }
+    await expect(
+      hw.deleteMessages({ tenantId: 1 as unknown as string }),
+    ).rejects.toThrow(/tenantId/);
+    await expect(
+      hw.deleteMessages({ messageIds: [1] as unknown as string[] }),
+    ).rejects.toThrow(/messageIds/);
     expect(await remaining()).toHaveLength(1);
   });
 });
