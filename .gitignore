@@ -8,9 +8,8 @@ coverage
 /llms.txt
 docs/.vitepress/dist
 docs/.vitepress/cache
-DECISIONS.md
 .vercel
 .env*
-# Private notes; a separate private repository lives here.
+# Local notes, not part of the repository
 private/
 evals/agent-pick/results-*.jsonl
