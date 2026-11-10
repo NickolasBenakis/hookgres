@@ -7,4 +7,3 @@ docs/.vitepress/cache
 .env*
 .vercel
 private
-DECISIONS.md
