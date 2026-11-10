@@ -243,6 +243,9 @@ kept until they finish. It deletes in batches, one short transaction each,
 until nothing is left, and returns how many messages it deleted. Running it
 from several processes at once is safe.
 
+To delete specific messages instead, such as one person's data or a
+departing tenant's, use [`deleteMessages()`](/guides/privacy#erase-on-request).
+
 Deleting a message frees its idempotency key. Each batch finds old messages
 with the `messages (created_at)` index, which `migrate()` creates as of 0.3.
 

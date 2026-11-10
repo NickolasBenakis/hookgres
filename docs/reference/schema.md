@@ -30,9 +30,10 @@ hold.
 | `id`              | `text`        | `msg_` followed by a time-sortable id. Sent as `webhook-id`. |
 | `tenant_id`       | `text`        |                                                              |
 | `event_type`      | `text`        |                                                              |
-| `payload`         | `jsonb`       |                                                              |
+| `payload`         | `jsonb`       | `NULL` once redacted.                                        |
 | `idempotency_key` | `text`        | Unique per tenant when set.                                  |
 | `created_at`      | `timestamptz` | Sent as the envelope's `timestamp`.                          |
+| `redacted_at`     | `timestamptz` | When `redactPayloads` cleared the payload, or `NULL`.        |
 
 ## `deliveries`
 
@@ -61,7 +62,7 @@ One row per HTTP request.
 | `delivery_id`    | `text`        | References `deliveries`, deleted with it.            |
 | `attempt_number` | `integer`     | Starts again at 1 after a replay.                    |
 | `status_code`    | `integer`     | `NULL` for timeouts and network errors.              |
-| `response_body`  | `text`        | First 4,096 characters.                              |
+| `response_body`  | `text`        | First `responseBodyLimit` characters (4,096).        |
 | `error`          | `text`        | For example `HTTP 500` or `Timed out after 15000ms`. |
 | `duration_ms`    | `integer`     |                                                      |
 | `created_at`     | `timestamptz` |                                                      |

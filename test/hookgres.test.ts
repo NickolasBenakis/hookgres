@@ -80,7 +80,7 @@ describe("migrate", () => {
     try {
       await ctx.create({ schema }).migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2],
+        versions: [1, 2, 3],
         indexes: ["messages_created_idx"],
       });
     } finally {
@@ -110,16 +110,33 @@ describe("migrate", () => {
       );
 
       const hw = ctx.create({ schema });
+      // A message sent before the upgrade.
+      await ctx.pool.query(
+        `INSERT INTO "${schema}".messages (id, tenant_id, event_type, payload)
+         VALUES ('msg_old', 'acme', 'e', '{"a":1}')`,
+      );
       await hw.migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2],
+        versions: [1, 2, 3],
         indexes: ["messages_created_idx"],
       });
-      // The upgraded schema works.
-      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
-      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
-      await drain(hw);
+      expect(await hw.getMessage("msg_old")).toMatchObject({
+        payload: { a: 1 },
+        redactedAt: null,
+      });
+      // The upgraded schema works, redaction included.
+      const redacting = ctx.create({ schema, redactPayloads: true });
+      await redacting.createEndpoint({ tenantId: "acme", url: receiver.url });
+      const sent = await redacting.send({
+        tenantId: "acme",
+        eventType: "e",
+        payload: {},
+      });
+      await drain(redacting);
       expect(receiver.requests).toHaveLength(1);
+      expect(
+        (await redacting.getMessage(sent.message.id))?.redactedAt,
+      ).toBeInstanceOf(Date);
     } finally {
       await ctx.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     }
@@ -137,7 +154,7 @@ describe("migrate", () => {
          CREATE INDEX ON "${schema}".messages (created_at);`,
       );
       await hw.migrate();
-      expect((await schemaState(schema)).versions).toEqual([1, 2]);
+      expect((await schemaState(schema)).versions).toEqual([1, 2, 3]);
       expect(await createdAtIndexes(schema)).toEqual([
         "messages_created_at_idx",
       ]);
