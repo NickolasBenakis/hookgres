@@ -89,6 +89,8 @@ your transaction. Returns `{ message, deliveryCount, deduplicated }`. See
 
 ### `getMessage(id): Promise<Message | null>`
 
+With `redactPayloads`, `payload` is `null` once `redactedAt` is set.
+
 ### `cleanup(options): Promise<number>`
 
 Deletes messages created before `options.olderThan` whose deliveries are all
@@ -98,6 +100,23 @@ number of milliseconds ago. `options.batchSize` (default 1000) is how many
 messages each `DELETE` removes; it repeats until none are left. Returns the
 number of messages deleted. See
 [Clean up old rows](/guides/production#clean-up-old-rows).
+
+### `deleteMessages(filter): Promise<number>`
+
+Deletes the messages that match every filter given, with their deliveries
+and attempts, whatever their status, and returns how many it deleted. For
+erasure requests and offboarding a tenant.
+
+| Field             | Type                                   | Notes                                                |
+| ----------------- | -------------------------------------- | ---------------------------------------------------- |
+| `tenantId`        | `string`                               | Only this tenant's messages.                         |
+| `messageIds`      | `string[]`                             | Only these messages. An empty array deletes nothing. |
+| `payloadContains` | `Record<string, unknown> \| unknown[]` | Only payloads containing this JSON (Postgres `@>`).  |
+| `batchSize`       | `number`                               | Messages per `DELETE`, default 1000.                 |
+
+At least one of `tenantId`, `messageIds` and `payloadContains` is required.
+Pending deliveries of a deleted message are never sent. Endpoints are kept.
+See [Privacy and GDPR](/guides/privacy#erase-on-request).
 
 ## Deliveries
 
@@ -116,6 +135,8 @@ Oldest first.
 
 Sends a `succeeded` or `failed` delivery again with a fresh retry schedule.
 Returns `null` if it doesn't exist or is still `pending` or `delivering`.
+Throws a `HookgresValidationError` if its payload was redacted
+(`redactPayloads`).
 
 ## Worker
 
@@ -199,7 +220,8 @@ Thrown when an argument or option you passed is invalid: an endpoint URL
 that isn't `http(s)`, or with `blockPrivateAddresses` points to a private
 address or blocked port; an empty or malformed `eventTypes`; a malformed
 secret; a `send()` event type with `*`, a missing payload, or a payload with
-`\u0000`; invalid `cleanup()` or `drain()` arguments; and invalid
+`\u0000`; invalid `cleanup()`, `deleteMessages()` or `drain()` arguments;
+replaying a redacted delivery; and invalid
 `new Hookgres()` options. It extends `Error`, and its message says how to fix
 the problem, so routes can return it as a `400`:
 
@@ -272,9 +294,10 @@ interface Message {
   id: string; // "msg_...", also the webhook-id header
   tenantId: string;
   eventType: string;
-  payload: unknown;
+  payload: unknown; // null once redacted
   idempotencyKey: string | null;
   createdAt: Date;
+  redactedAt: Date | null; // set by redactPayloads
 }
 
 interface SendResult {
@@ -302,7 +325,7 @@ interface Attempt {
   deliveryId: string;
   attemptNumber: number;
   statusCode: number | null; // null for timeouts and network errors
-  responseBody: string | null; // first 4,096 characters
+  responseBody: string | null; // first responseBodyLimit (4,096) characters
   error: string | null;
   durationMs: number;
   createdAt: Date;

@@ -71,7 +71,8 @@ A wait of `0` stays `0`. The table above shows the waits before jitter.
 ## The attempt log
 
 Every attempt is stored with its status code, the first 4,096 characters of
-the response body, the error, and how long it took:
+the response body (see [`responseBodyLimit`](/guides/privacy#limit-stored-response-bodies)),
+the error, and how long it took:
 
 ```ts
 const attempts = await hookgres.listAttempts(deliveryId);

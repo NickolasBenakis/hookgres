@@ -15,6 +15,7 @@ import type {
   AttemptEvent,
   CleanupOptions,
   CreateEndpointInput,
+  DeleteMessagesFilter,
   Delivery,
   DeliveryStatus,
   DrainOptions,
@@ -55,6 +56,7 @@ export const DEFAULT_RETRY_SCHEDULE = [
   10 * HOUR,
 ];
 
+/** Default and maximum for `responseBodyLimit`. */
 const RESPONSE_BODY_LIMIT = 4096;
 
 /** Time `drain()` allows on top of `requestTimeoutMs` for a batch's queries. */
@@ -135,6 +137,23 @@ export interface HookgresOptions {
   /** Grace period for the old secret after `rotateEndpointSecret`. Defaults to 24h. */
   secretRotationGraceMs?: number;
   /**
+   * Clear a message's payload once every delivery of it has succeeded (or
+   * right away when no endpoint matched), keeping the delivery log: status
+   * codes, timings and errors. Payloads of failed deliveries are kept so they
+   * can be replayed; `cleanup()` removes them later. A redacted message can't
+   * be replayed. Defaults to `false`.
+   * @see https://hookgres.dev/docs/guides/privacy
+   */
+  redactPayloads?: boolean;
+  /**
+   * How many characters of each receiver response body to store in the
+   * attempt log, from 0 (store none) to 4096. Receivers control what they
+   * send back, so lower it if their responses might contain personal data.
+   * Defaults to 4096.
+   * @see https://hookgres.dev/docs/guides/privacy
+   */
+  responseBodyLimit?: number;
+  /**
    * Refuse to send to private, loopback, link-local and other internal
    * addresses. `true` blocks them all; `{ allow: ["10.1.2.0/24"] }` blocks
    * all except the listed IPs and CIDRs. Checked when endpoints are created
@@ -174,6 +193,8 @@ interface ClaimedDelivery {
   event_type: string;
   payload: unknown;
   message_created_at: Date;
+  /** Only possible when a replay raced a redaction. */
+  redacted: boolean;
   url: string;
   secret: string;
   /** Only set while the rotation grace period is running. */
@@ -224,6 +245,8 @@ export class Hookgres {
   private readonly concurrency: number;
   private readonly lockTimeoutMs: number;
   private readonly secretRotationGraceMs: number;
+  private readonly redactPayloads: boolean;
+  private readonly responseBodyLimit: number;
   private readonly guard: AddressGuard | null;
   private readonly transport: Transport;
   private readonly closeTransport: () => void;
@@ -315,6 +338,17 @@ export class Hookgres {
       );
     }
     this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
+    this.redactPayloads = options.redactPayloads ?? false;
+    this.responseBodyLimit = options.responseBodyLimit ?? RESPONSE_BODY_LIMIT;
+    if (
+      !Number.isInteger(this.responseBodyLimit) ||
+      this.responseBodyLimit < 0 ||
+      this.responseBodyLimit > RESPONSE_BODY_LIMIT
+    ) {
+      throw new HookgresValidationError(
+        `responseBodyLimit must be an integer from 0 (store no response bodies) to ${RESPONSE_BODY_LIMIT}. See ${DOCS}/guides/privacy`,
+      );
+    }
     this.guard = options.blockPrivateAddresses
       ? new AddressGuard(options.blockPrivateAddresses)
       : null;
@@ -627,6 +661,23 @@ export class Hookgres {
    * @see https://hookgres.dev/docs/guides/sending
    */
   async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
+    if (this.redactPayloads && !options.client) {
+      // The insert and the redaction of a message with no deliveries must
+      // commit together, or a failed redaction would leave the payload stored.
+      const client = await this.pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await this.send(input, { client });
+        await client.query("COMMIT");
+        if (!result.deduplicated) this.wake();
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     const db: Queryable = options.client ?? this.pool;
     if (input.eventType.includes("*")) {
       throw new HookgresValidationError(
@@ -694,8 +745,13 @@ export class Hookgres {
       // Inside a caller's transaction the rows aren't visible until commit, so
       // waking now would find nothing; the next poll picks them up.
       if (!options.client) this.wake();
+      let row = rows[0];
+      if (this.redactPayloads && row.delivery_count === 0) {
+        const redacted = await this.redact(row.id, db);
+        if (redacted) row = { ...row, ...redacted };
+      }
       return {
-        message: toMessage(rows[0]),
+        message: toMessage(row),
         deliveryCount: rows[0].delivery_count,
         deduplicated: false,
       };
@@ -725,6 +781,7 @@ export class Hookgres {
 
   /**
    * Returns the message (the event as sent, with its payload), or `null`.
+   * With `redactPayloads`, `payload` is `null` once `redactedAt` is set.
    * Lookups are by id only: check `message.tenantId` before showing it.
    *
    * @example
@@ -800,6 +857,105 @@ export class Hookgres {
     }
   }
 
+  /**
+   * Deletes the messages that match every filter given, with their
+   * deliveries and attempts, whatever their status, and returns how many it
+   * deleted. Use it for erasure requests and to offboard a tenant. Pending
+   * deliveries of a deleted message are never sent; one already in flight
+   * may still arrive. Deleting a message frees its idempotency key.
+   *
+   * Throws a `HookgresValidationError` when no filter is given, so it can't
+   * delete everything by accident. Endpoints are not deleted: use
+   * `deleteEndpoint` for those.
+   *
+   * @example
+   * // A person asks to be forgotten
+   * const deleted = await hookgres.deleteMessages({
+   *   tenantId: "acme",
+   *   payloadContains: { userId: "usr_123" },
+   * });
+   *
+   * @see https://hookgres.dev/docs/guides/privacy
+   */
+  async deleteMessages(filter: DeleteMessagesFilter): Promise<number> {
+    const { tenantId, messageIds, payloadContains } = filter;
+    const batchSize = filter.batchSize ?? 1000;
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new HookgresValidationError(
+        `deleteMessages batchSize must be a positive integer, e.g. 1000 (the default). See ${DOCS}/guides/privacy`,
+      );
+    }
+    if (
+      tenantId === undefined &&
+      messageIds === undefined &&
+      payloadContains === undefined
+    ) {
+      throw new HookgresValidationError(
+        `deleteMessages needs at least one filter: tenantId, messageIds or payloadContains, e.g. { tenantId: "acme", payloadContains: { userId: "usr_123" } }. See ${DOCS}/guides/privacy`,
+      );
+    }
+    if (tenantId !== undefined && typeof tenantId !== "string") {
+      throw new HookgresValidationError(
+        `deleteMessages tenantId must be a string. See ${DOCS}/guides/privacy`,
+      );
+    }
+    if (
+      messageIds !== undefined &&
+      (!Array.isArray(messageIds) ||
+        messageIds.some((id) => typeof id !== "string"))
+    ) {
+      throw new HookgresValidationError(
+        `deleteMessages messageIds must be an array of message id strings. See ${DOCS}/guides/privacy`,
+      );
+    }
+    // `payload @> '{}'` matches every payload. Anything JSON.stringify drops
+    // or changes (undefined, a function, NaN, an object with toJSON) could
+    // turn a narrow filter into that, so only plain JSON is accepted.
+    if (payloadContains !== undefined && !isStrictJsonFilter(payloadContains)) {
+      throw new HookgresValidationError(
+        `deleteMessages payloadContains must be a non-empty plain object or array of strings, finite numbers, booleans and null (no undefined, functions, NaN, Dates or empty objects/arrays), e.g. { userId: "usr_123" }. See ${DOCS}/guides/privacy`,
+      );
+    }
+    if (messageIds?.length === 0) return 0;
+
+    const where: string[] = [];
+    const values: unknown[] = [];
+    const add = (clause: string, value: unknown) => {
+      values.push(value);
+      where.push(clause.replace("?", `$${values.length}`));
+    };
+    if (tenantId !== undefined) add("tenant_id = ?", tenantId);
+    if (messageIds !== undefined) add("id = ANY (?::text[])", messageIds);
+    if (payloadContains !== undefined) {
+      add("payload @> ?::jsonb", JSON.stringify(payloadContains));
+    }
+    values.push(batchSize);
+
+    const filterSql = where.join(" AND ");
+    let deleted = 0;
+    for (;;) {
+      const { rowCount } = await this.query(
+        `DELETE FROM ${this.t.messages}
+         WHERE id IN (
+           SELECT id FROM ${this.t.messages}
+           WHERE ${filterSql}
+           LIMIT $${values.length}
+         )`,
+        values,
+      );
+      deleted += rowCount ?? 0;
+      if (rowCount) continue;
+      // An empty batch can also mean another transaction (cleanup(), or a
+      // second deleteMessages) deleted the rows this batch picked; only stop
+      // once nothing matches.
+      const { rows } = await this.query<{ left: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM ${this.t.messages} WHERE ${filterSql}) AS left`,
+        values.slice(0, -1),
+      );
+      if (!rows[0]?.left) return deleted;
+    }
+  }
+
   // ------------------------------------------------------------ deliveries
 
   /**
@@ -853,7 +1009,8 @@ export class Hookgres {
 
   /**
    * Lists every HTTP attempt of a delivery, oldest first, with status code,
-   * the first 4 KB of the response body, error and duration.
+   * the start of the response body (see `responseBodyLimit`), error and
+   * duration.
    *
    * @example
    * const attempts = await hookgres.listAttempts(delivery.id);
@@ -869,7 +1026,9 @@ export class Hookgres {
   /**
    * Re-queues a finished delivery (succeeded or failed) for immediate sending
    * with a fresh retry schedule. Returns `null` if the delivery does not exist
-   * or is still in flight (`pending` or `delivering`). The original message
+   * or is still in flight (`pending` or `delivering`), and throws a
+   * `HookgresValidationError` if its message's payload was redacted
+   * (`redactPayloads`). The original message
    * id is kept, so receivers that deduplicate on `webhook-id` will skip it.
    * A worker must be running (or `runOnce()` called) to send it.
    *
@@ -887,7 +1046,7 @@ export class Hookgres {
          -- Blocks cleanup() from deleting the message under this replay.
          AND EXISTS (
            SELECT 1 FROM ${this.t.messages} m
-           WHERE m.id = message_id
+           WHERE m.id = message_id AND m.redacted_at IS NULL
            FOR SHARE
          )
        RETURNING *`;
@@ -898,7 +1057,20 @@ export class Hookgres {
           [id, this.channel],
         )
       : await this.query(update, [id]);
-    if (!rows[0]) return null;
+    if (!rows[0]) {
+      const { rowCount } = await this.query(
+        `SELECT 1 FROM ${this.t.deliveries} d
+         JOIN ${this.t.messages} m ON m.id = d.message_id
+         WHERE d.id = $1 AND m.redacted_at IS NOT NULL`,
+        [id],
+      );
+      if (rowCount) {
+        throw new HookgresValidationError(
+          `Delivery ${id} can't be replayed: its message's payload was redacted (redactPayloads). Send the event again with send() instead. See ${DOCS}/guides/privacy`,
+        );
+      }
+      return null;
+    }
     this.wake();
     return toDelivery(rows[0]);
   }
@@ -1201,6 +1373,29 @@ export class Hookgres {
     else if (this.running) this.wakePending = true;
   }
 
+  /**
+   * Clears the message's payload if all its deliveries have succeeded (or it
+   * has none). Returns the new columns, or `null` if nothing changed.
+   */
+  private async redact(
+    messageId: string,
+    db: Queryable = this.pool,
+  ): Promise<{ payload: null; redacted_at: Date } | null> {
+    const { rows } = await this.query<{ payload: null; redacted_at: Date }>(
+      `UPDATE ${this.t.messages} m
+       SET payload = NULL, redacted_at = now()
+       WHERE m.id = $1 AND m.redacted_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM ${this.t.deliveries} d
+           WHERE d.message_id = m.id AND d.status <> 'succeeded'
+         )
+       RETURNING m.payload, m.redacted_at`,
+      [messageId],
+      db,
+    );
+    return rows[0] ?? null;
+  }
+
   private async claim(): Promise<ClaimedDelivery[]> {
     const { rows } = await this.query<ClaimedDelivery>(
       `WITH due AS (
@@ -1222,6 +1417,7 @@ export class Hookgres {
        RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
                  m.tenant_id, m.id AS message_id,
                  m.event_type, m.payload, m.created_at AS message_created_at,
+                 m.redacted_at IS NOT NULL AS redacted,
                  e.url, e.secret,
                  CASE WHEN e.previous_secret_expires_at > now()
                       THEN e.previous_secret END AS previous_secret,
@@ -1248,6 +1444,10 @@ export class Hookgres {
   private async process(delivery: ClaimedDelivery): Promise<void> {
     if (delivery.disabled) {
       await this.failWithoutSending(delivery, "Endpoint is disabled");
+      return;
+    }
+    if (delivery.redacted) {
+      await this.failWithoutSending(delivery, "Payload was redacted");
       return;
     }
     // A reclaimed delivery (its worker died mid-attempt) can exceed the limit.
@@ -1312,6 +1512,9 @@ export class Hookgres {
           outcome: "succeeded",
           nextAttemptAt: null,
         });
+        // A separate statement, after the success above committed: of two
+        // last deliveries succeeding at once, the later one sees both.
+        if (this.redactPayloads) await this.redact(delivery.message_id);
       }
       return;
     }
@@ -1434,7 +1637,7 @@ export class Hookgres {
         redirect: "manual",
         signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
-      const responseBody = await readLimited(response);
+      const responseBody = await readLimited(response, this.responseBodyLimit);
       const ok = response.status >= 200 && response.status < 300;
       return {
         ok,
@@ -1473,15 +1676,52 @@ async function withNulHint<T>(query: Promise<T>): Promise<T> {
 }
 
 /**
+ * True for a non-empty plain object or array whose leaves are strings,
+ * finite numbers, booleans or null, with no empty object or array inside:
+ * exactly what JSON.stringify keeps as is.
+ */
+function isStrictJsonFilter(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every(isStrictJsonValue);
+  }
+  if (value === null || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  if ("toJSON" in value) return false;
+  const children = Object.values(value);
+  return children.length > 0 && children.every(isStrictJsonValue);
+}
+
+function isStrictJsonValue(value: unknown): boolean {
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object":
+      return value === null || isStrictJsonFilter(value);
+    default:
+      return false;
+  }
+}
+
+/**
  * Adds a hint to Postgres's `relation "hookgres.endpoints" does not exist`
- * (42P01). The error object is kept, so its class and `code` don't change.
+ * (42P01), or `column ... does not exist` (42703) after an upgrade that
+ * hasn't run `migrate()`. The error object is kept, so its class and `code`
+ * don't change.
  */
 function explainMissingTables(error: unknown, schema: string): unknown {
   if (!(error instanceof Error)) return error;
-  if ((error as { code?: string }).code !== "42P01") return error;
+  const code = (error as { code?: string }).code;
+  if (code !== "42P01" && code !== "42703") return error;
   if (error.message.includes("migrate()")) return error;
   const original = error.message;
-  error.message = `${original}. Hookgres's tables are missing from schema ${schema}: call \`await hookgres.migrate()\` once before using Hookgres (on startup, or in a deploy step). See ${DOCS}/getting-started`;
+  error.message =
+    code === "42P01"
+      ? `${original}. Hookgres's tables are missing from schema ${schema}: call \`await hookgres.migrate()\` once before using Hookgres (on startup, or in a deploy step). See ${DOCS}/getting-started`
+      : `${original}. Hookgres's tables in schema ${schema} may be from an older version: call \`await hookgres.migrate()\` after upgrading, before the new code serves traffic. See ${DOCS}/getting-started`;
   if (error.stack) error.stack = error.stack.replace(original, error.message);
   return error;
 }
@@ -1529,13 +1769,18 @@ function normaliseEventTypes(
 
 async function readLimited(
   response: TransportResponse,
+  limit: number,
 ): Promise<string | null> {
   if (!response.body) return null;
+  if (limit === 0) {
+    response.body.cancel().catch(() => {});
+    return null;
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = "";
   try {
-    while (text.length < RESPONSE_BODY_LIMIT) {
+    while (text.length < limit) {
       const { done, value } = await reader.read();
       if (done) break;
       text += decoder.decode(value, { stream: true });
@@ -1545,7 +1790,7 @@ async function readLimited(
   } finally {
     reader.cancel().catch(() => {});
   }
-  return text.slice(0, RESPONSE_BODY_LIMIT);
+  return text.slice(0, limit);
 }
 
 function describeError(error: unknown, timeoutMs: number): string {
@@ -1599,6 +1844,7 @@ function toMessage(row: Row): Message {
     payload: row.payload,
     idempotencyKey: row.idempotency_key as string | null,
     createdAt: row.created_at as Date,
+    redactedAt: (row.redacted_at as Date | null | undefined) ?? null,
   };
 }
 

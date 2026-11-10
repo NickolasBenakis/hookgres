@@ -76,6 +76,14 @@ signing, per-endpoint health, auto-disable, secret rotation, a delivery log
 and replay. Hookgres is those parts, built on the same `SKIP LOCKED`
 technique.
 
+## What about GDPR?
+
+Webhooks stay in your own Postgres, so Hookgres adds no new processor of
+your customers' data. Keep personal data out of payloads by sending ids,
+turn on `redactPayloads` to clear payloads after delivery, set a retention
+period with `cleanup()`, and erase on request with `deleteMessages()`. See
+[Privacy and GDPR](/guides/privacy).
+
 ## Something's wrong. Where do I look?
 
 1. `listDeliveries({ status: "failed" })` and `listAttempts` show exactly what

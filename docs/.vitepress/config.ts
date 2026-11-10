@@ -148,6 +148,7 @@ export default defineConfig({
           { text: "Rotating secrets", link: "/guides/secret-rotation" },
           { text: "Verifying webhooks", link: "/guides/verifying" },
           { text: "Going to production", link: "/guides/production" },
+          { text: "Privacy and GDPR", link: "/guides/privacy" },
           { text: "Migrating from Svix", link: "/guides/migrating-from-svix" },
         ],
       },

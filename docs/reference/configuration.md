@@ -13,6 +13,8 @@ const hookgres = new Hookgres({
   notify: false,
   lockTimeoutMs: 45_000,
   secretRotationGraceMs: 24 * 60 * 60 * 1000,
+  redactPayloads: false,
+  responseBodyLimit: 4096,
   blockPrivateAddresses: false,
   fetch: globalThis.fetch,
   userAgent: "Hookgres/0.1",
@@ -36,6 +38,8 @@ const hookgres = new Hookgres({
 | `notify`                 | `false`                       | Wake workers in every process right after a `send()` commits, with LISTEN/NOTIFY. Each started worker holds one pool connection. Not for PgBouncer in transaction mode. See [Instant wake-up](/guides/workers#instant-wake-up-with-listen-notify). |
 | `lockTimeoutMs`          | `requestTimeoutMs` + 30s      | How long a claimed delivery stays locked before another worker may retry it after a crash. Must be greater than `requestTimeoutMs`.                                                                                                                |
 | `secretRotationGraceMs`  | 24 hours                      | Default grace period for `rotateEndpointSecret`.                                                                                                                                                                                                   |
+| `redactPayloads`         | `false`                       | Clear a message's payload once every delivery of it has succeeded, keeping the delivery log. Redacted messages can't be replayed. See [Privacy and GDPR](/guides/privacy#clear-payloads-after-delivery).                                           |
+| `responseBodyLimit`      | `4096`                        | Characters of each receiver response to store in the attempt log, from 0 (none) to 4096. See [Privacy and GDPR](/guides/privacy#limit-stored-response-bodies).                                                                                     |
 | `blockPrivateAddresses`  | `false`                       | `true` refuses to send to private and internal addresses; `{ allow: [...] }` does the same except for the listed IPs and CIDRs. See [Block internal addresses](/guides/production#block-internal-addresses-ssrf).                                  |
 | `fetch`                  | `globalThis.fetch`            | Custom fetch, for a proxy or tests. With `blockPrivateAddresses`, only endpoint URLs are checked; delivery uses this fetch as is.                                                                                                                  |
 | `userAgent`              | `"Hookgres/0.1"`              | The `user-agent` header on every request.                                                                                                                                                                                                          |
@@ -49,7 +53,8 @@ reject, never affect delivery. Hookgres reports them with
 
 The constructor throws if neither `pool` nor `connectionString` is given, if
 `schema` is invalid, if `retrySchedule` contains a negative or non-finite
-number, if `retryJitter` isn't between 0 and 1, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
+number, if `retryJitter` isn't between 0 and 1, if `responseBodyLimit` isn't
+an integer from 0 to 4096, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
 `blockPrivateAddresses.allow` entry isn't an IP address or CIDR.
 
 With `blockPrivateAddresses` on, it emits a process warning (once per

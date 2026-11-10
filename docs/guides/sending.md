@@ -105,7 +105,8 @@ Endpoints list the types they want, or `null` for all of them. An entry like
 ## Payloads
 
 The payload can be any JSON-serialisable value. It's stored as `jsonb` and
-delivered as `data` inside the envelope:
+delivered as `data` inside the envelope. Prefer ids over personal data; see
+[Privacy and GDPR](/guides/privacy):
 
 ```json
 {

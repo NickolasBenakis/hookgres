@@ -86,9 +86,15 @@ export interface Message {
   id: string;
   tenantId: string;
   eventType: string;
+  /** The payload as sent, or `null` once redacted (see `redactedAt`). */
   payload: unknown;
   idempotencyKey: string | null;
   createdAt: Date;
+  /**
+   * When the payload was cleared by `redactPayloads`, or `null`. A redacted
+   * message keeps its delivery log but can't be replayed.
+   */
+  redactedAt: Date | null;
 }
 
 /**
@@ -165,7 +171,10 @@ export interface Attempt {
   attemptNumber: number;
   /** `null` for timeouts, network errors and blocked addresses. */
   statusCode: number | null;
-  /** The first 4 KB of the response body. */
+  /**
+   * The start of the response body, up to `responseBodyLimit` characters
+   * (4,096 by default). `null` when there was none or `responseBodyLimit` is 0.
+   */
   responseBody: string | null;
   /** `null` on success, otherwise e.g. `HTTP 500` or `Timed out after 15000ms`. */
   error: string | null;
@@ -182,6 +191,32 @@ export interface Attempt {
 export interface CleanupOptions {
   /** Delete messages created before this `Date`, or more than this many ms ago. */
   olderThan: Date | number;
+  /** Messages deleted per statement. Defaults to 1000. */
+  batchSize?: number;
+}
+
+/**
+ * Which messages `deleteMessages()` deletes. Give at least one filter; they
+ * combine with AND.
+ *
+ * @example
+ * // Erase every webhook about one person, for one tenant
+ * await hookgres.deleteMessages({
+ *   tenantId: "acme",
+ *   payloadContains: { userId: "usr_123" },
+ * });
+ */
+export interface DeleteMessagesFilter {
+  /** Only this tenant's messages. Alone, deletes all of them (offboarding). */
+  tenantId?: string;
+  /** Only these message ids. */
+  messageIds?: string[];
+  /**
+   * Only messages whose payload contains this JSON (Postgres `@>`), e.g.
+   * `{ userId: "usr_123" }`. Scans the tenant's messages, or every message
+   * without `tenantId`.
+   */
+  payloadContains?: Record<string, unknown> | unknown[];
   /** Messages deleted per statement. Defaults to 1000. */
   batchSize?: number;
 }

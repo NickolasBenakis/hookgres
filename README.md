@@ -176,6 +176,9 @@ No long-running process? Drain the queue from a cron job with
 - **Idempotency keys.** Sending twice with the same key creates one message.
 - **Cleanup.** `cleanup({ olderThan })` deletes old, finished messages in
   batches.
+- **Privacy controls.** `redactPayloads` clears payloads after delivery,
+  `responseBodyLimit` limits stored responses, and `deleteMessages()` erases
+  a person's or a tenant's webhooks.
 
 ## Delivery semantics
 
@@ -228,6 +231,7 @@ production, throughput depends mostly on how fast receivers respond.
 | [Retries, failures and replay](https://hookgres.dev/docs/guides/retries) | The schedule, statuses, endpoint health.            |
 | [Running workers](https://hookgres.dev/docs/guides/workers)              | Background loop, many workers, cron or serverless.  |
 | [Going to production](https://hookgres.dev/docs/guides/production)       | SSRF protection, monitoring, cleanup.               |
+| [Privacy and GDPR](https://hookgres.dev/docs/guides/privacy)             | Redaction, retention, erasure requests.             |
 | [API reference](https://hookgres.dev/docs/reference/api)                 | Every method, option and type.                      |
 | [FAQ](https://hookgres.dev/docs/faq)                                     | Supabase, Neon, ORMs, ordering, payload size.       |
 

@@ -94,4 +94,13 @@ BEGIN
 END $$;
 `,
   },
+  {
+    version: 3,
+    // For redactPayloads: a redacted message keeps its row and delivery log
+    // but loses its payload. Both statements only change the catalog.
+    sql: `
+ALTER TABLE {{schema}}.messages ALTER COLUMN payload DROP NOT NULL;
+ALTER TABLE {{schema}}.messages ADD COLUMN redacted_at timestamptz;
+`,
+  },
 ];
