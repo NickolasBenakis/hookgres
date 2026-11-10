@@ -908,17 +908,12 @@ export class Hookgres {
         `deleteMessages messageIds must be an array of message id strings. See ${DOCS}/guides/privacy`,
       );
     }
-    // `payload @> '{}'` matches every payload, and an undefined value (say
-    // `{ userId: user.id }` with no user) would vanish in JSON.stringify and
-    // widen the filter the same way.
-    if (
-      payloadContains !== undefined &&
-      (payloadContains === null ||
-        typeof payloadContains !== "object" ||
-        isEmptyOrHasUndefined(payloadContains))
-    ) {
+    // `payload @> '{}'` matches every payload. Anything JSON.stringify drops
+    // or changes (undefined, a function, NaN, an object with toJSON) could
+    // turn a narrow filter into that, so only plain JSON is accepted.
+    if (payloadContains !== undefined && !isStrictJsonFilter(payloadContains)) {
       throw new HookgresValidationError(
-        `deleteMessages payloadContains must be a non-empty JSON object or array with no undefined values, e.g. { userId: "usr_123" }. See ${DOCS}/guides/privacy`,
+        `deleteMessages payloadContains must be a non-empty plain object or array of strings, finite numbers, booleans and null (no undefined, functions, NaN, Dates or empty objects/arrays), e.g. { userId: "usr_123" }. See ${DOCS}/guides/privacy`,
       );
     }
     if (messageIds?.length === 0) return 0;
@@ -1680,17 +1675,35 @@ async function withNulHint<T>(query: Promise<T>): Promise<T> {
   }
 }
 
-/** True for `{}`, `[]`, or a value with `undefined` anywhere inside. */
-function isEmptyOrHasUndefined(value: object): boolean {
+/**
+ * True for a non-empty plain object or array whose leaves are strings,
+ * finite numbers, booleans or null, with no empty object or array inside:
+ * exactly what JSON.stringify keeps as is.
+ */
+function isStrictJsonFilter(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every(isStrictJsonValue);
+  }
+  if (value === null || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  if ("toJSON" in value) return false;
   const children = Object.values(value);
-  if (children.length === 0) return true;
-  return children.some(
-    (child) =>
-      child === undefined ||
-      (child !== null &&
-        typeof child === "object" &&
-        isEmptyOrHasUndefined(child as object)),
-  );
+  return children.length > 0 && children.every(isStrictJsonValue);
+}
+
+function isStrictJsonValue(value: unknown): boolean {
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object":
+      return value === null || isStrictJsonFilter(value);
+    default:
+      return false;
+  }
 }
 
 /**

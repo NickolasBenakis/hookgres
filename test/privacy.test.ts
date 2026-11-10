@@ -380,14 +380,24 @@ describe("deleteMessages", () => {
         payloadContains: null as unknown as Record<string, unknown>,
       }),
     ).rejects.toThrow(/payloadContains/);
-    // Filters that would match every payload.
+    // Filters that would match every payload, or widen once stringified.
     for (const payloadContains of [
       {},
       [],
       { userId: undefined },
       { user: { id: undefined } },
       { user: {} },
-    ]) {
+      { userId: () => "usr_anna" },
+      { userId: Number.NaN },
+      { userId: Number.POSITIVE_INFINITY },
+      { userId: Symbol("x") },
+      { userId: 1n },
+      { at: new Date() },
+      { userId: { toJSON: () => undefined } },
+      { toJSON: () => ({}) },
+      [undefined],
+      new Map([["userId", "usr_anna"]]),
+    ] as Record<string, unknown>[]) {
       await expect(hw.deleteMessages({ payloadContains })).rejects.toThrow(
         /non-empty/,
       );

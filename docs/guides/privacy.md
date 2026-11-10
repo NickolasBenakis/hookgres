@@ -114,8 +114,10 @@ for (const endpoint of await hookgres.listEndpoints("acme")) {
 
 - Filters are `tenantId`, `messageIds` and `payloadContains`, combined with
   AND. At least one is required, so a call can't delete everything by
-  accident. `payloadContains` can't be empty or contain `undefined`, which
-  would match every payload.
+  accident. `payloadContains` must be plain, non-empty JSON (strings,
+  finite numbers, booleans, null, objects and arrays): an empty filter, or
+  a value like `undefined`, a function or `NaN` that JSON drops or changes,
+  could match every payload.
 - `payloadContains` can't find redacted messages, because their payload is
   gone. With `redactPayloads` on, a delivered message no longer holds the
   person's data, but its attempts may still hold receiver responses: keep
