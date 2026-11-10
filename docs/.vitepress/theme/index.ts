@@ -3,7 +3,7 @@
 import type { Theme } from "vitepress";
 import { useData } from "vitepress";
 import DefaultTheme from "vitepress/theme-without-fonts";
-import { h, onMounted, ref, watch } from "vue";
+import { h, nextTick, onMounted, ref, watch } from "vue";
 import CopyLine from "./CopyLine.vue";
 import DocsHub from "./DocsHub.vue";
 import "./custom.css";
@@ -55,15 +55,29 @@ export default {
         document.documentElement.classList.add("hg-ready");
       });
 
-      // VitePress stores the choice ("auto" when it matches the OS) under the
-      // key the landing page reads too.
+      // The reader's choice, shared with the landing page (see config.ts).
+      const KEY = "vitepress-theme-appearance";
       const { isDark } = useData();
+      const storedDark = () => {
+        try {
+          return localStorage.getItem(KEY) === "dark";
+        } catch {
+          return false;
+        }
+      };
+      // Saved only when the reader switches, never when useDark follows the OS.
+      const save = () => {
+        try {
+          localStorage.setItem(KEY, isDark.value ? "dark" : "light");
+        } catch {}
+      };
       const toggleTheme = () => {
         // Switch every colour at once instead of a ragged cascade of transitions.
         const freeze = document.createElement("style");
         freeze.textContent = "*,*::before,*::after{transition:none!important}";
         document.head.append(freeze);
         isDark.value = !isDark.value;
+        save();
         getComputedStyle(document.documentElement).color;
         requestAnimationFrame(() => freeze.remove());
       };
@@ -80,18 +94,33 @@ export default {
       const mounted = ref(false);
       onMounted(() => {
         mounted.value = true;
-        // A page restored by Back/Forward missed changes made on other pages.
+        // Without readable storage VitePress falls back to the OS theme.
+        isDark.value = storedDark();
+        // A page restored by Back/Forward missed changes made on other pages,
+        // and other tabs announce theirs.
         addEventListener("pageshow", (event) => {
-          if (!event.persisted) return;
-          let stored: string | null = null;
-          try {
-            stored = localStorage.getItem("vitepress-theme-appearance");
-          } catch {}
-          isDark.value =
-            stored === "dark" ||
-            (stored !== "light" &&
-              matchMedia("(prefers-color-scheme: dark)").matches);
+          if (event.persisted) isDark.value = storedDark();
         });
+        addEventListener("storage", (event) => {
+          if (event.key === KEY) isDark.value = storedDark();
+        });
+        // VitePress's switch in the mobile menu.
+        document.addEventListener("click", (event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest(".VPNavScreenAppearance .VPSwitch")
+          )
+            nextTick(save);
+        });
+        // useDark may hold "auto" and follow an OS switch; put the reader's
+        // choice back once it has, before the next paint.
+        matchMedia("(prefers-color-scheme: dark)").addEventListener(
+          "change",
+          () =>
+            requestAnimationFrame(() => {
+              isDark.value = storedDark();
+            }),
+        );
       });
 
       return () => {

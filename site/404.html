@@ -12,15 +12,14 @@
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
-  // Theme: the visitor's choice, else the OS setting. Set before first paint so
-  // there is no flash. The key is the one VitePress uses, so the landing page
-  // and the docs share the choice; "auto" means follow the OS.
+  // Theme: light unless the visitor picked dark. Set before first paint so there
+  // is no flash. The key is the one VitePress uses, so the landing page and the
+  // docs share the choice.
   {
     const KEY = "vitepress-theme-appearance";
     const root = document.documentElement;
-    const os = matchMedia("(prefers-color-scheme: dark)");
     const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
-    const resolve = () => { const v = read(); return v === "dark" || v === "light" ? v : os.matches ? "dark" : "light"; };
+    const resolve = () => (read() === "dark" ? "dark" : "light");
     const sync = () => {
       const dark = root.dataset.theme === "dark";
       for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = dark ? "#000000" : "#fafbfd";
@@ -40,15 +39,13 @@
     root.dataset.theme = resolve();
     sync();
     document.addEventListener("DOMContentLoaded", sync);
-    os.addEventListener("change", () => apply(resolve()));
     addEventListener("storage", (event) => { if (event.key === KEY) apply(resolve()); });
     // A page restored by Back/Forward missed changes made on other pages.
     addEventListener("pageshow", (event) => { if (event.persisted) apply(resolve()); });
     document.addEventListener("click", (event) => {
       if (!event.target.closest?.("[data-theme-toggle]")) return;
       const next = root.dataset.theme === "dark" ? "light" : "dark";
-      // Picking what the OS already gives goes back to following the OS.
-      try { localStorage.setItem(KEY, next === (os.matches ? "dark" : "light") ? "auto" : next); } catch {}
+      try { localStorage.setItem(KEY, next); } catch {}
       apply(next);
     });
   }

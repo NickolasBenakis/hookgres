@@ -60,9 +60,12 @@ export default defineConfig({
   base: "/docs/",
   ignoreDeadLinks: "localhostLinks",
   cleanUrls: true,
-  // Follow the OS colour scheme until the reader picks one with the switch.
-  // The landing page reads and writes the same stored choice.
-  appearance: true,
+  // Light unless the reader picks dark. The choice lives under
+  // "vitepress-theme-appearance", shared with the landing page, as "light" or
+  // "dark" only. VitePress can't default to light and saves "auto" whenever
+  // the choice matches the OS, so its own state gets a separate key, seeded by
+  // the head script below; theme/index.ts saves the shared choice.
+  appearance: { storageKey: "hookgres-docs-appearance" },
   lastUpdated: true,
   sitemap: { hostname: "https://hookgres.dev/docs/" },
   head: [
@@ -85,13 +88,12 @@ export default defineConfig({
         content: "#000000",
       },
     ],
-    // Before first paint: apply the stored theme and match the toolbar colour.
-    // VitePress's own appearance script throws when storage is blocked, so
-    // this one doesn't rely on it.
+    // Before first paint, and after VitePress's own appearance script (which
+    // follows the OS and throws when storage is blocked).
     [
       "script",
       {},
-      `{let v;try{v=localStorage.getItem("vitepress-theme-appearance")}catch{}const d=v==="dark"||(v!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);for(const m of document.querySelectorAll('meta[name="theme-color"]'))m.content=d?"#000000":"#fafbfd"}`,
+      `{let d=false;try{d=localStorage.getItem("vitepress-theme-appearance")==="dark";localStorage.setItem("hookgres-docs-appearance",d?"dark":"light")}catch{}document.documentElement.classList.toggle("dark",d);for(const m of document.querySelectorAll('meta[name="theme-color"]'))m.content=d?"#000000":"#fafbfd"}`,
     ],
   ],
   // The docs home is a hub that wants the full width. Set here rather than in
