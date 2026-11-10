@@ -1183,17 +1183,20 @@ hookgres.start();
 
   // Agent logos: open the agent's app with the full prompt typed in (nothing is
   // sent until the reader presses Enter). A browser can't tell whether the app
-  // is installed, so every click also copies the prompt as a fallback.
+  // is installed, so every click copies the prompt first, as a fallback. Phones
+  // have none of these apps, so there the logos only copy.
   {
     const prompt = document.getElementById("ai-prompt").textContent;
     // A claude-cli:// link opens in the home folder, not the reader's project.
     const claudePrompt = `${prompt} If the current folder isn't the project, ask me for its path and work there.`;
     const agents = {
-      claude: { name: "Claude Code", href: `claude-cli://open?q=${encodeURIComponent(claudePrompt)}`, text: claudePrompt },
+      // claude-cli:// takes at most 5,000 characters of prompt.
+      claude: { name: "Claude Code", href: claudePrompt.length <= 5000 && `claude-cli://open?q=${encodeURIComponent(claudePrompt)}`, text: claudePrompt },
       codex: { name: "Codex", href: `codex://new?prompt=${encodeURIComponent(prompt)}` },
       cursor: { name: "Cursor", href: `cursor://anysphere.cursor-deeplink/prompt?text=${encodeURIComponent(prompt)}` },
       gemini: { name: "Gemini CLI" },
     };
+    const desktop = matchMedia("(hover: hover) and (pointer: fine)").matches;
     const toast = document.getElementById("agent-toast");
     const status = document.getElementById("copy-status");
     let timer;
@@ -1201,24 +1204,39 @@ hookgres.start();
       clearTimeout(timer);
       toast.textContent = message;
       toast.dataset.show = "";
-      status.textContent = message;
+      // Clear first so a repeated message is announced again.
+      status.textContent = "";
+      requestAnimationFrame(() => { status.textContent = message; });
       timer = setTimeout(() => delete toast.dataset.show, 4000);
     };
     for (const link of document.querySelectorAll(".agent-link")) {
       const agent = agents[link.dataset.agent];
-      if (agent.href) link.href = agent.href;
-      link.addEventListener("click", async () => {
+      const href = desktop && agent.href;
+      if (href) link.href = href;
+      else if (link.dataset.agent !== "gemini") {
+        link.title = `Copy the prompt for ${agent.name}`;
+        link.querySelector(".sr-only").textContent = link.title;
+      }
+      link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        // Copy before opening: the app's "Open?" dialog takes focus, and a
+        // clipboard write from an unfocused page fails.
         let copied = true;
         try {
           await navigator.clipboard.writeText(agent.text ?? prompt);
         } catch {
           copied = false;
         }
-        if (!agent.href) say(copied ? "Prompt copied. Paste it into Gemini CLI." : "Couldn't copy. Open Full prompt to copy it.");
-        else say(copied ? `Opening ${agent.name}… The prompt is copied too, in case it doesn't open.` : `Opening ${agent.name}…`);
+        if (href) {
+          location.href = href;
+          say(copied ? `Opening ${agent.name}… The prompt is copied too, in case it doesn't open.` : `Opening ${agent.name}…`);
+        } else {
+          say(copied ? `Prompt copied. Paste it into ${agent.name}.` : "Couldn't copy. Open Full prompt to copy it.");
+        }
       });
     }
   }
+
 
   // Full agent prompt disclosure
   {
