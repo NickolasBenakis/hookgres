@@ -140,7 +140,9 @@ webhook service, that service becomes a processor: you sign a data
 processing agreement, list it as a subprocessor, and check where it stores
 data. It also holds a second copy of payloads that already live in your
 database. With Hookgres, there's one copy, in a database you already secure
-and already list.
+and already list. Your data stays in that database's region; see
+[Data residency](/guides/ips-and-regions#data-residency) for keeping each
+tenant in their own region.
 
 Whichever you use, a webhook sends data to your customer's server. If
 payloads include personal data, your agreement with that customer needs to

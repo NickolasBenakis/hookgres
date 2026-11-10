@@ -223,17 +223,19 @@ production, throughput depends mostly on how fast receivers respond.
 
 ## Documentation
 
-| Page                                                                     | Covers                                              |
-| ------------------------------------------------------------------------ | --------------------------------------------------- |
-| [Getting started](https://hookgres.dev/docs/getting-started)             | From install to a verified webhook in five minutes. |
-| [Sending webhooks](https://hookgres.dev/docs/guides/sending)             | Transactional sends, idempotency, payloads.         |
-| [Verifying webhooks](https://hookgres.dev/docs/guides/verifying)         | Express, Next.js, Hono, Fastify, other languages.   |
-| [Retries, failures and replay](https://hookgres.dev/docs/guides/retries) | The schedule, statuses, endpoint health.            |
-| [Running workers](https://hookgres.dev/docs/guides/workers)              | Background loop, many workers, cron or serverless.  |
-| [Going to production](https://hookgres.dev/docs/guides/production)       | SSRF protection, monitoring, cleanup.               |
-| [Privacy and GDPR](https://hookgres.dev/docs/guides/privacy)             | Redaction, retention, erasure requests.             |
-| [API reference](https://hookgres.dev/docs/reference/api)                 | Every method, option and type.                      |
-| [FAQ](https://hookgres.dev/docs/faq)                                     | Supabase, Neon, ORMs, ordering, payload size.       |
+| Page                                                                             | Covers                                              |
+| -------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [Getting started](https://hookgres.dev/docs/getting-started)                     | From install to a verified webhook in five minutes. |
+| [Sending webhooks](https://hookgres.dev/docs/guides/sending)                     | Transactional sends, idempotency, payloads.         |
+| [Verifying webhooks](https://hookgres.dev/docs/guides/verifying)                 | Express, Next.js, Hono, Fastify, other languages.   |
+| [Retries, failures and replay](https://hookgres.dev/docs/guides/retries)         | The schedule, statuses, endpoint health.            |
+| [Running workers](https://hookgres.dev/docs/guides/workers)                      | Background loop, many workers, cron or serverless.  |
+| [Going to production](https://hookgres.dev/docs/guides/production)               | SSRF protection, monitoring, cleanup.               |
+| [Database cost](https://hookgres.dev/docs/guides/database-cost)                  | Measured queries, WAL and disk per webhook.         |
+| [Fixed IPs and data residency](https://hookgres.dev/docs/guides/ips-and-regions) | Outbound IPs to allowlist, one region per tenant.   |
+| [Privacy and GDPR](https://hookgres.dev/docs/guides/privacy)                     | Redaction, retention, erasure requests.             |
+| [API reference](https://hookgres.dev/docs/reference/api)                         | Every method, option and type.                      |
+| [FAQ](https://hookgres.dev/docs/faq)                                             | Supabase, Neon, ORMs, ordering, payload size.       |
 
 ## Try it
 

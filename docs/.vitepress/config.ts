@@ -158,6 +158,11 @@ export default defineConfig({
           { text: "Rotating secrets", link: "/guides/secret-rotation" },
           { text: "Verifying webhooks", link: "/guides/verifying" },
           { text: "Going to production", link: "/guides/production" },
+          { text: "Database cost", link: "/guides/database-cost" },
+          {
+            text: "Fixed IPs and data residency",
+            link: "/guides/ips-and-regions",
+          },
           { text: "Privacy and GDPR", link: "/guides/privacy" },
           { text: "Migrating from Svix", link: "/guides/migrating-from-svix" },
         ],

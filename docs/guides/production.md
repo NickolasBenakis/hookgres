@@ -120,7 +120,8 @@ public addresses, such as Stripe's
 the worker hosts, protect you even if application code has a gap. Some
 cloud-internal services sit on public IPs, like Azure's `168.63.129.16`,
 so an address-based guard alone can't catch them. A proxy also gives you
-fixed outbound IPs that customers can allowlist.
+fixed outbound IPs that customers can allowlist (see
+[Fixed IPs and data residency](/guides/ips-and-regions)).
 
 ## Monitoring
 
@@ -274,6 +275,8 @@ most apps webhooks are a small fraction of database load.
 
 Webhooks share your database's disk and connections. If you send very large
 volumes, keep an eye on table size (see cleanup) and the connection pool.
+[Database cost](/guides/database-cost) has measured statements, WAL and disk
+per webhook, and what an idle worker costs.
 
 ## Security checklist
 

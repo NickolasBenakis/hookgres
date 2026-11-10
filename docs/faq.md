@@ -84,6 +84,26 @@ turn on `redactPayloads` to clear payloads after delivery, set a retention
 period with `cleanup()`, and erase on request with `deleteMessages()`. See
 [Privacy and GDPR](/guides/privacy).
 
+## Will webhooks slow down my database?
+
+For most apps, no. A webhook costs about 2 SQL statements, 1.3 KB of table
+and index space and 3.3 KB of WAL, and an idle worker runs one small query
+a second. [Database cost](/guides/database-cost) has the measurements, and
+how to keep tables small with `cleanup()`.
+
+## Can webhooks come from fixed IP addresses?
+
+Yes. Workers send webhooks from your own servers, so run them behind a NAT
+gateway or static egress IP, or send through a proxy with the `fetch`
+option. See [Fixed IPs and data residency](/guides/ips-and-regions).
+
+## Can I keep each tenant's data in their region?
+
+Yes. Everything is stored in your database, so it stays in that database's
+region. With regional databases, create one Hookgres instance per region and
+run workers there. See
+[Data residency](/guides/ips-and-regions#data-residency).
+
 ## Something's wrong. Where do I look?
 
 1. `listDeliveries({ status: "failed" })` and `listAttempts` show exactly what
