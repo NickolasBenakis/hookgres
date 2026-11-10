@@ -80,6 +80,11 @@ for (const file of pages) {
         `- [Playground](${site}/docs/playground.md)`,
         `- [llms.txt](${site}/llms.txt)`,
       ].join("\n"),
+    )
+    // The calculator is interactive; agents get the tables on the same page.
+    .replace(
+      "<CostCalculator />",
+      `An interactive calculator for these numbers is at ${site}/docs/compare.`,
     );
   const target = join(out, "docs", file === "index.md" ? "index.md" : file);
   mkdirSync(dirname(target), { recursive: true });

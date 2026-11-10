@@ -217,6 +217,8 @@
   .pill.small { height: 32px; padding: 0 14px; font-size: 13.5px; background: var(--accent); color: var(--accent-ink); box-shadow: var(--button-sheen); }
   @media (hover: hover) and (pointer: fine) { .pill.small:hover { background: var(--accent-hover); } }
   @media (max-width: 860px) { .nav .wrap { gap: 24px; } .search-trigger { width: 180px; } }
+  @media (max-width: 1040px) { .nav-links .hide-lg { display: none; } }
+  @media (max-width: 860px) { .nav-links .hide-ml { display: none; } }
   @media (max-width: 720px) { .nav-links .hide-md { display: none; } }
   @media (max-width: 640px) {
     .nav .wrap { gap: 18px; }
@@ -658,6 +660,8 @@
     <nav class="nav-links" aria-label="Main">
       <a href="/docs/">Docs</a>
       <a class="hide-md" href="/docs/playground">Playground</a>
+      <a class="hide-lg" href="/docs/use-cases">Use cases</a>
+      <a class="hide-ml" href="/docs/compare">Pricing</a>
       <a class="hide-sm" href="https://github.com/NickolasBenakis/hookgres">GitHub</a>
       <a class="hide-md" href="https://www.npmjs.com/package/hookgres">npm</a>
     </nav>
@@ -983,7 +987,7 @@ hookgres.start();
         <tbody>
           <tr><th scope="row">Where it runs</th><td class="us">Your app, your Postgres</td><td>Their cloud, via API</td></tr>
           <tr><th scope="row">Part of your transaction</th><td class="us">Yes</td><td>No, a separate API call</td></tr>
-          <tr><th scope="row">Price</th><td class="us">Free, MIT licensed</td><td>Usually per message or tier</td></tr>
+          <tr><th scope="row">1M webhooks a month</th><td class="us">Free library, about $0.15 of storage</td><td>$9.50 on Hookdeck Outpost, $115 on Svix Basic (<a href="/docs/compare">compare</a>)</td></tr>
           <tr><th scope="row">Where payloads go</th><td class="us">Only to your customers</td><td>Also to the provider</td></tr>
           <tr><th scope="row">Customer portal</th><td class="us">Build on the delivery log, or <a href="#portal">join the waitlist</a></td><td>Often included</td></tr>
         </tbody>

@@ -5,6 +5,7 @@ import { useData } from "vitepress";
 import DefaultTheme from "vitepress/theme-without-fonts";
 import { h, nextTick, onMounted, ref, watch } from "vue";
 import CopyLine from "./CopyLine.vue";
+import CostCalculator from "./CostCalculator.vue";
 import DocsHub from "./DocsHub.vue";
 import "./custom.css";
 
@@ -149,6 +150,7 @@ export default {
   },
   enhanceApp({ app }) {
     app.component("CopyLine", CopyLine);
+    app.component("CostCalculator", CostCalculator);
     app.component("DocsHub", DocsHub);
   },
 } satisfies Theme;

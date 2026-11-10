@@ -143,6 +143,8 @@ export default defineConfig({
           { text: "Overview", link: "/" },
           { text: "Getting started", link: "/getting-started" },
           { text: "Playground", link: "/playground" },
+          { text: "Use cases", link: "/use-cases" },
+          { text: "Cost comparison", link: "/compare" },
         ],
       },
       {
