@@ -69,7 +69,7 @@
     "site:build": "node scripts/build-site.mjs",
     "prepublishOnly": "pnpm typecheck && pnpm lint && pnpm build && pnpm test",
     "changeset": "changeset",
-    "ci:version": "changeset version",
+    "ci:version": "changeset version && biome format --write CHANGELOG.md",
     "ci:publish": "changeset publish"
   },
   "peerDependencies": {
