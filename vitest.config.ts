@@ -9,6 +9,10 @@ export default defineConfig({
         find: /^hookgres$/,
         replacement: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
       },
+      {
+        find: /^hookgres\/kysely$/,
+        replacement: fileURLToPath(new URL("./src/kysely.ts", import.meta.url)),
+      },
     ],
   },
   test: {

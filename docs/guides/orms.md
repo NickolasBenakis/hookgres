@@ -16,6 +16,7 @@ of a few lines.
 | Knex                 | `fromKnex(trx)`, below                                                                           |
 | Sequelize            | `fromSequelize(sequelize, t)`, below                                                             |
 | TypeORM              | `fromTypeORM(queryRunner)`, below                                                                |
+| MikroORM             | `fromMikroORM(em)`, below                                                                        |
 
 The recipes are meant to be copied into your app, for example into `db.ts`.
 Hookgres doesn't ship them, so it doesn't depend on any ORM or follow its
@@ -106,6 +107,34 @@ await dataSource.transaction(async (manager) => {
   );
 });
 ```
+
+## MikroORM
+
+MikroORM 7 runs its SQL through Kysely, and `em.getKysely()` inside
+`em.transactional()` is bound to the transaction. So the recipe reuses
+`fromKysely` from `hookgres/kysely`, which sends the values as bound
+parameters.
+
+<<< @/snippets/orms/mikro-orm.ts
+
+```ts
+await em.transactional(async (em) => {
+  const invoice = await em.findOneOrFail(Invoice, id);
+  invoice.status = "paid";
+  await em.flush();
+  await hookgres.send(
+    { tenantId, eventType: "invoice.paid", payload: { id } },
+    { client: fromMikroORM(em) },
+  );
+});
+```
+
+Pass the `em` that `transactional()` gives you. `em.fork()` would run
+outside the transaction.
+
+`hookgres/kysely` imports `kysely`, which MikroORM already installs. If your
+package manager doesn't hoist dependencies (Yarn Plug'n'Play, or pnpm with
+`hoist=false`), add `kysely` to your own dependencies too.
 
 ## Another driver or ORM
 

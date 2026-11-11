@@ -1,6 +1,7 @@
 // The copy-paste recipes on docs/guides/orms.md, run against a real Postgres:
 // each must queue a webhook when its transaction commits and nothing when it
 // rolls back.
+import { MikroORM } from "@mikro-orm/postgresql";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { drizzle as drizzlePostgresJs } from "drizzle-orm/postgres-js";
 import knex from "knex";
@@ -10,6 +11,7 @@ import { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { fromDrizzle } from "../docs/snippets/orms/drizzle.js";
 import { fromKnex } from "../docs/snippets/orms/knex.js";
+import { fromMikroORM } from "../docs/snippets/orms/mikro-orm.js";
 import { fromPostgresJs } from "../docs/snippets/orms/postgres-js.js";
 import { fromSequelize } from "../docs/snippets/orms/sequelize.js";
 import { fromTypeORM } from "../docs/snippets/orms/typeorm.js";
@@ -30,8 +32,16 @@ const drizzleJs = drizzlePostgresJs({ client: sqlJsForDrizzle });
 const knexDb = knex({ client: "pg", connection: url });
 const sequelize = new Sequelize(url, { logging: false });
 const typeorm = new DataSource({ type: "postgres", url });
+let mikro: MikroORM;
 
-beforeAll(() => typeorm.initialize());
+beforeAll(async () => {
+  await typeorm.initialize();
+  mikro = await MikroORM.init({
+    clientUrl: url,
+    entities: [],
+    discovery: { warnWhenNoEntities: false },
+  });
+});
 afterAll(async () => {
   await Promise.all([
     sqlJs.end(),
@@ -39,6 +49,7 @@ afterAll(async () => {
     knexDb.destroy(),
     sequelize.close(),
     typeorm.destroy(),
+    mikro.close(),
   ]);
 });
 
@@ -71,6 +82,10 @@ const recipes: [string, Transaction][] = [
       typeorm.transaction((manager) =>
         fn(fromTypeORM(manager.queryRunner as never)),
       ),
+  ],
+  [
+    "MikroORM",
+    (fn) => mikro.em.fork().transactional((em) => fn(fromMikroORM(em))),
   ],
 ];
 

@@ -70,7 +70,7 @@ needs a client that runs on that transaction: anything with a
 `query(text, values)` method that returns `{ rows }`. Hookgres ships one for
 Prisma (`hookgres/prisma`) and Kysely (`hookgres/kysely`), and
 [Using your ORM's transaction](/guides/orms) has tested recipes of a few lines
-for Drizzle, postgres.js, Knex, Sequelize and TypeORM. Guides:
+for Drizzle, postgres.js, Knex, Sequelize, TypeORM and MikroORM. Guides:
 
 - [Drizzle](/guides/drizzle)
 - [Prisma](/guides/prisma)

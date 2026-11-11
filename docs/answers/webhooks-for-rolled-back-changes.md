@@ -143,7 +143,8 @@ await client.query("COMMIT");
   request has a `webhook-id` header that stays the same across retries, so
   receivers can skip duplicates.
 
-Prisma, Drizzle, Kysely, Knex, Sequelize, TypeORM and postgres.js work too:
+Prisma, Drizzle, Kysely, Knex, Sequelize, TypeORM, MikroORM and postgres.js
+work too:
 see [Using your ORM's transaction](/guides/orms).
 
 ## Further reading

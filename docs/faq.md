@@ -23,7 +23,8 @@ connection. For [transactional sends](/guides/sending#inside-your-transaction),
 pass `send()` a client with a node-postgres style `query(text, values)` method
 that runs inside your transaction. `hookgres/prisma` and `hookgres/kysely`
 export one, and [Using your ORM's transaction](/guides/orms) has tested
-recipes of a few lines for Drizzle, postgres.js, Knex, Sequelize and TypeORM.
+recipes of a few lines for Drizzle, postgres.js, Knex, Sequelize, TypeORM and
+MikroORM.
 If your stack has no transactions, call `send()` right after the change is
 saved instead. You lose the outbox guarantee, but everything else works.
 

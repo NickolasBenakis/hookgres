@@ -13,7 +13,10 @@
     "sourceMap": true,
     "types": ["node"],
     // Docs snippets import "hookgres"; check them against the source.
-    "paths": { "hookgres": ["./src/index.ts"] }
+    "paths": {
+      "hookgres": ["./src/index.ts"],
+      "hookgres/kysely": ["./src/kysely.ts"]
+    }
   },
   "include": ["src", "test", "docs/snippets", "vitest.config.ts"],
   "exclude": ["examples", "scripts"]
