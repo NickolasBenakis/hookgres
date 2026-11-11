@@ -283,6 +283,9 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private readonly pollIntervalMs: number;
   private readonly concurrency: number;
   private readonly maxInFlightPerEndpoint: number;
+  /** When claimFair may next look past the claim window, and its backoff. */
+  private wideClaimAt = 0;
+  private wideClaimBackoff = 0;
   /** The pool, with a timeout on every query. Used by the worker. */
   private readonly workerDb: Queryable;
   private readonly lockTimeoutMs: number;
@@ -1717,36 +1720,65 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   }
 
   /**
-   * Claims up to `free` due deliveries, with at most `maxInFlightPerEndpoint`
-   * per endpoint counting the ones already `inFlight`. The claim is FIFO, so
-   * rows over an endpoint's share go straight back to pending, and the next
-   * claim skips endpoints that are full: one endpoint's backlog can't fill
-   * every slot.
+   * Claims up to `free` due deliveries, oldest first, with at most
+   * `maxInFlightPerEndpoint` per endpoint counting the ones already
+   * `inFlight`, so one endpoint's backlog can't fill every slot.
    */
   private async claimFair(
     free: number,
     inFlight: ReadonlyMap<string, number>,
   ): Promise<ClaimedDelivery[]> {
-    const counts = new Map(inFlight);
+    const cap = this.maxInFlightPerEndpoint;
+    const allowance = new Map<string, number>();
+    for (const [id, n] of inFlight) allowance.set(id, Math.max(0, cap - n));
+    const claimed = await this.claim(free, allowance);
+    // A lock-expired row bypasses the window's per-endpoint ranking; put
+    // anything over an endpoint's share back.
     const kept: ClaimedDelivery[] = [];
-    for (let round = 0; round < 5 && kept.length < free; round++) {
-      const full = [...counts]
-        .filter(([, n]) => n >= this.maxInFlightPerEndpoint)
-        .map(([id]) => id);
-      const wanted = free - kept.length;
-      const rows = await this.claim(wanted, full);
-      const extra: ClaimedDelivery[] = [];
-      for (const row of rows) {
-        const n = counts.get(row.endpoint_id) ?? 0;
-        if (n < this.maxInFlightPerEndpoint) {
-          counts.set(row.endpoint_id, n + 1);
-          kept.push(row);
-        } else {
-          extra.push(row);
-        }
+    const extra: ClaimedDelivery[] = [];
+    for (const row of claimed) {
+      const left = allowance.get(row.endpoint_id) ?? cap;
+      if (left > 0) {
+        allowance.set(row.endpoint_id, left - 1);
+        kept.push(row);
+      } else {
+        extra.push(row);
       }
-      if (extra.length > 0) await this.unclaim(extra);
-      if (rows.length < wanted || extra.length === 0) break;
+    }
+    if (extra.length > 0) await this.unclaim(extra);
+
+    // The window only holds the oldest due rows. If full endpoints' backlogs
+    // fill it, look past it so other tenants still get served. That scan
+    // reads those backlogs, so after one that finds nothing, back off.
+    const full = [...allowance].filter(([, n]) => n === 0).map(([id]) => id);
+    if (
+      kept.length < free &&
+      full.length > 0 &&
+      Date.now() >= this.wideClaimAt
+    ) {
+      try {
+        const more = await this.claimPast(free - kept.length, full);
+        for (const row of more) {
+          const left = allowance.get(row.endpoint_id) ?? cap;
+          if (left > 0) {
+            allowance.set(row.endpoint_id, left - 1);
+            kept.push(row);
+          } else {
+            extra.push(row);
+            await this.unclaim([row]);
+          }
+        }
+        this.wideClaimBackoff = more.length
+          ? 0
+          : Math.min(
+              Math.max(this.pollIntervalMs, this.wideClaimBackoff * 2),
+              10 * this.pollIntervalMs,
+            );
+        this.wideClaimAt = Date.now() + this.wideClaimBackoff;
+      } catch (error) {
+        // Keep what's already claimed; report the rest.
+        this.reportError(error);
+      }
     }
     return kept;
   }
@@ -1764,33 +1796,54 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     );
   }
 
+  private static readonly CLAIM_RETURNING =
+    `RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
+                 m.tenant_id, m.id AS message_id,
+                 m.event_type, m.payload,
+                 (extract(epoch FROM m.created_at) * 1000)::float8 AS message_created_ms,
+                 m.redacted_at IS NOT NULL AS redacted,
+                 e.url, e.secret,
+                 CASE WHEN e.previous_secret_expires_at > now()
+                      THEN e.previous_secret END AS previous_secret,
+                 e.disabled`;
+
+  /**
+   * Claims up to `limit` due deliveries from a window of the oldest due rows
+   * it could lock, ranking each endpoint's rows so none goes over its
+   * `allowance` (the per-endpoint cap when not listed). Index-ordered and
+   * limited, so its cost doesn't grow with the backlog.
+   */
   private async claim(
     limit: number,
-    skipEndpoints: string[],
+    allowance: ReadonlyMap<string, number>,
   ): Promise<ClaimedDelivery[]> {
-    // Two index-ordered scans, each limited, instead of one OR: that would
-    // read and sort every due row, so a backlog would make each claim slower.
     const { rows } = await this.query<ClaimedDelivery>(
-      `WITH pending AS (
-         -- Skipping full endpoints in the index scan itself would read their
-         -- whole backlog, so look only at a window of the oldest due rows.
-         SELECT d.id, d.next_attempt_at AS due_at
-         FROM (
-           SELECT id FROM ${this.t.deliveries}
-           WHERE status = 'pending' AND next_attempt_at <= now()
-           ORDER BY next_attempt_at
-           LIMIT $4
-         ) w
-         JOIN ${this.t.deliveries} d ON d.id = w.id
-         WHERE d.status = 'pending' AND d.endpoint_id <> ALL ($3::text[])
-         ORDER BY d.next_attempt_at
+      `WITH window_rows AS (
+         -- Lock while scanning, so rows other workers are claiming are
+         -- skipped here instead of counting against an endpoint's share.
+         -- Rows locked but not picked below are released when this ends.
+         SELECT id, endpoint_id, next_attempt_at AS due_at
+         FROM ${this.t.deliveries}
+         WHERE status = 'pending' AND next_attempt_at <= now()
+         ORDER BY next_attempt_at
+         LIMIT $5
+         FOR UPDATE SKIP LOCKED
+       ), ranked AS (
+         SELECT w.id, w.due_at,
+                row_number() OVER (PARTITION BY w.endpoint_id ORDER BY w.due_at) AS n,
+                COALESCE(a.allowance, $4) AS allowance
+         FROM window_rows w
+         LEFT JOIN unnest($3::text[], $6::int[]) AS a (endpoint_id, allowance)
+           ON a.endpoint_id = w.endpoint_id
+       ), pending AS (
+         SELECT id, due_at FROM ranked
+         WHERE n <= allowance
+         ORDER BY due_at
          LIMIT $1
-         FOR UPDATE OF d SKIP LOCKED
        ), expired AS (
          -- Claimed by a worker that crashed: its lock has run out.
          SELECT id, locked_until AS due_at FROM ${this.t.deliveries}
          WHERE status = 'delivering' AND locked_until < now()
-           AND endpoint_id <> ALL ($3::text[])
          ORDER BY locked_until
          LIMIT $1
          FOR UPDATE SKIP LOCKED
@@ -1809,21 +1862,49 @@ export class Hookgres<E extends EventMap = AnyEvents> {
            updated_at = now()
        FROM due, ${this.t.messages} m, ${this.t.endpoints} e
        WHERE d.id = due.id AND m.id = d.message_id AND e.id = d.endpoint_id
-       RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
-                 m.tenant_id, m.id AS message_id,
-                 m.event_type, m.payload,
-                 (extract(epoch FROM m.created_at) * 1000)::float8 AS message_created_ms,
-                 m.redacted_at IS NOT NULL AS redacted,
-                 e.url, e.secret,
-                 CASE WHEN e.previous_secret_expires_at > now()
-                      THEN e.previous_secret END AS previous_secret,
-                 e.disabled`,
+       ${Hookgres.CLAIM_RETURNING}`,
       [
         limit,
         this.lockTimeoutMs,
-        skipEndpoints,
-        skipEndpoints.length ? Math.max(1000, this.concurrency * 20) : limit,
+        [...allowance.keys()],
+        this.maxInFlightPerEndpoint,
+        // Room to skip past one busy endpoint without reading its backlog;
+        // claimPast handles a window it fills.
+        limit * 4,
+        [...allowance.values()],
       ],
+      this.workerDb,
+    );
+    return rows;
+  }
+
+  /**
+   * Claims due deliveries of endpoints other than `skip`, past the window:
+   * reads the skipped endpoints' rows, so only for when they fill it.
+   */
+  private async claimPast(
+    limit: number,
+    skip: string[],
+  ): Promise<ClaimedDelivery[]> {
+    const { rows } = await this.query<ClaimedDelivery>(
+      `WITH due AS (
+         SELECT id FROM ${this.t.deliveries}
+         WHERE status = 'pending' AND next_attempt_at <= now()
+           AND endpoint_id <> ALL ($3::text[])
+         ORDER BY next_attempt_at
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       UPDATE ${this.t.deliveries} d
+       SET status = 'delivering',
+           locked_until = now() + make_interval(secs => $2::double precision / 1000),
+           lock_token = gen_random_uuid(),
+           attempt_count = d.attempt_count + 1,
+           updated_at = now()
+       FROM due, ${this.t.messages} m, ${this.t.endpoints} e
+       WHERE d.id = due.id AND m.id = d.message_id AND e.id = d.endpoint_id
+       ${Hookgres.CLAIM_RETURNING}`,
+      [limit, this.lockTimeoutMs, skip],
       this.workerDb,
     );
     return rows;

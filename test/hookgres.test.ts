@@ -782,6 +782,56 @@ describe("fairness", () => {
     }
   });
 
+  it("serves another tenant behind a backlog much bigger than the claim window", async () => {
+    const slow = await startReceiver();
+    try {
+      slow.respond = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return 200;
+      };
+      const hw = ctx.create({ concurrency: 4, requestTimeoutMs: 5000 });
+      await hw.createEndpoint({ tenantId: "noisy", url: slow.url });
+      await hw.createEndpoint({ tenantId: "quiet", url: receiver.url });
+      await ctx.pool.query(
+        `WITH m AS (
+           INSERT INTO "${ctx.schema}".messages (id, tenant_id, event_type, payload)
+           SELECT 'msg_bulk_' || g, 'noisy', 'e', '{}' FROM generate_series(1, 2000) g
+           RETURNING id
+         )
+         INSERT INTO "${ctx.schema}".deliveries (message_id, endpoint_id)
+         SELECT m.id, e.id FROM m, "${ctx.schema}".endpoints e WHERE e.tenant_id = 'noisy'`,
+      );
+      await hw.send({ tenantId: "quiet", eventType: "e", payload: {} });
+      const started = Date.now();
+      hw.start();
+      await waitFor(() => receiver.requests.length === 1, 4000);
+      expect(Date.now() - started).toBeLessThan(3000);
+      await hw.stop();
+    } finally {
+      await slow.close();
+    }
+  });
+
+  it("doesn't end concurrent drains early while work is due", async () => {
+    const one = ctx.create({ concurrency: 5 });
+    const two = ctx.create({ concurrency: 5 });
+    await one.createEndpoint({ tenantId: "a", url: receiver.url });
+    await one.createEndpoint({ tenantId: "b", url: receiver.url });
+    for (let i = 0; i < 60; i++) {
+      await one.send({
+        tenantId: i % 2 ? "a" : "b",
+        eventType: "e",
+        payload: { i },
+      });
+    }
+    const [x, y] = await Promise.all([
+      one.drain({ timeoutMs: 10_000 }),
+      two.drain({ timeoutMs: 10_000 }),
+    ]);
+    expect(x + y).toBe(60);
+    expect(await one.listDeliveries({ status: "pending" })).toEqual([]);
+  });
+
   it("keeps at most maxInFlightPerEndpoint deliveries to one endpoint in flight", async () => {
     let inFlight = 0;
     let peak = 0;

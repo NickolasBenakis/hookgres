@@ -17,8 +17,16 @@ the same process wakes it immediately.
 No endpoint gets more than `maxInFlightPerEndpoint` of those slots (half of
 `concurrency` by default). A customer whose endpoint hangs until
 `requestTimeoutMs` holds at most that many slots, and the rest keep
-delivering to other tenants. Raise it if a single fast endpoint gets most of
-your traffic and you want it to use every slot.
+delivering to other tenants. `runOnce()` and `drain()` apply the same limit to
+each batch. Raise it if a single fast endpoint gets most of your traffic and
+you want it to use every slot.
+
+If a receiver closes a kept-alive connection just as Hookgres reuses it, the
+request is sent once more on a fresh connection within the same
+`requestTimeoutMs`. The retry is also made if a receiver dropped the
+connection after reading the request, so it can occasionally deliver a
+webhook twice. Delivery is at least once anyway; receivers dedupe on
+`webhook-id`.
 
 ### Instant wake-up with LISTEN/NOTIFY
 
