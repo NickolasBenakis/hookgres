@@ -60,6 +60,34 @@ don't." That stops webhooks for rolled-back changes. It doesn't stop the
 second bug: if the process dies after the commit and before the callback
 runs, the webhook is lost.
 
+In Node.js ORMs the after-commit callback is often the hard part:
+
+- **Prisma**: code running inside an interactive transaction has no way to
+  register a callback for after the commit. A 2022 request for
+  [`onCommit` callbacks](https://github.com/prisma/orm/issues/11920) is still
+  open, with users posting their own workarounds; one wrote in 2023, "I don't
+  want to send the notification unless the transaction commits
+  successfully." In October 2026 Prisma merged an
+  [`afterTransaction` stage](https://github.com/prisma/orm/pull/30614) for the
+  middleware of `@prisma/orm-postgres`, which runs when the transaction ends
+  and tells the middleware whether it committed.
+- **MikroORM**: a 2025 request for
+  [transactional domain events](https://github.com/mikro-orm/mikro-orm/issues/6789)
+  notes that "Events may be emitted even if the transaction is later rolled
+  back." Two replies recommend a transactional outbox instead of publishing
+  after commit, because
+  ["there is a window of time where things can fail"](https://github.com/mikro-orm/mikro-orm/issues/6789#issuecomment-3215452374)
+  between the commit and the publish.
+- **Sequelize**: an open report of an
+  [`afterCommit` callback that never runs](https://github.com/sequelize/sequelize/issues/17452)
+  when it's added from an `afterSave` hook during `findOrCreate`.
+- **TypeORM**: an open report that
+  [`afterTransactionCommit` fires](https://github.com/typeorm/typeorm/issues/12992)
+  when Postgres actually rolled the transaction back.
+
+Even a callback that always fires at the right time runs in memory, so it
+still loses the webhook when the process dies.
+
 **Queue a job inside the transaction.** A job queue in Redis (BullMQ) or any
 system outside Postgres doesn't roll back with your data. The job is already
 queued when the transaction fails. The
@@ -70,10 +98,25 @@ BullMQ and Postgres.
 retry scheduled in the process, dies with it.
 
 Both bugs go away only when the event is saved **in the same transaction** as
-the change, and delivered from there by a worker. Dodo and Plane both ended
-up there, with a Postgres trigger writing an events row in the same
-transaction. The pattern's name is the
+the change, and delivered from there by a worker. The pattern's name is the
 [transactional outbox](/answers/transactional-outbox-nodejs).
+
+## What teams built to get there
+
+Dodo and Plane both ended up with an outbox. Here is what each one runs:
+
+| Step                         | Dodo Payments                                                                            | Plane                                   | Hookgres                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- |
+| Save the event in the change | Postgres trigger writes a `domain_events` row                                            | Postgres trigger writes an outbox row   | `send()` writes a row                   |
+| Read new events              | Sequin, reading Postgres's write-ahead log                                               | A poller using `FOR UPDATE SKIP LOCKED` | Workers using `FOR UPDATE SKIP LOCKED`  |
+| Buffer                       | Kafka                                                                                    | RabbitMQ                                | None: the rows are the queue            |
+| Deliver the webhook          | Restate services and a data service that builds the payload, then Svix for the last mile | A Celery task                           | The same workers, with retries and logs |
+
+The comparison isn't one to one. Plane's pipeline also feeds other services,
+not only webhooks, and Svix gives Dodo more than sending and retrying, such as
+its hosted portal. What the table shows is how many systems it took each team
+to get the outbox itself. Hookgres is that column as one Node.js library on
+the Postgres you already run.
 
 ## What `send()` does
 

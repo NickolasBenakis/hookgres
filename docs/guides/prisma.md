@@ -4,6 +4,15 @@ This guide shows how to call `send()` inside a Prisma interactive
 transaction, so a webhook is queued only if your change commits. It was
 tested with Prisma 7 and the `@prisma/adapter-pg` driver adapter.
 
+Why inside? Prisma's own docs list sending from the transaction callback as a
+[common mistake](https://www.prisma.io/docs/orm/fundamentals/transactions):
+"Database writes roll back; emails don't." Their fix is to send after the
+commit, which still loses the webhook if your process stops between the
+commit and the send. `send()` doesn't make an HTTP call inside the
+transaction. It writes a row, which rolls back with your change, and a
+worker delivers it after the commit. See
+[Webhooks sent for rolled-back changes](/answers/webhooks-for-rolled-back-changes).
+
 Two separate things are involved:
 
 - **Joining the transaction.** `send()` runs its query through
