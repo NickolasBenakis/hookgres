@@ -27,7 +27,8 @@ Endpoints created later don't receive earlier messages.
 ## Inside your transaction
 
 The most common webhook bug is sending an event for a change that was then
-rolled back, or saving a change and failing to send its event. Pass your
+rolled back, or saving a change and failing to send its event
+([real cases](/answers/webhooks-for-rolled-back-changes)). Pass your
 transaction's client to `send()` and both happen or neither does. This is the
 **transactional outbox** pattern:
 

@@ -200,6 +200,10 @@ export default defineConfig({
             link: "/answers/transactional-outbox-nodejs",
           },
           {
+            text: "Webhooks sent for rolled-back changes",
+            link: "/answers/webhooks-for-rolled-back-changes",
+          },
+          {
             text: "A Svix alternative",
             link: "/answers/svix-alternative",
           },

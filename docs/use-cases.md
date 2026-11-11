@@ -3,7 +3,10 @@
 You need webhooks when **another company's software has to react to
 something that happens in your app**. It usually starts with a customer
 asking: "Can you tell our system when this happens, instead of us polling your
-API?"
+API?" Open-source projects get the same request in public, for example
+[headscale](https://github.com/juanfont/headscale/issues/1543),
+[Teable](https://github.com/teableio/teable/issues/460) and
+[Semaphore UI](https://github.com/semaphoreui/semaphore/issues/1825).
 
 If no customer has asked that yet, you probably don't need Hookgres. If you
 only _receive_ webhooks (from Stripe, GitHub or Clerk), use their verification
@@ -70,8 +73,14 @@ await hookgres.send(
 ```
 
 Money is where a webhook for a rolled-back change hurts most: the customer's
-ERP books a payment you don't have. The idempotency key also stops a retried
-request from sending it twice.
+ERP books a payment you don't have. The bug is real: Apache Fineract, an
+open-source core banking platform, sent webhooks for batches that then rolled
+back, so downstream systems such as SMS notifications acted on events that
+never persisted ([FINERACT-2570](https://issues.apache.org/jira/browse/FINERACT-2570),
+fixed in April 2026). More cases in
+[Webhooks sent for rolled-back changes](/answers/webhooks-for-rolled-back-changes).
+
+The idempotency key also stops a retried request from sending it twice.
 
 ## Long jobs → no more polling
 
@@ -121,7 +130,10 @@ await hookgres.send(
 ```
 
 One webhook endpoint setting connects your product to thousands of apps
-through those tools, without building each integration.
+through those tools, without building each integration. Users ask for exactly
+that setting: a [Postiz feature request](https://github.com/gitroomhq/postiz-app/issues/321)
+wants a generic webhook so they can connect Zapier, n8n or any other
+automation tool.
 
 ## Orders → the merchant's warehouse
 
@@ -174,6 +186,11 @@ your Postgres take about 13 GB. See [Cost comparison](/compare).
   them with a library in their language.
 - **Retried** with backoff for about 28 hours, then marked failed and
   [replayable](/guides/retries).
+- **Safe to receive twice:** every request has a `webhook-id` header that
+  stays the same across retries, so receivers can skip duplicates. They
+  happen with any webhook system; one Zoom developer
+  [reported](https://devforum.zoom.us/t/duplicate-phone-webhook-events-received/110851)
+  "40 to 50 duplicate event messages per call."
 - **Logged:** every attempt is a row you can query, show in your UI, or use
   to answer "did you send it?"
 - **Per customer:** endpoints belong to a tenant, with their own secrets and
