@@ -10,10 +10,11 @@ on your own database.
 It should work with any Postgres 14+. Hookgres uses plain SQL and needs no
 extensions. CI tests it on Postgres 14, 15, 16, 17 and 18.
 
-It also uses no session state: no `LISTEN/NOTIFY`, no named prepared
-statements, and only transaction-level advisory locks. So it should work
-through a pooler in transaction mode, such as PgBouncer or Supavisor.
-Pooler setups aren't part of CI yet.
+By default it also uses no session state: no named prepared statements, only
+transaction-level advisory locks, and no `LISTEN` unless you turn on
+[`notify`](/guides/workers#instant-wake-up-with-listen-notify). So it should
+work through a pooler in transaction mode, such as PgBouncer or Supavisor;
+leave `notify` off there. Pooler setups aren't part of CI yet.
 
 ## Can I use it with Prisma, Drizzle or Kysely?
 
