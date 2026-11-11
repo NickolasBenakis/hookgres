@@ -7,7 +7,14 @@ user signs up. This page covers the options and the one most teams get wrong.
 ## What sending webhooks takes
 
 A webhook is an HTTP `POST` to a URL your customer gives you. Sending one is
-a `fetch`. Sending them reliably needs more:
+a `fetch`. Sending them reliably is another matter. As Simon Willison
+[put it in 2024](https://news.ycombinator.com/item?id=41419851):
+
+> Implementing webhook deliveries is one of those things that's way harder
+> than you would initially imagine.
+
+He went on to name endpoints that are slow on purpose, and retries with
+backoff. The full list:
 
 - **A queue that survives restarts**, so an event isn't lost when the process
   dies or the receiver is down.
