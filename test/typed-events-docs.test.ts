@@ -32,6 +32,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // pool.end() can resolve while a client is still closing; DROP DATABASE
+  // WITH (FORCE) then terminates it, which would surface as an unhandled
+  // pool error.
+  pool.on("error", () => {});
   await pool.end();
   await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
   await admin.end();
