@@ -66,8 +66,10 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    `client` can be anything with a node-postgres style `query(text, values)`
    that runs inside the transaction. For Prisma pass
    `{ client: fromPrisma(tx) }` (from `hookgres/prisma`), for Kysely
-   `{ client: fromKysely(trx) }` (from `hookgres/kysely`). For Drizzle, see
-   the ORM guides linked from https://hookgres.dev/docs/guides/sending.md.
+   `{ client: fromKysely(trx) }` (from `hookgres/kysely`). For Drizzle,
+   postgres.js, Knex, Sequelize and TypeORM, copy the tested wrapper from
+   https://hookgres.dev/docs/guides/orms.md into the app and pass
+   `{ client: fromDrizzle(tx) }` (or the matching one).
 
 5. Endpoint management routes, scoped to the signed-in tenant:
    `createEndpoint({ tenantId, url, eventTypes })` (show `endpoint.secret`
