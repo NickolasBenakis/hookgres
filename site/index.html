@@ -216,10 +216,11 @@
   .nav-links a { padding-block: 12px; }
   .pill.small { height: 32px; padding: 0 14px; font-size: 13.5px; background: var(--accent); color: var(--accent-ink); box-shadow: var(--button-sheen); }
   @media (hover: hover) and (pointer: fine) { .pill.small:hover { background: var(--accent-hover); } }
-  @media (max-width: 860px) { .nav .wrap { gap: 24px; } .search-trigger { width: 180px; } }
+  /* Each link hides just before the header runs out of room. */
+  @media (max-width: 880px) { .nav .wrap { gap: 24px; } .search-trigger { width: 180px; } }
   @media (max-width: 1040px) { .nav-links .hide-lg { display: none; } }
-  @media (max-width: 860px) { .nav-links .hide-ml { display: none; } }
-  @media (max-width: 720px) { .nav-links .hide-md { display: none; } }
+  @media (max-width: 880px) { .nav-links .hide-ml { display: none; } }
+  @media (max-width: 760px) { .nav-links .hide-md { display: none; } }
   @media (max-width: 640px) {
     .nav .wrap { gap: 18px; }
     .search-trigger { width: 36px; height: 36px; padding: 0; justify-content: center; }
@@ -227,7 +228,8 @@
     .search-trigger svg { width: 17px; height: 17px; }
   }
   @media (max-width: 520px) { .nav-links .hide-sm { display: none; } }
-  @media (max-width: 360px) { .nav-links { display: none; } }
+  @media (max-width: 380px) { .nav-links { display: none; } }
+  @media (max-width: 340px) { .nav .wrap { gap: 10px; } .nav-actions { gap: 4px; } .pill.small { padding: 0 12px; } }
 
   /* Hero: the pitch on the left, the code on the right. */
   .hero { padding: clamp(36px, 5.5vw, 64px) 0 0; }
