@@ -1505,7 +1505,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     } catch (error) {
       const pid = (client as { processID?: number }).processID;
       if ((error as Error).message === "Query read timeout" && pid) {
-        this.pool.query("SELECT pg_cancel_backend($1)", [pid]).catch(() => {});
+        // Wait for the cancel, so the caller never sees the timeout while the
+        // statement could still commit. Bounded: the database may be gone.
+        await this.pool
+          .query({
+            text: "SELECT pg_cancel_backend($1)",
+            values: [pid],
+            query_timeout: Math.min(timeoutMs, 5 * SECOND),
+          } as pg.QueryConfig)
+          .catch(() => {});
       }
       client.release(error as Error);
       throw explainMissingTables(error, this.schema);
