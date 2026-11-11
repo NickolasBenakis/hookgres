@@ -21,6 +21,7 @@ const hookgres = new Hookgres({
   onError: console.error,
   onAttempt: undefined,
   onEndpointDisabled: undefined,
+  schemas: undefined,
 });
 ```
 
@@ -46,6 +47,7 @@ const hookgres = new Hookgres({
 | `onError`                | `console.error`               | Called with unexpected worker errors, like a lost database connection, and with idle-connection errors from a pool Hookgres created itself. Failed deliveries are not errors.                                                                      |
 | `onAttempt`              | —                             | Called with an [`AttemptEvent`](/reference/api#types) after every HTTP attempt. See [Metrics and tracing](/guides/production#metrics-and-tracing).                                                                                                 |
 | `onEndpointDisabled`     | —                             | Called with an [`EndpointDisabledEvent`](/reference/api#types) when Hookgres disables an endpoint after `disableEndpointAfterMs`.                                                                                                                  |
+| `schemas`                | —                             | One Standard Schema (Zod, Valibot, ArkType) per event type. Types `send()` and validates each payload. See [Typed events](/guides/typed-events).                                                                                                   |
 
 Errors thrown by `onAttempt` or `onEndpointDisabled`, and promises they
 reject, never affect delivery. Hookgres reports them with

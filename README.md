@@ -165,6 +165,10 @@ No long-running process? Drain the queue from a cron job with
   event only goes to that tenant's endpoints.
 - **Event type filters.** Endpoints subscribe to exact types like
   `invoice.paid` or wildcards like `invoice.*`.
+- **Typed events.** Pass Zod, Valibot or ArkType schemas (or just a type) and
+  `send()` checks event types and payloads at compile time, and validates
+  them at runtime with schemas. No schema library is a dependency.
+  [Typed events](https://hookgres.dev/docs/guides/typed-events).
 - **Delivery log and replay.** Status code, response body, error and timing for
   every attempt, in tables you can query. `replayDelivery(id)` sends it again.
 - **Delivery hooks.** `onAttempt` and `onEndpointDisabled` feed your metrics

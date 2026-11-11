@@ -103,6 +103,9 @@ Endpoints list the types they want, or `null` for all of them. An entry like
 `invoice.*` matches every event type under `invoice.`. See
 [Endpoints](/guides/endpoints#create).
 
+To have TypeScript check event types and payloads, and optionally validate
+payloads with Zod or Valibot, see [Typed events](/guides/typed-events).
+
 ## Payloads
 
 The payload can be any JSON-serialisable value. It's stored as `jsonb` and

@@ -48,7 +48,7 @@ export interface Endpoint {
  *   eventTypes: ["invoice.*"],
  * };
  */
-export interface CreateEndpointInput {
+export interface CreateEndpointInput<E extends EventMap = AnyEvents> {
   /** Your id for the customer that owns this endpoint. Take it from the session. */
   tenantId: string;
   /** Absolute http(s) URL. */
@@ -58,7 +58,7 @@ export interface CreateEndpointInput {
    * Omit or pass `null` to receive every event type. `"invoice.*"` matches
    * every event type that starts with `"invoice."`.
    */
-  eventTypes?: string[] | null;
+  eventTypes?: EventTypeFilter<E>[] | null;
   /** Bring your own `whsec_...` secret. Generated when omitted. */
   secret?: string;
   /** Your own JSON data. Defaults to `{}`. */
@@ -71,10 +71,10 @@ export interface CreateEndpointInput {
  * @example
  * const patch: UpdateEndpointInput = { url: "https://example.com/v2/webhooks" };
  */
-export interface UpdateEndpointInput {
+export interface UpdateEndpointInput<E extends EventMap = AnyEvents> {
   url?: string;
   description?: string | null;
-  eventTypes?: string[] | null;
+  eventTypes?: EventTypeFilter<E>[] | null;
   metadata?: Record<string, unknown>;
   /** Setting `false` re-enables an endpoint and clears its failure state. */
   disabled?: boolean;
@@ -98,7 +98,8 @@ export interface Message {
 }
 
 /**
- * The event for `send()`.
+ * The event for `send()`. With an event map (`Hookgres<Events>` or
+ * `schemas`), `eventType` must be one of its keys and `payload` must match.
  *
  * @example
  * const input: SendInput = {
@@ -108,16 +109,21 @@ export interface Message {
  *   idempotencyKey: "invoice.paid:inv_123",
  * };
  */
-export interface SendInput {
-  /** Whose endpoints receive it. A tenant with no endpoints is not an error. */
-  tenantId: string;
-  /** A concrete event type like `"invoice.paid"`; no `*` wildcards. */
-  eventType: string;
-  /** Any JSON-serialisable value. Delivered as `data` in the envelope. */
-  payload: unknown;
-  /** Sending twice with the same key (per tenant) creates one message. */
-  idempotencyKey?: string;
-}
+export type SendInput<E extends EventMap = AnyEvents> = {
+  [K in keyof E & string]: {
+    /** Whose endpoints receive it. A tenant with no endpoints is not an error. */
+    tenantId: string;
+    /** A concrete event type like `"invoice.paid"`; no `*` wildcards. */
+    eventType: K;
+    /**
+     * Any JSON-serialisable value. Delivered as `data` in the envelope. With
+     * `schemas`, it is validated, and the schema's output is what's stored.
+     */
+    payload: E[K];
+    /** Sending twice with the same key (per tenant) creates one message. */
+    idempotencyKey?: string;
+  };
+}[keyof E & string];
 
 /** Options for `send()`. */
 export interface SendOptions {
@@ -278,6 +284,19 @@ export interface EndpointDisabledEvent {
 }
 
 /**
+ * Every event `verifyWebhook` can return for an event map, as a union you can
+ * narrow on `type`. Pass `InferEvents<typeof schemas>` when you use `schemas`.
+ *
+ * @example
+ * type Events = { "invoice.paid": { id: string }; "invoice.voided": { id: string } };
+ * const event = verifyWebhook<WebhookEvent<Events>>({ secret, headers, body });
+ * if (event.type === "invoice.paid") markPaid(event.data.id);
+ */
+export type WebhookEvent<E extends EventMap = AnyEvents> = {
+  [K in keyof E & string]: WebhookEnvelope<E[K]> & { type: K };
+}[keyof E & string];
+
+/**
  * The JSON body POSTed to endpoints (Standard Webhooks envelope), and what
  * `verifyWebhook` returns.
  *
@@ -292,4 +311,104 @@ export interface WebhookEnvelope<T = unknown> {
   timestamp: string;
   /** The payload passed to `send()`. */
   data: T;
+}
+
+// ---------------------------------------------------------------- typed events
+
+/**
+ * Maps each event type to its payload type, e.g.
+ * `{ "invoice.paid": { id: string; amount: number } }`. Pass it as
+ * `new Hookgres<Events>()`, or let Hookgres infer it from `schemas`.
+ *
+ * @see https://hookgres.dev/docs/guides/typed-events
+ */
+export type EventMap = Record<string, unknown>;
+
+/** The default event map: any event type, any payload. */
+export type AnyEvents = Record<string, unknown>;
+
+/**
+ * The `eventTypes` an endpoint can subscribe to: a known event type, or a
+ * wildcard like `"invoice.*"` that matches at least one. Any other string is
+ * still accepted by the type (endpoint filters usually come from your
+ * customers at runtime); with `schemas`, Hookgres rejects it at runtime.
+ */
+export type EventTypeFilter<E extends EventMap = AnyEvents> =
+  | (keyof E & string)
+  | WildcardsOf<keyof E & string>
+  | (string & {});
+
+/** `"a.b.c"` becomes `"a.*" | "a.b.*"`. */
+type WildcardsOf<T extends string> = T extends `${infer Head}.${infer Rest}`
+  ? `${Head}.*` | `${Head}.${WildcardsOf<Rest>}`
+  : never;
+
+/**
+ * One Standard Schema per event type, e.g. Zod, Valibot or ArkType schemas.
+ * `send()` validates each payload against its event type's schema.
+ *
+ * @example
+ * const schemas = {
+ *   "invoice.paid": z.object({ id: z.string(), amount: z.number() }),
+ * } satisfies EventSchemas;
+ */
+export type EventSchemas<E extends EventMap = AnyEvents> = {
+  [K in keyof E]: StandardSchemaV1<E[K], unknown>;
+};
+
+/**
+ * The payload types your receivers get for a set of `schemas`: each schema's
+ * output, which is what `send()` stores and delivers.
+ *
+ * @example
+ * type Events = InferEvents<typeof schemas>;
+ * const event = verifyWebhook<WebhookEvent<Events>>({ secret, headers, body });
+ */
+export type InferEvents<S extends Record<string, StandardSchemaV1>> = {
+  [K in keyof S]: StandardSchemaV1.InferOutput<S[K]>;
+};
+
+/**
+ * The Standard Schema interface (https://standardschema.dev), implemented by
+ * Zod 3.24+ and 4, Valibot, ArkType and others. Copied from the spec, as it
+ * recommends, so Hookgres doesn't depend on any schema library.
+ */
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly "~standard": StandardSchemaV1.Props<Input, Output>;
+}
+
+export declare namespace StandardSchemaV1 {
+  export interface Props<Input = unknown, Output = Input> {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (
+      value: unknown,
+    ) => Result<Output> | Promise<Result<Output>>;
+    readonly types?: Types<Input, Output> | undefined;
+  }
+  export type Result<Output> = SuccessResult<Output> | FailureResult;
+  export interface SuccessResult<Output> {
+    readonly value: Output;
+    readonly issues?: undefined;
+  }
+  export interface FailureResult {
+    readonly issues: ReadonlyArray<Issue>;
+  }
+  export interface Issue {
+    readonly message: string;
+    readonly path?: ReadonlyArray<PropertyKey | PathSegment> | undefined;
+  }
+  export interface PathSegment {
+    readonly key: PropertyKey;
+  }
+  export interface Types<Input = unknown, Output = Input> {
+    readonly input: Input;
+    readonly output: Output;
+  }
+  export type InferInput<Schema extends StandardSchemaV1> = NonNullable<
+    Schema["~standard"]["types"]
+  >["input"];
+  export type InferOutput<Schema extends StandardSchemaV1> = NonNullable<
+    Schema["~standard"]["types"]
+  >["output"];
 }

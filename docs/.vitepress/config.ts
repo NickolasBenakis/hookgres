@@ -151,6 +151,7 @@ export default defineConfig({
         text: "Guides",
         items: [
           { text: "Sending webhooks", link: "/guides/sending" },
+          { text: "Typed events", link: "/guides/typed-events" },
           { text: "Using your ORM", link: "/guides/orms" },
           { text: "Drizzle", link: "/guides/drizzle" },
           { text: "Prisma", link: "/guides/prisma" },
