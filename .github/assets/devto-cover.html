@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  Source for the dev.to cover (1000x420 at 2x = 2000x840), styled like the landing page hero. Render from the repo root with:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+    --no-first-run --user-data-dir="$TMPDIR/cover-profile" --force-device-scale-factor=2 --window-size=1000,420 \
+    --screenshot="$PWD/.github/assets/devto-cover.png" "file://$PWD/.github/assets/devto-cover.html"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Hookgres dev.to cover</title>
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1000px; height: 420px; overflow: hidden; box-sizing: border-box;
+    padding: 0 52px; display: grid; grid-template-columns: 500px 1fr; gap: 44px; align-items: center;
+    background: oklch(98.8% 0.003 258); color: oklch(21% 0.012 258);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+  .brand svg { width: 30px; height: 30px; }
+  h1 { margin: 22px 0 0; font-size: 47px; line-height: 1.04; letter-spacing: -0.036em; font-weight: 700; }
+  .lede { margin: 14px 0 0; font-size: 16.5px; line-height: 1.45; color: oklch(48% 0.014 258); letter-spacing: -0.008em; }
+  .start {
+    margin-top: 22px; background: #fff; border-radius: 13px;
+    box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.07), 0 1px 2px oklch(0% 0 0 / 0.05), 0 6px 16px -6px oklch(0% 0 0 / 0.08);
+  }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; font: 12px/1.3 ui-monospace, "SF Mono", Menlo, monospace; white-space: nowrap; }
+  .row + .row { border-top: 1px solid oklch(90.5% 0.004 258); }
+  .tag { width: 42px; flex: none; font: 500 12.5px/1 -apple-system, BlinkMacSystemFont, sans-serif; color: oklch(52% 0.012 258); }
+  .dim { color: oklch(52% 0.012 258); }
+  .code {
+    background: oklch(19% 0.008 258); color: oklch(92% 0.005 258); border-radius: 14px;
+    box-shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.08), 0 32px 64px oklch(0% 0 0 / 0.1);
+    overflow: hidden;
+  }
+  .bar { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid oklch(28% 0.01 258); font: 500 12px/1 -apple-system, BlinkMacSystemFont, sans-serif; color: oklch(64% 0.012 258); }
+  .tab { padding: 7px 10px; border-radius: 7px; }
+  .tab.on { background: oklch(27% 0.01 258); color: oklch(96% 0.004 258); }
+  pre { margin: 0; padding: 16px 20px 20px; font: 12.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace; }
+  .k { color: oklch(78% 0.1 258); }
+  .s { color: oklch(82% 0.1 150); }
+  .c { color: oklch(64% 0.012 258); }
+</style>
+</head>
+<body>
+  <div>
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="hgt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#317de9"/><stop offset="1" stop-color="#0058c4"/></linearGradient><linearGradient id="hge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#001a4d" stop-opacity=".2"/></linearGradient><filter id="hgs" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#00163f" flood-opacity=".25"/></filter></defs><path d="M40 0c8.4 0 12.6 0 15.81 1.63a15 15 0 0 1 6.56 6.56c1.63 3.21 1.63 7.41 1.63 15.81L64 40c0 8.4 0 12.6 -1.63 15.81a15 15 0 0 1 -6.56 6.56c-3.21 1.63 -7.41 1.63 -15.81 1.63L24 64c-8.4 0 -12.6 0 -15.81 -1.63a15 15 0 0 1 -6.56 -6.56c-1.63 -3.21 -1.63 -7.41 -1.63 -15.81L0 24c0 -8.4 0 -12.6 1.63 -15.81a15 15 0 0 1 6.56 -6.56c3.21 -1.63 7.41 -1.63 15.81 -1.63Z" fill="url(#hgt)"/><path d="M40.3 0.5c8.12 0 12.18 0 15.28 1.58a14.5 14.5 0 0 1 6.34 6.34c1.58 3.1 1.58 7.16 1.58 15.28L63.5 40.3c0 8.12 0 12.18 -1.58 15.28a14.5 14.5 0 0 1 -6.34 6.34c-3.1 1.58 -7.16 1.58 -15.28 1.58L23.7 63.5c-8.12 0 -12.18 0 -15.28 -1.58a14.5 14.5 0 0 1 -6.34 -6.34c-1.58 -3.1 -1.58 -7.16 -1.58 -15.28L0.5 23.7c0 -8.12 0 -12.18 1.58 -15.28a14.5 14.5 0 0 1 6.34 -6.34c3.1 -1.58 7.16 -1.58 15.28 -1.58Z" fill="none" stroke="url(#hge)"/><g filter="url(#hgs)"><circle cx="21.5" cy="19.5" r="4.5" fill="#fff"/><path d="M21.5 19.5V38a8.5 8.5 0 0 0 17 0V24.5M32.5 30.5l6-6 6 6" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+
+      Hookgres
+    </div>
+    <h1>Webhooks that&nbsp;commit<br>with your data.</h1>
+    <p class="lede">A TypeScript library that queues webhooks in your Postgres transaction, then signs, retries and logs every delivery.</p>
+    <div class="start">
+      <div class="row"><span class="tag">Agent</span><span>Add Hookgres webhooks to this app: hookgres.dev/llms.txt</span></div>
+      <div class="row"><span class="tag">npm</span><span><span class="dim">$ </span>npm install hookgres pg</span></div>
+    </div>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="tab on">app.ts</span><span class="tab">receiver.ts</span></div>
+<pre><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);
+<span class="k">await</span> client.query(<span class="s">"UPDATE invoices &hellip;"</span>);
+
+<span class="c">// Sent only if this transaction commits</span>
+<span class="k">await</span> hookgres.send({
+  tenantId: <span class="s">"acme"</span>,
+  eventType: <span class="s">"invoice.paid"</span>,
+  payload: { invoiceId: <span class="s">"in_123"</span> },
+}, { client });
+
+<span class="k">await</span> client.query(<span class="s">"COMMIT"</span>);</pre>
+  </div>
+</body>
+</html>
