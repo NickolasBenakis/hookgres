@@ -1736,7 +1736,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     const cap = this.maxInFlightPerEndpoint;
     const allowance = new Map<string, number>();
     for (const [id, n] of inFlight) allowance.set(id, Math.max(0, cap - n));
-    const claimed = await this.claim(free, allowance);
+    let claimed = await this.claim(free, allowance);
+    if (claimed.length === 0 && (await this.hasDueWork())) {
+      // Due rows exist but were locked by a concurrent claim's scan, which
+      // lasts milliseconds: try once more instead of reporting nothing.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 5 + Math.random() * 20),
+      );
+      claimed = await this.claim(free, allowance);
+    }
     // A lock-expired row bypasses the window's per-endpoint ranking; put
     // anything over an endpoint's share back.
     const kept: ClaimedDelivery[] = [];
@@ -1866,6 +1874,19 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       this.workerDb,
     );
     return new Map(rows.map((r) => [r.id, r.payload]));
+  }
+
+  /** Whether any pending delivery is due (one index probe). */
+  private async hasDueWork(): Promise<boolean> {
+    const { rows } = await this.query<{ due: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM ${this.t.deliveries}
+         WHERE status = 'pending' AND next_attempt_at <= now()
+       ) AS due`,
+      [],
+      this.workerDb,
+    );
+    return rows[0]?.due === true;
   }
 
   /** Puts claimed deliveries back, as if they had never been claimed. */
@@ -2154,9 +2175,10 @@ export class Hookgres<E extends EventMap = AnyEvents> {
        ), e AS (
          -- One UPDATE, no separate lock first: locking the row and then
          -- updating it in one statement deadlocked between workers once open
-         -- send() transactions held KEY SHARE locks on it. disabled_at is set
-         -- to this transaction's now() only by the update that disables the
-         -- endpoint, which is how only that worker reports it.
+         -- send() transactions held KEY SHARE locks on it. disabled_xid is set
+         -- to this transaction's id only by the update that disables the
+         -- endpoint, which is how only that worker reports it. (A timestamp
+         -- can't do this: two workers can start in the same microsecond.)
          UPDATE ${this.t.endpoints}
          SET failing_since = COALESCE(failing_since, now()),
              disabled = disabled OR (
@@ -2176,9 +2198,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
                THEN now()
                ELSE disabled_at
              END,
+             disabled_xid = CASE
+               WHEN NOT disabled AND $10::double precision IS NOT NULL AND
+                    COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+               THEN pg_current_xact_id()
+               ELSE disabled_xid
+             END,
              updated_at = now()
          WHERE id IN (SELECT endpoint_id FROM cur)
-         RETURNING id, disabled AND disabled_at = now() AS disabled_now,
+         RETURNING id, disabled AND disabled_xid = pg_current_xact_id() AS disabled_now,
                    -- Disabled automatically, now or earlier: no more retries.
                    -- A manual disable is a pause, so retries continue.
                    disabled AND disabled_reason IS DISTINCT FROM 'Disabled manually'

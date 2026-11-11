@@ -105,10 +105,12 @@ ALTER TABLE {{schema}}.messages ADD COLUMN redacted_at timestamptz;
   },
   {
     version: 4,
-    // When the endpoint was last disabled automatically: lets the worker that
-    // disables it tell, in one UPDATE, that it was the one. Catalog only.
+    // When, and by which transaction, the endpoint was last disabled
+    // automatically: lets the worker that disables it tell, in one UPDATE,
+    // that it was the one. Catalog only.
     sql: `
 ALTER TABLE {{schema}}.endpoints ADD COLUMN disabled_at timestamptz;
+ALTER TABLE {{schema}}.endpoints ADD COLUMN disabled_xid xid8;
 `,
   },
 ];
