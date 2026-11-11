@@ -756,6 +756,116 @@ describe("endpoint health", () => {
   });
 });
 
+describe("fairness", () => {
+  it("doesn't let one endpoint's slow backlog hold up other tenants", async () => {
+    const slow = await startReceiver();
+    try {
+      slow.respond = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return 200;
+      };
+      const hw = ctx.create({ concurrency: 4, requestTimeoutMs: 5000 });
+      await hw.createEndpoint({ tenantId: "noisy", url: slow.url });
+      await hw.createEndpoint({ tenantId: "quiet", url: receiver.url });
+      for (let i = 0; i < 40; i++) {
+        await hw.send({ tenantId: "noisy", eventType: "e", payload: { i } });
+      }
+      await hw.send({ tenantId: "quiet", eventType: "e", payload: {} });
+      const started = Date.now();
+      hw.start();
+      // FIFO without the per-endpoint cap: 40 slow deliveries / 4 slots = 10s.
+      await waitFor(() => receiver.requests.length === 1, 3000);
+      expect(Date.now() - started).toBeLessThan(2500);
+      await hw.stop();
+    } finally {
+      await slow.close();
+    }
+  });
+
+  it("keeps at most maxInFlightPerEndpoint deliveries to one endpoint in flight", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    receiver.respond = async () => {
+      peak = Math.max(peak, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      inFlight--;
+      return 200;
+    };
+    const hw = ctx.create({ concurrency: 10, maxInFlightPerEndpoint: 3 });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    for (let i = 0; i < 30; i++) {
+      await hw.send({ tenantId: "acme", eventType: "e", payload: { i } });
+    }
+    hw.start();
+    await waitFor(() => receiver.requests.length === 30, 5000);
+    await hw.stop();
+    expect(peak).toBe(3);
+    // Rows over the share went back to pending without spending an attempt.
+    const deliveries = await hw.listDeliveries({ limit: 30 });
+    expect(deliveries.every((d) => d.attemptCount === 1)).toBe(true);
+  });
+});
+
+describe("caller clients", () => {
+  it("handles a client that maps result columns to camelCase", async () => {
+    const hw = ctx.create();
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    const camel = (row: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(row).map(([k, v]) => [
+          k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()),
+          v,
+        ]),
+      );
+    // Like Knex with knexSnakeCaseMappers (postProcessResponse).
+    const client = {
+      async query(text: string, values?: unknown[]) {
+        const result = await ctx.pool.query(text, values);
+        return { ...result, rows: result.rows.map(camel) };
+      },
+    } as unknown as pg.PoolClient;
+    for (const idempotencyKey of [undefined, "k1", "k1"]) {
+      const result = await hw.send(
+        { tenantId: "acme", eventType: "e", payload: { a: 1 }, idempotencyKey },
+        { client },
+      );
+      expect(result.message.tenantId).toBe("acme");
+      expect(result.message.createdAt).toBeInstanceOf(Date);
+      expect(Number.isNaN(result.message.createdAt.getTime())).toBe(false);
+      expect(result.deliveryCount).toBe(1);
+    }
+  });
+});
+
+describe("non-ISO DateStyle", () => {
+  it("still cleans up and sends real timestamps", async () => {
+    const german = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      options: "-c datestyle=German",
+    });
+    try {
+      const hw = ctx.create({ pool: german });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      const before = Date.now();
+      const { message } = await hw.send({
+        tenantId: "acme",
+        eventType: "e",
+        payload: {},
+      });
+      await drain(hw);
+      const envelope = JSON.parse(
+        receiver.requests[0]?.body ?? "{}",
+      ) as WebhookEnvelope;
+      expect(Date.parse(envelope.timestamp)).toBeGreaterThan(before - 60_000);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(await hw.cleanup({ olderThan: 1 })).toBeGreaterThanOrEqual(1);
+      expect(await hw.getMessage(message.id)).toBeNull();
+    } finally {
+      await german.end();
+    }
+  });
+});
+
 describe("locking", () => {
   async function openSend(hw: Hookgres, tenantId: string) {
     const client = await ctx.pool.connect();

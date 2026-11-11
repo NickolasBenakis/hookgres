@@ -9,10 +9,16 @@ a background loop with `start()`, or one batch at a time with `runOnce()`.
 hookgres.start();
 ```
 
-The loop claims up to `concurrency` due deliveries (10 by default), sends them
-in parallel, records the results, and repeats. When there's nothing to do, it
-sleeps for `pollIntervalMs` (1 second by default). A `send()` from the same
-process wakes it immediately.
+The loop keeps up to `concurrency` deliveries in flight (10 by default),
+oldest first, claiming another as soon as one finishes. When there's nothing
+to do, it sleeps for `pollIntervalMs` (1 second by default). A `send()` from
+the same process wakes it immediately.
+
+No endpoint gets more than `maxInFlightPerEndpoint` of those slots (half of
+`concurrency` by default). A customer whose endpoint hangs until
+`requestTimeoutMs` holds at most that many slots, and the rest keep
+delivering to other tenants. Raise it if a single fast endpoint gets most of
+your traffic and you want it to use every slot.
 
 ### Instant wake-up with LISTEN/NOTIFY
 

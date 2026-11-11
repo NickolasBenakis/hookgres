@@ -84,7 +84,10 @@ runtime:
 Your customers' receivers often aren't TypeScript, so this part is for your
 own receivers and tests. `WebhookEvent` turns an event map into a union you
 can narrow on `type`, and `InferEvents` gives the schemas' output types,
-which is what Hookgres delivers:
+which is what Hookgres stores and sends. `WebhookEvent` types each event's
+`data` as it arrives after JSON: a `Date` from `z.coerce.date()` is an ISO
+string on the receiver. Schema output must be JSON: `send()` rejects a `Map`,
+a `Set` or a `BigInt`.
 
 <<< @/snippets/typed-events/receiver.ts
 

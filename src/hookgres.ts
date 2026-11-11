@@ -8,6 +8,7 @@ import {
   type BlockPrivateAddressesOption,
   guardedTransport,
   type Transport,
+  type TransportRequest,
   type TransportResponse,
 } from "./ssrf.js";
 import type {
@@ -148,6 +149,14 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /** Max deliveries the worker sends in parallel. Defaults to 10. */
   concurrency?: number;
   /**
+   * Max deliveries to one endpoint a worker sends in parallel, so a slow or
+   * hanging endpoint can't take every slot and hold up other tenants.
+   * Defaults to half of `concurrency`, rounded up. Set it to `concurrency`
+   * to turn the limit off.
+   * @see https://hookgres.dev/docs/guides/workers
+   */
+  maxInFlightPerEndpoint?: number;
+  /**
    * How long a claimed delivery stays locked before another worker may
    * reclaim it (e.g. after a crash). Must exceed `requestTimeoutMs`.
    * Defaults to `requestTimeoutMs + 30s`.
@@ -221,7 +230,8 @@ interface ClaimedDelivery {
   message_id: string;
   event_type: string;
   payload: unknown;
-  message_created_at: Date;
+  /** Epoch ms, which every DateStyle gives the same way. */
+  message_created_ms: number;
   /** Only possible when a replay raced a redaction. */
   redacted: boolean;
   url: string;
@@ -272,6 +282,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private readonly disableEndpointAfterMs: number | null;
   private readonly pollIntervalMs: number;
   private readonly concurrency: number;
+  private readonly maxInFlightPerEndpoint: number;
   /** The pool, with a timeout on every query. Used by the worker. */
   private readonly workerDb: Queryable;
   private readonly lockTimeoutMs: number;
@@ -399,6 +410,18 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       );
     }
     this.concurrency = concurrency as number;
+    const perEndpoint = numeric(
+      options.maxInFlightPerEndpoint ?? Math.ceil(this.concurrency / 2),
+    );
+    if (!Number.isInteger(perEndpoint) || (perEndpoint as number) < 1) {
+      throw new HookgresValidationError(
+        `maxInFlightPerEndpoint must be a positive integer, got ${String(options.maxInFlightPerEndpoint)}. See ${DOCS}/reference/configuration`,
+      );
+    }
+    this.maxInFlightPerEndpoint = Math.min(
+      perEndpoint as number,
+      this.concurrency,
+    );
     this.lockTimeoutMs = durationOption(
       "lockTimeoutMs",
       options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND,
@@ -888,14 +911,14 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       // Inside a caller's transaction the rows aren't visible until commit, so
       // waking now would find nothing; the next poll picks them up.
       if (!options.client) this.wake();
-      let row = rows[0];
+      let row = snakeCaseKeys(rows[0]);
       if (this.redactPayloads && row.delivery_count === 0) {
-        const redacted = await this.redact(row.id, db);
-        if (redacted) row = { ...row, ...redacted };
+        const redacted = await this.redact(row.id as string, db);
+        if (redacted) row = { ...row, ...snakeCaseKeys(redacted) };
       }
       return {
         message: toMessage(row),
-        deliveryCount: rows[0].delivery_count,
+        deliveryCount: row.delivery_count as number,
         deduplicated: false,
       };
     }
@@ -909,7 +932,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       [input.tenantId, idempotencyKey],
       db,
     );
-    const row = existing.rows[0];
+    const row = existing.rows[0] && snakeCaseKeys(existing.rows[0]);
     if (!row) {
       throw new Error(
         "The message for this idempotencyKey was deleted while send() ran (e.g. by cleanup()); retry send()",
@@ -917,7 +940,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     }
     return {
       message: toMessage(row),
-      deliveryCount: row.delivery_count,
+      deliveryCount: row.delivery_count as number,
       deduplicated: true,
     };
   }
@@ -1025,11 +1048,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       olderThan <= MAX_DURATION_MS
     ) {
       // Use the database clock, like every other timestamp Hookgres writes.
-      const { rows } = await this.query<{ cutoff: Date }>(
-        "SELECT now() - make_interval(secs => $1::double precision / 1000) AS cutoff",
+      // As epoch ms, not a timestamp: node-postgres can't parse timestamps
+      // under a non-ISO DateStyle and would return null (deleting nothing).
+      const { rows } = await this.query<{ cutoff_ms: number }>(
+        "SELECT (extract(epoch FROM now() - make_interval(secs => $1::double precision / 1000)) * 1000)::float8 AS cutoff_ms",
         [olderThan],
       );
-      cutoff = (rows[0] as { cutoff: Date }).cutoff;
+      cutoff = new Date((rows[0] as { cutoff_ms: number }).cutoff_ms);
     } else {
       throw new HookgresValidationError(
         `cleanup olderThan must be a Date or a non-negative number of ms (at most ${MAX_DURATION_MS}, which is 100 years), e.g. { olderThan: 30 * 24 * 60 * 60 * 1000 } for 30 days. See ${DOCS}/guides/production#clean-up-old-rows`,
@@ -1366,7 +1391,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * @see https://hookgres.dev/docs/guides/workers
    */
   async runOnce(): Promise<number> {
-    const claimed = await this.claim();
+    const claimed = await this.claimFair(this.concurrency, new Map());
     const results = await Promise.allSettled(
       claimed.map((delivery) =>
         this.process(delivery).catch((error) => this.onError(error)),
@@ -1427,18 +1452,44 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     }
   }
 
+  /**
+   * Keeps up to `concurrency` deliveries in flight, claiming more as each one
+   * finishes rather than waiting for a whole batch, so one slow receiver
+   * doesn't leave the other slots idle.
+   */
   private async loop(active: () => boolean): Promise<void> {
+    const inFlight = new Map<string, number>();
+    const running = new Set<Promise<void>>();
     while (active()) {
-      let processed = 0;
-      try {
-        processed = await this.runOnce();
-      } catch (error) {
-        this.reportError(error);
+      const free = this.concurrency - running.size;
+      let claimed: ClaimedDelivery[] = [];
+      if (free > 0) {
+        try {
+          claimed = await this.claimFair(free, inFlight);
+        } catch (error) {
+          this.reportError(error);
+        }
       }
-      if (active() && processed < this.concurrency) {
-        await this.sleep(this.pollIntervalMs);
+      for (const delivery of claimed) {
+        const endpointId = delivery.endpoint_id;
+        inFlight.set(endpointId, (inFlight.get(endpointId) ?? 0) + 1);
+        const done: Promise<void> = this.process(delivery)
+          .catch((error) => this.reportError(error))
+          .finally(() => {
+            running.delete(done);
+            const left = (inFlight.get(endpointId) ?? 1) - 1;
+            if (left > 0) inFlight.set(endpointId, left);
+            else inFlight.delete(endpointId);
+            this.wake(); // a slot is free
+          });
+        running.add(done);
       }
+      if (!active()) break;
+      if (free > 0 && claimed.length === free) continue; // more may be due
+      // Until a slot frees up, a send wakes it, or the poll interval passes.
+      await this.sleep(this.pollIntervalMs);
     }
+    await Promise.all(running);
   }
 
   /**
@@ -1665,15 +1716,90 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     return rows[0] ?? null;
   }
 
-  private async claim(): Promise<ClaimedDelivery[]> {
+  /**
+   * Claims up to `free` due deliveries, with at most `maxInFlightPerEndpoint`
+   * per endpoint counting the ones already `inFlight`. The claim is FIFO, so
+   * rows over an endpoint's share go straight back to pending, and the next
+   * claim skips endpoints that are full: one endpoint's backlog can't fill
+   * every slot.
+   */
+  private async claimFair(
+    free: number,
+    inFlight: ReadonlyMap<string, number>,
+  ): Promise<ClaimedDelivery[]> {
+    const counts = new Map(inFlight);
+    const kept: ClaimedDelivery[] = [];
+    for (let round = 0; round < 5 && kept.length < free; round++) {
+      const full = [...counts]
+        .filter(([, n]) => n >= this.maxInFlightPerEndpoint)
+        .map(([id]) => id);
+      const wanted = free - kept.length;
+      const rows = await this.claim(wanted, full);
+      const extra: ClaimedDelivery[] = [];
+      for (const row of rows) {
+        const n = counts.get(row.endpoint_id) ?? 0;
+        if (n < this.maxInFlightPerEndpoint) {
+          counts.set(row.endpoint_id, n + 1);
+          kept.push(row);
+        } else {
+          extra.push(row);
+        }
+      }
+      if (extra.length > 0) await this.unclaim(extra);
+      if (rows.length < wanted || extra.length === 0) break;
+    }
+    return kept;
+  }
+
+  /** Puts claimed deliveries back, as if they had never been claimed. */
+  private async unclaim(deliveries: ClaimedDelivery[]): Promise<void> {
+    await this.query(
+      `UPDATE ${this.t.deliveries} d
+       SET status = 'pending', locked_until = NULL, lock_token = NULL,
+           attempt_count = d.attempt_count - 1, updated_at = now()
+       FROM unnest($1::text[], $2::uuid[]) AS c (id, lock_token)
+       WHERE d.id = c.id AND d.lock_token = c.lock_token`,
+      [deliveries.map((d) => d.id), deliveries.map((d) => d.lock_token)],
+      this.workerDb,
+    );
+  }
+
+  private async claim(
+    limit: number,
+    skipEndpoints: string[],
+  ): Promise<ClaimedDelivery[]> {
+    // Two index-ordered scans, each limited, instead of one OR: that would
+    // read and sort every due row, so a backlog would make each claim slower.
     const { rows } = await this.query<ClaimedDelivery>(
-      `WITH due AS (
-         SELECT id FROM ${this.t.deliveries}
-         WHERE (status = 'pending' AND next_attempt_at <= now())
-            OR (status = 'delivering' AND locked_until < now())
-         ORDER BY next_attempt_at
+      `WITH pending AS (
+         -- Skipping full endpoints in the index scan itself would read their
+         -- whole backlog, so look only at a window of the oldest due rows.
+         SELECT d.id, d.next_attempt_at AS due_at
+         FROM (
+           SELECT id FROM ${this.t.deliveries}
+           WHERE status = 'pending' AND next_attempt_at <= now()
+           ORDER BY next_attempt_at
+           LIMIT $4
+         ) w
+         JOIN ${this.t.deliveries} d ON d.id = w.id
+         WHERE d.status = 'pending' AND d.endpoint_id <> ALL ($3::text[])
+         ORDER BY d.next_attempt_at
+         LIMIT $1
+         FOR UPDATE OF d SKIP LOCKED
+       ), expired AS (
+         -- Claimed by a worker that crashed: its lock has run out.
+         SELECT id, locked_until AS due_at FROM ${this.t.deliveries}
+         WHERE status = 'delivering' AND locked_until < now()
+           AND endpoint_id <> ALL ($3::text[])
+         ORDER BY locked_until
          LIMIT $1
          FOR UPDATE SKIP LOCKED
+       ), due AS (
+         SELECT id FROM (
+           SELECT * FROM pending UNION ALL SELECT * FROM expired
+         ) candidates
+         ORDER BY due_at
+         LIMIT $1
        )
        UPDATE ${this.t.deliveries} d
        SET status = 'delivering',
@@ -1685,13 +1811,19 @@ export class Hookgres<E extends EventMap = AnyEvents> {
        WHERE d.id = due.id AND m.id = d.message_id AND e.id = d.endpoint_id
        RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
                  m.tenant_id, m.id AS message_id,
-                 m.event_type, m.payload, m.created_at AS message_created_at,
+                 m.event_type, m.payload,
+                 (extract(epoch FROM m.created_at) * 1000)::float8 AS message_created_ms,
                  m.redacted_at IS NOT NULL AS redacted,
                  e.url, e.secret,
                  CASE WHEN e.previous_secret_expires_at > now()
                       THEN e.previous_secret END AS previous_secret,
                  e.disabled`,
-      [this.concurrency, this.lockTimeoutMs],
+      [
+        limit,
+        this.lockTimeoutMs,
+        skipEndpoints,
+        skipEndpoints.length ? Math.max(1000, this.concurrency * 20) : limit,
+      ],
       this.workerDb,
     );
     return rows;
@@ -1932,7 +2064,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
     const envelope: WebhookEnvelope = {
       type: delivery.event_type,
-      timestamp: new Date(delivery.message_created_at).toISOString(),
+      timestamp: new Date(delivery.message_created_ms).toISOString(),
       data: delivery.payload,
     };
     const body = JSON.stringify(envelope);
@@ -1946,7 +2078,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       const signature = secrets
         .map((secret) => sign(secret, delivery.message_id, timestamp, body))
         .join(" ");
-      const response = await this.transport(delivery.url, {
+      const init: TransportRequest = {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -1958,7 +2090,18 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         body,
         redirect: "manual",
         signal: AbortSignal.timeout(this.requestTimeoutMs),
-      });
+      };
+      let response: TransportResponse;
+      try {
+        response = await this.transport(delivery.url, init);
+      } catch (error) {
+        // fetch reports a keep-alive connection the receiver closed just as
+        // it was reused as UND_ERR_SOCKET ("other side closed"). Retry once
+        // on a fresh connection, within the same timeout.
+        const code = (error as { cause?: { code?: string } }).cause?.code;
+        if (code !== "UND_ERR_SOCKET" || init.signal.aborted) throw error;
+        response = await this.transport(delivery.url, init);
+      }
       const responseBody = await readLimited(response, this.responseBodyLimit);
       const ok = response.status >= 200 && response.status < 300;
       return {
@@ -2226,6 +2369,21 @@ function toEndpoint(row: Row | undefined): Endpoint {
   };
 }
 
+/**
+ * Rows read through a caller's client can come back with camelCase keys (a
+ * query builder's snake-to-camel mapper, like Knex's postProcessResponse).
+ * Hookgres's columns are all snake_case, so map them back.
+ */
+function snakeCaseKeys(row: Row): Row {
+  if (!Object.keys(row).some((key) => /[A-Z]/.test(key))) return row;
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`),
+      value,
+    ]),
+  );
+}
+
 function toMessage(row: Row): Message {
   return {
     id: row.id as string,
@@ -2304,15 +2462,35 @@ const LONE_SURROGATE = /\p{Cs}/u;
 
 function serialisePayload(payload: unknown): string {
   let malformed: string | undefined;
-  const json = JSON.stringify(payload, (key, value) => {
-    if (malformed === undefined) {
-      if (LONE_SURROGATE.test(key)) malformed = key;
-      else if (typeof value === "string" && LONE_SURROGATE.test(value)) {
-        malformed = value;
+  let unsupported: string | undefined;
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(payload, (key, value) => {
+      // JSON.stringify turns these into {} and the data is lost.
+      if (unsupported === undefined) {
+        if (value instanceof Map) unsupported = "a Map";
+        else if (value instanceof Set) unsupported = "a Set";
       }
-    }
-    return value;
-  });
+      if (malformed === undefined) {
+        if (LONE_SURROGATE.test(key)) malformed = key;
+        else if (typeof value === "string" && LONE_SURROGATE.test(value)) {
+          malformed = value;
+        }
+      }
+      return value;
+    });
+  } catch (error) {
+    // A BigInt, or a circular reference.
+    throw new HookgresValidationError(
+      `send() payload must be JSON-serialisable: ${(error as Error).message}. Convert BigInt values to strings or numbers first. See ${DOCS}/guides/sending`,
+      { cause: error },
+    );
+  }
+  if (unsupported !== undefined) {
+    throw new HookgresValidationError(
+      `send() payload contains ${unsupported}, which JSON turns into {}: convert it to an array or a plain object first. See ${DOCS}/guides/sending`,
+    );
+  }
   if (json === undefined) {
     throw new HookgresValidationError(
       `send() payload must be JSON-serialisable, got ${typeof payload === "function" ? "a function" : typeof payload}: pass plain data (use null or {} for none). See ${DOCS}/guides/sending`,

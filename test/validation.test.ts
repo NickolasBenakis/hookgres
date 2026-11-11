@@ -302,6 +302,15 @@ describe("HookgresValidationError", () => {
       /must be JSON-serialisable/,
     );
     await expectValidation(
+      () => send({ tags: new Set(["a"]) }),
+      /contains a Set/,
+    );
+    await expectValidation(() => send({ index: new Map() }), /contains a Map/);
+    await expectValidation(() => send({ n: 10n }), /BigInt/);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expectValidation(() => send(circular), /JSON-serialisable/);
+    await expectValidation(
       () => send({}, "k".repeat(2001)),
       /^idempotencyKey is longer than 2000 bytes/,
     );

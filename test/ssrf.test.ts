@@ -637,6 +637,46 @@ describe("guardedTransport", () => {
     }
   });
 
+  it("retries once on a fresh connection when a reused one was closed", async () => {
+    // Answers the first request on each connection, then drops the
+    // connection on the next one without replying, like a receiver whose
+    // idle timeout fires just as the socket is reused.
+    let connections = 0;
+    const server = createNetServer((socket) => {
+      connections++;
+      let requests = 0;
+      socket.on("error", () => {});
+      socket.on("data", () => {
+        if (++requests === 1) {
+          socket.write(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok",
+          );
+        } else {
+          socket.destroy();
+        }
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const transport = guardedTransport(guard);
+    try {
+      for (let i = 0; i < 2; i++) {
+        const response = await transport.send(
+          `http://127.0.0.1:${port}/`,
+          post(),
+        );
+        expect(response.status).toBe(200);
+        await new Response(response.body).text();
+      }
+      expect(connections).toBe(2);
+    } finally {
+      transport.close();
+      server.close();
+    }
+  });
+
   it("reuses a kept-alive connection for the next delivery", async () => {
     let connections = 0;
     const server = createHttpServer((req, res) => {

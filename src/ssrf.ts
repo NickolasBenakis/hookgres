@@ -220,7 +220,7 @@ export function guardedTransport(
     https: new https.Agent({ keepAlive: true, timeout: 4000, ...tls }),
   };
   const lookup = guard.lookup();
-  const send: Transport = (url, { method, headers, body, signal }) =>
+  const sendOnce: Transport = (url, { method, headers, body, signal }) =>
     new Promise((resolve, reject) => {
       signal.throwIfAborted();
       const target = new URL(url);
@@ -247,12 +247,15 @@ export function guardedTransport(
           agent: secure ? agents.https : agents.http,
           lookup,
         },
-        (response) =>
+        (response) => {
+          responded = true;
           resolve({
             status: response.statusCode ?? 0,
             body: Readable.toWeb(response),
-          }),
+          });
+        },
       );
+      let responded = false;
       const abort = () => request.destroy(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
       // A 101 (or another upgrade) emits neither "response" nor "error":
@@ -266,9 +269,27 @@ export function guardedTransport(
         signal.removeEventListener("abort", abort);
         reject(new Error("Connection closed before a response"));
       });
-      request.on("error", reject);
+      request.on("error", (error: Error & { staleSocket?: boolean }) => {
+        // The receiver closed an idle keep-alive connection just as it was
+        // reused: nothing was answered, so trying a fresh one is safe.
+        if (request.reusedSocket && !responded) error.staleSocket = true;
+        reject(error);
+      });
       request.end(body);
     });
+  const send: Transport = async (url, init) => {
+    try {
+      return await sendOnce(url, init);
+    } catch (error) {
+      if (
+        (error as { staleSocket?: boolean }).staleSocket &&
+        !init.signal.aborted
+      ) {
+        return sendOnce(url, init);
+      }
+      throw error;
+    }
+  };
   return {
     send,
     close() {

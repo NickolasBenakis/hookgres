@@ -46,7 +46,13 @@ re-serialising it changes the bytes and the signature won't match.
 
 ### Express
 
+Register the webhook route **before** any app-wide `express.json()`. Once
+`express.json()` has parsed a request, `express.raw()` leaves it alone and
+`req.body` is no longer the raw body.
+
 ```ts
+const app = express();
+
 app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
   try {
     const event = verifyWebhook({
@@ -59,6 +65,8 @@ app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
     res.sendStatus(400);
   }
 });
+
+app.use(express.json()); // the rest of your API, after the webhook route
 ```
 
 ### Next.js (App Router)
@@ -92,24 +100,29 @@ app.post("/webhooks", async (c) => {
 
 ### Fastify
 
-```ts
-fastify.addContentTypeParser(
-  "application/json",
-  { parseAs: "buffer" },
-  (_req, body, done) => done(null, body),
-);
+Register the raw-body parser inside its own plugin, so only the webhook route
+gets a `Buffer` and your other routes keep parsed JSON:
 
-fastify.post("/webhooks", async (request, reply) => {
-  try {
-    const event = verifyWebhook({
-      secret,
-      headers: request.headers,
-      body: request.body as Buffer,
-    });
-    return reply.code(204).send();
-  } catch {
-    return reply.code(400).send("invalid signature");
-  }
+```ts
+fastify.register(async (webhooks) => {
+  webhooks.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (_req, body, done) => done(null, body),
+  );
+
+  webhooks.post("/webhooks", async (request, reply) => {
+    try {
+      const event = verifyWebhook({
+        secret,
+        headers: request.headers,
+        body: request.body as Buffer,
+      });
+      return reply.code(204).send();
+    } catch {
+      return reply.code(400).send("invalid signature");
+    }
+  });
 });
 ```
 
