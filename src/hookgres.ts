@@ -1509,7 +1509,36 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     return rows;
   }
 
-  /** Marks a claimed delivery failed without sending it. */
+  /**
+   * Fails the pending deliveries of an endpoint that was just disabled
+   * automatically. Runs after the disabling statement committed, so its
+   * snapshot also sees deliveries other workers put back to `pending` while
+   * that statement waited for the endpoint lock, and in batches, so it never
+   * holds the endpoint lock that `send()` waits on. Ones in flight fail when
+   * their worker records them. If this never runs (a crash), `claim()` still
+   * fails them when they come due.
+   */
+  private async failQueuedDeliveries(endpointId: string): Promise<void> {
+    for (;;) {
+      const { rowCount } = await this.query(
+        `UPDATE ${this.t.deliveries}
+         SET status = 'failed', last_error = 'Endpoint is disabled', updated_at = now()
+         WHERE id IN (
+           SELECT id FROM ${this.t.deliveries}
+           WHERE endpoint_id = $1 AND status = 'pending'
+           LIMIT 1000
+           FOR UPDATE SKIP LOCKED
+         )`,
+        [endpointId],
+      );
+      if (!rowCount) return;
+    }
+  }
+
+  /**
+   * Marks a claimed delivery failed without sending it. Gives back the
+   * attempt the claim counted, since no HTTP request was made.
+   */
   private async failWithoutSending(
     delivery: ClaimedDelivery,
     reason: string,
@@ -1517,6 +1546,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     await this.query(
       `UPDATE ${this.t.deliveries}
        SET status = 'failed', locked_until = NULL, lock_token = NULL,
+           attempt_count = attempt_count - 1,
            last_error = $3, updated_at = now()
        WHERE id = $1 AND lock_token = $2`,
       [delivery.id, delivery.lock_token, reason],
@@ -1610,51 +1640,64 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     );
     const { rows } = await this.query<{
       next_attempt_at: Date;
+      failed: boolean;
       disabled_now: boolean | null;
       disabled_reason: string | null;
     }>(
-      `WITH d AS (
+      `WITH cur AS (
+         -- Locks the delivery first, then its endpoint (the same order as
+         -- before), and finds nothing if another worker took over the claim.
+         SELECT id, endpoint_id FROM ${this.t.deliveries}
+         WHERE id = $1 AND lock_token = $2
+         FOR UPDATE
+       ), prev AS (
+         -- Reads whether the endpoint was already disabled, so only the
+         -- worker that disables it reports it.
+         SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
+         FROM ${this.t.endpoints} ep
+         WHERE ep.id IN (SELECT endpoint_id FROM cur)
+         FOR UPDATE
+       ), e AS (
+         UPDATE ${this.t.endpoints}
+         SET failing_since = COALESCE(failing_since, now()),
+             disabled = disabled OR (
+               $10::double precision IS NOT NULL AND
+               COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+             ),
+             disabled_reason = CASE
+               WHEN NOT disabled AND $10::double precision IS NOT NULL AND
+                    COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+               THEN 'Disabled automatically: every attempt failed since ' ||
+                    to_char(COALESCE(failing_since, now()) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+               ELSE disabled_reason
+             END,
+             updated_at = now()
+         FROM prev
+         WHERE id = prev.endpoint_id
+         RETURNING id, disabled AND NOT prev.was_disabled AS disabled_now,
+                   -- Disabled automatically, now or earlier: no more retries.
+                   -- A manual disable is a pause, so retries continue.
+                   disabled AND disabled_reason IS DISTINCT FROM 'Disabled manually'
+                     AS auto_disabled,
+                   disabled_reason
+       ), d AS (
          UPDATE ${this.t.deliveries}
-         SET status = CASE WHEN $8::boolean THEN 'failed' ELSE 'pending' END,
-             next_attempt_at = now() + make_interval(secs => $9::double precision / 1000),
+         SET status = CASE WHEN $8::boolean OR (SELECT auto_disabled FROM e) THEN 'failed' ELSE 'pending' END,
+             next_attempt_at = CASE WHEN $8::boolean OR (SELECT auto_disabled FROM e) THEN now()
+                                    ELSE now() + make_interval(secs => $9::double precision / 1000) END,
              locked_until = NULL,
              lock_token = NULL,
              last_error = $6,
              updated_at = now()
-         WHERE id = $1 AND lock_token = $2
-         RETURNING id, endpoint_id, next_attempt_at
+         FROM cur
+         WHERE ${this.t.deliveries}.id = cur.id
+         RETURNING ${this.t.deliveries}.id, next_attempt_at, status = 'failed' AS failed
        ), a AS (
          INSERT INTO ${this.t.attempts}
            (delivery_id, attempt_number, status_code, response_body, error, duration_ms)
          SELECT d.id, $3, $4, $5, $6, $7 FROM d
-       ), prev AS (
-         -- Locks the endpoint and reads whether it was already disabled, so
-         -- only the worker that disables it reports it.
-         SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
-         FROM ${this.t.endpoints} ep
-         WHERE ep.id IN (SELECT endpoint_id FROM d)
-         FOR UPDATE
-       ), e AS (
-       UPDATE ${this.t.endpoints}
-       SET failing_since = COALESCE(failing_since, now()),
-           disabled = disabled OR (
-             $10::double precision IS NOT NULL AND
-             COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
-           ),
-           disabled_reason = CASE
-             WHEN NOT disabled AND $10::double precision IS NOT NULL AND
-                  COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
-             THEN 'Disabled automatically: every attempt failed since ' ||
-                  to_char(COALESCE(failing_since, now()) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-             ELSE disabled_reason
-           END,
-           updated_at = now()
-       FROM prev
-       WHERE id = prev.endpoint_id
-       RETURNING disabled AND NOT prev.was_disabled AS disabled_now,
-                 disabled_reason
        )
-       SELECT d.next_attempt_at, e.disabled_now, e.disabled_reason
+       SELECT d.next_attempt_at, d.failed, e.disabled_now, e.disabled_reason
        FROM d LEFT JOIN e ON true`,
       [
         delivery.id,
@@ -1673,8 +1716,8 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     if (!result) return;
     this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
       ...event,
-      outcome: isFinal ? "failed" : "retrying",
-      nextAttemptAt: isFinal ? null : result.next_attempt_at,
+      outcome: result.failed ? "failed" : "retrying",
+      nextAttemptAt: result.failed ? null : result.next_attempt_at,
     });
     if (result.disabled_now) {
       this.callHook<EndpointDisabledEvent>(
@@ -1686,6 +1729,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
           reason: result.disabled_reason ?? "",
         },
       );
+      await this.failQueuedDeliveries(delivery.endpoint_id);
     }
   }
 

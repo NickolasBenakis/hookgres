@@ -588,6 +588,152 @@ describe("endpoint health", () => {
     expect(after?.failingSince).toBeNull();
   });
 
+  it("fails the queued deliveries of an endpoint the moment it is disabled automatically", async () => {
+    // retrySchedule leaves retries, so only the disabling can fail these.
+    const hw = ctx.create({
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 0,
+      concurrency: 1,
+    });
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    const first = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    const queued = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    await hw.createEndpoint({ tenantId: "globex", url: receiver.url });
+    const other = await hw.send({
+      tenantId: "globex",
+      eventType: "e",
+      payload: {},
+    });
+
+    await hw.runOnce(); // one attempt: fails and disables the endpoint
+
+    expect((await hw.getEndpoint(ep.id))?.disabled).toBe(true);
+    const [attempted] = await hw.listDeliveries({
+      messageId: first.message.id,
+    });
+    expect(attempted).toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      lastError: "HTTP 500",
+    });
+    const [waiting] = await hw.listDeliveries({ messageId: queued.message.id });
+    expect(waiting).toMatchObject({
+      status: "failed",
+      attemptCount: 0,
+      lastError: "Endpoint is disabled",
+    });
+
+    // Other endpoints' deliveries are untouched.
+    const [untouched] = await hw.listDeliveries({
+      messageId: other.message.id,
+    });
+    expect(untouched).toMatchObject({ status: "pending", attemptCount: 0 });
+
+    // Re-enabling doesn't resend what failed while it was down.
+    receiver.respond = () => 200;
+    await hw.updateEndpoint(ep.id, { disabled: false });
+    await drain(hw);
+    expect(receiver.requests).toHaveLength(2); // acme's first try, then globex
+    const [sent] = await hw.listDeliveries({ messageId: other.message.id });
+    expect(sent?.status).toBe("succeeded");
+  });
+
+  it("fails an attempt recorded after its endpoint was disabled automatically", async () => {
+    const rec: EndpointDisabledEvent[] = [];
+    const hw = ctx.create({
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 60_000,
+      onEndpointDisabled: (event) => {
+        rec.push(event);
+      },
+    });
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = async () => {
+      // Another worker disables the endpoint while this request is in flight.
+      await ctx.pool.query(
+        `UPDATE "${ctx.schema}".endpoints
+         SET disabled = true, disabled_reason = 'Disabled automatically: test'
+         WHERE id = $1`,
+        [ep.id],
+      );
+      return 500;
+    };
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    await hw.runOnce();
+
+    const [delivery] = await hw.listDeliveries({ messageId: message.id });
+    expect(delivery).toMatchObject({ status: "failed", attemptCount: 1 });
+    expect(rec).toEqual([]); // reported by the worker that disabled it
+  });
+
+  it("keeps retrying deliveries of a manually paused endpoint", async () => {
+    const hw = ctx.create({
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 0,
+      concurrency: 1,
+    });
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = async () => {
+      // Paused while this request is in flight.
+      await hw.updateEndpoint(ep.id, { disabled: true });
+      return 500;
+    };
+    const first = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    const queued = await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: {},
+    });
+    await hw.runOnce();
+
+    const [attempted] = await hw.listDeliveries({
+      messageId: first.message.id,
+    });
+    expect(attempted).toMatchObject({ status: "pending", attemptCount: 1 });
+    const [waiting] = await hw.listDeliveries({ messageId: queued.message.id });
+    expect(waiting).toMatchObject({ status: "pending", attemptCount: 0 });
+    expect((await hw.getEndpoint(ep.id))?.disabledReason).toBe(
+      "Disabled manually",
+    );
+  });
+
+  it("fails every delivery in flight when their endpoint is disabled", async () => {
+    const hw = ctx.create({
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 0,
+    });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+
+    await hw.runOnce(); // both claimed and sent in one batch
+
+    expect(receiver.requests).toHaveLength(2);
+    const deliveries = await hw.listDeliveries();
+    expect(deliveries.map((d) => [d.status, d.attemptCount])).toEqual([
+      ["failed", 1],
+      ["failed", 1],
+    ]);
+  });
+
   it("fails pending deliveries of an endpoint disabled after queuing", async () => {
     const hw = ctx.create();
     const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
@@ -604,6 +750,7 @@ describe("endpoint health", () => {
     expect(delivery).toMatchObject({
       status: "failed",
       lastError: "Endpoint is disabled",
+      attemptCount: 0, // no HTTP attempt was made
     });
     expect(receiver.requests).toHaveLength(0);
   });
@@ -729,6 +876,7 @@ describe("review regressions", () => {
     const [delivery] = await hw.listDeliveries({ messageId: message.id });
     expect(delivery?.status).toBe("failed");
     expect(delivery?.lastError).toMatch(/Exceeded max attempts/);
+    expect(delivery?.attemptCount).toBe(2);
     expect(receiver.requests).toHaveLength(0);
   });
 
@@ -1411,6 +1559,26 @@ describe("delivery hooks", () => {
       statusCode: null,
       error: expect.stringMatching(/ECONNREFUSED/),
     });
+  });
+
+  it("reports the attempt that disables an endpoint as failed", async () => {
+    const rec = recorder();
+    const hw = ctx.create({
+      ...rec,
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 0,
+    });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await drain(hw);
+
+    expect(rec.attempts).toHaveLength(1);
+    expect(rec.attempts[0]).toMatchObject({
+      outcome: "failed",
+      nextAttemptAt: null,
+    });
+    expect(rec.disabled).toHaveLength(1);
   });
 
   it("reports an endpoint disabled automatically, once", async () => {
