@@ -11,8 +11,10 @@
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
-    "types": ["node"]
+    "types": ["node"],
+    // Docs snippets import "hookgres"; check them against the source.
+    "paths": { "hookgres": ["./src/index.ts"] }
   },
-  "include": ["src", "test", "vitest.config.ts"],
+  "include": ["src", "test", "docs/snippets", "vitest.config.ts"],
   "exclude": ["examples", "scripts"]
 }

@@ -87,6 +87,11 @@ signing for `options.graceMs`, which defaults to `secretRotationGraceMs`
 your transaction. Returns `{ message, deliveryCount, deduplicated }`. See
 [Sending webhooks](/guides/sending).
 
+With an event map (`new Hookgres<Events>()`) or `schemas`, `eventType` must
+be one of its event types and `payload` must match its type. With `schemas`,
+the payload is validated first and the schema's output is stored. See
+[Typed events](/guides/typed-events).
+
 ### `getMessage(id): Promise<Message | null>`
 
 With `redactPayloads`, `payload` is `null` once `redactedAt` is set.
@@ -220,7 +225,10 @@ Thrown when an argument or option you passed is invalid: an endpoint URL
 that isn't `http(s)`, or with `blockPrivateAddresses` points to a private
 address or blocked port; an empty or malformed `eventTypes`; a malformed
 secret; a `send()` event type with `*`, a missing payload, or a payload with
-`\u0000`; invalid `cleanup()`, `deleteMessages()` or `drain()` arguments;
+`\u0000`; with `schemas`, a payload that fails its schema (the message names
+the failing paths, and `issues` has the details), a schema that throws, an
+event type with no schema, or endpoint `eventTypes`
+that match none; invalid `cleanup()`, `deleteMessages()` or `drain()` arguments;
 replaying a redacted delivery; and invalid
 `new Hookgres()` options. It extends `Error`, and its message says how to fix
 the problem, so routes can return it as a `400`:
@@ -299,6 +307,12 @@ interface Message {
   createdAt: Date;
   redactedAt: Date | null; // set by redactPayloads
 }
+
+// Typed events (see /guides/typed-events)
+type EventMap = Record<string, unknown>; // { "invoice.paid": { id: string } }
+type EventSchemas<E> = { [K in keyof E]: StandardSchemaV1<E[K], unknown> };
+type InferEvents<S> = { [K in keyof S]: /* output type of S[K] */ };
+type WebhookEvent<E> = /* WebhookEnvelope<E[K]> & { type: K }, for each K */;
 
 interface SendResult {
   message: Message;

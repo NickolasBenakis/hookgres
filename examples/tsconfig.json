@@ -4,7 +4,9 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "module": "NodeNext",
-    "moduleResolution": "NodeNext"
+    "moduleResolution": "NodeNext",
+    // Examples check the built package, not the source.
+    "paths": {}
   },
   "include": ["**/*.ts"],
   "exclude": []

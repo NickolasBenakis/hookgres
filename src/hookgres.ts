@@ -11,6 +11,7 @@ import {
   type TransportResponse,
 } from "./ssrf.js";
 import type {
+  AnyEvents,
   Attempt,
   AttemptEvent,
   CleanupOptions,
@@ -21,12 +22,15 @@ import type {
   DrainOptions,
   Endpoint,
   EndpointDisabledEvent,
+  EventMap,
+  EventSchemas,
   ListDeliveriesInput,
   Message,
   Queryable,
   SendInput,
   SendOptions,
   SendResult,
+  StandardSchemaV1,
   UpdateEndpointInput,
   WebhookEnvelope,
 } from "./types.js";
@@ -82,7 +86,7 @@ const DOCS = "https://hookgres.dev/docs";
  *
  * @see https://hookgres.dev/docs/reference/configuration
  */
-export interface HookgresOptions {
+export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /**
    * An existing `pg.Pool`, usually the one your app already uses, so
    * `send()` can join your transactions. Hookgres never closes a pool it did
@@ -181,6 +185,16 @@ export interface HookgresOptions {
   onAttempt?: (event: AttemptEvent) => void;
   /** Called when Hookgres disables an endpoint after failing for `disableEndpointAfterMs`. Errors are handled like `onAttempt`'s. */
   onEndpointDisabled?: (event: EndpointDisabledEvent) => void;
+  /**
+   * One Standard Schema (Zod, Valibot, ArkType, ...) per event type. Types
+   * `send()` from them, and at runtime `send()` validates each payload and
+   * stores the schema's output; an invalid payload, or an event type with no
+   * schema, throws a `HookgresValidationError` and nothing is queued.
+   * `createEndpoint` and `updateEndpoint` reject `eventTypes` that match no
+   * schema. For types without runtime checks, use `new Hookgres<Events>()`.
+   * @see https://hookgres.dev/docs/guides/typed-events
+   */
+  schemas?: EventSchemas<E>;
 }
 
 interface ClaimedDelivery {
@@ -222,7 +236,7 @@ interface HttpResult {
  *
  * @see https://hookgres.dev/docs/
  */
-export class Hookgres {
+export class Hookgres<E extends EventMap = AnyEvents> {
   /**
    * The pool Hookgres queries: the one you passed in, or the one it created
    * from `connectionString`. Use it to open transactions for `send()`.
@@ -254,6 +268,7 @@ export class Hookgres {
   private readonly onError: (error: unknown) => void;
   private readonly onAttempt: HookgresOptions["onAttempt"];
   private readonly onEndpointDisabled: HookgresOptions["onEndpointDisabled"];
+  private readonly schemas: Map<string, StandardSchemaV1> | null;
   /** NOTIFY channel, or `null` when `notify` is off. */
   private readonly channel: string | null;
 
@@ -279,7 +294,7 @@ export class Hookgres {
    *
    * @see https://hookgres.dev/docs/reference/configuration
    */
-  constructor(options: HookgresOptions) {
+  constructor(options: HookgresOptions<E>) {
     if (options.pool) {
       this.pool = options.pool;
       this.ownsPool = false;
@@ -385,6 +400,7 @@ export class Hookgres {
     }
     // Postgres channel names are at most 63 bytes; pg_notify rejects longer.
     this.channel = options.notify ? `${schema}_wake`.slice(0, 63) : null;
+    this.schemas = options.schemas ? toSchemaMap(options.schemas) : null;
   }
 
   // ---------------------------------------------------------------- schema
@@ -457,8 +473,9 @@ export class Hookgres {
    *
    * @see https://hookgres.dev/docs/guides/endpoints
    */
-  async createEndpoint(input: CreateEndpointInput): Promise<Endpoint> {
+  async createEndpoint(input: CreateEndpointInput<E>): Promise<Endpoint> {
     assertUrl(input.url, this.guard);
+    const eventTypes = this.checkEventTypes(input.eventTypes);
     const { rows } = await this.query(
       `INSERT INTO ${this.t.endpoints}
          (id, tenant_id, url, description, event_types, secret, metadata)
@@ -469,7 +486,7 @@ export class Hookgres {
         input.tenantId,
         input.url,
         input.description ?? null,
-        normaliseEventTypes(input.eventTypes),
+        eventTypes,
         input.secret === undefined
           ? generateSecret()
           : assertSecret(input.secret),
@@ -529,7 +546,7 @@ export class Hookgres {
    */
   async updateEndpoint(
     id: string,
-    patch: UpdateEndpointInput,
+    patch: UpdateEndpointInput<E>,
   ): Promise<Endpoint | null> {
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -543,7 +560,7 @@ export class Hookgres {
     }
     if (patch.description !== undefined) set("description", patch.description);
     if (patch.eventTypes !== undefined) {
-      set("event_types", normaliseEventTypes(patch.eventTypes));
+      set("event_types", this.checkEventTypes(patch.eventTypes));
     }
     if (patch.metadata !== undefined) set("metadata", patch.metadata);
     if (patch.disabled !== undefined) {
@@ -660,14 +677,26 @@ export class Hookgres {
    *
    * @see https://hookgres.dev/docs/guides/sending
    */
-  async send(input: SendInput, options: SendOptions = {}): Promise<SendResult> {
+  async send(
+    input: SendInput<E>,
+    options: SendOptions = {},
+  ): Promise<SendResult> {
+    const event: SendInput = { ...input };
+    if (this.schemas) event.payload = await this.validatePayload(event);
+    return this.insertMessage(event, options);
+  }
+
+  private async insertMessage(
+    input: SendInput,
+    options: SendOptions,
+  ): Promise<SendResult> {
     if (this.redactPayloads && !options.client) {
       // The insert and the redaction of a message with no deliveries must
       // commit together, or a failed redaction would leave the payload stored.
       const client = await this.pool.connect();
       try {
         await client.query("BEGIN");
-        const result = await this.send(input, { client });
+        const result = await this.insertMessage(input, { client });
         await client.query("COMMIT");
         if (!result.deduplicated) this.wake();
         return result;
@@ -777,6 +806,59 @@ export class Hookgres {
       deliveryCount: row.delivery_count,
       deduplicated: true,
     };
+  }
+
+  /** Runs the event type's schema; returns the value to store. */
+  private async validatePayload(input: SendInput): Promise<unknown> {
+    const schema = this.schemas?.get(input.eventType);
+    if (!schema) {
+      throw new HookgresValidationError(
+        `No schema for event type "${input.eventType}": add it to \`schemas\` in new Hookgres(), or check the spelling. Nothing was queued. See ${DOCS}/guides/typed-events`,
+      );
+    }
+    let result: StandardSchemaV1.Result<unknown>;
+    try {
+      result = await schema["~standard"].validate(input.payload);
+    } catch (error) {
+      // e.g. a transform that throws on bad input
+      throw new HookgresValidationError(
+        `The schema for "${input.eventType}" threw while validating the payload (see \`cause\`). Nothing was queued. See ${DOCS}/guides/typed-events`,
+        { cause: error },
+      );
+    }
+    if (result.issues) {
+      // Paths only: some libraries quote the received value in their issue
+      // messages, and this message may be returned to API callers or logged.
+      const paths = [...new Set(result.issues.map(issuePath))];
+      const shown = paths.slice(0, 5).join(", ");
+      const more = paths.length > 5 ? ` and ${paths.length - 5} more` : "";
+      throw new HookgresValidationError(
+        `Invalid payload for "${input.eventType}": ${shown}${more} failed the schema (see \`issues\`). Nothing was queued. See ${DOCS}/guides/typed-events`,
+        { issues: result.issues },
+      );
+    }
+    return result.value;
+  }
+
+  /** Validates endpoint `eventTypes`, and with `schemas`, that each matches a known event type. */
+  private checkEventTypes(
+    eventTypes: string[] | null | undefined,
+  ): string[] | null {
+    const types = normaliseEventTypes(eventTypes);
+    if (types && this.schemas) {
+      const known = [...this.schemas.keys()];
+      for (const type of types) {
+        const matches = type.endsWith(".*")
+          ? known.some((k) => k.startsWith(type.slice(0, -1)))
+          : this.schemas.has(type);
+        if (!matches) {
+          throw new HookgresValidationError(
+            `Unknown event type "${type}" in eventTypes: it matches no event type this app sends. See ${DOCS}/guides/typed-events`,
+          );
+        }
+      }
+    }
+    return types;
   }
 
   /**
@@ -1741,6 +1823,33 @@ function assertUrl(url: string, guard: AddressGuard | null): void {
     );
   }
   guard?.assertEndpointUrl(parsed);
+}
+
+function toSchemaMap(
+  schemas: Record<string, StandardSchemaV1>,
+): Map<string, StandardSchemaV1> {
+  const map = new Map<string, StandardSchemaV1>();
+  for (const [type, schema] of Object.entries(schemas)) {
+    if (type.includes("*")) {
+      throw new HookgresValidationError(
+        `Invalid event type "${type}" in schemas: use concrete event types like "invoice.paid", without "*". See ${DOCS}/guides/typed-events`,
+      );
+    }
+    if (typeof schema?.["~standard"]?.validate !== "function") {
+      throw new HookgresValidationError(
+        `schemas["${type}"] is not a Standard Schema: pass a schema from a library that implements https://standardschema.dev, such as Zod 3.24+, Valibot 1 or ArkType. See ${DOCS}/guides/typed-events`,
+      );
+    }
+    map.set(type, schema);
+  }
+  return map;
+}
+
+function issuePath(issue: StandardSchemaV1.Issue): string {
+  const keys = (issue.path ?? []).map((segment) =>
+    typeof segment === "object" ? segment.key : segment,
+  );
+  return ["payload", ...keys.map(String)].join(".");
 }
 
 function normaliseEventTypes(
