@@ -203,13 +203,14 @@
   @media (hover: hover) and (pointer: fine) { .theme-toggle:hover { color: var(--ink); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
   :root[data-theme="dark"] .theme-toggle .sun, :root:not([data-theme="dark"]) .theme-toggle .moon { display: none; }
   @media (hover: hover) and (pointer: fine) { .search-trigger:hover { color: var(--ink-2); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
+  /* Looks the same on <a> and <button>: reset what browsers add to buttons. */
   .pill {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    border-radius: 999px; font-weight: 500; white-space: nowrap;
+    border: 0; border-radius: 999px; font-family: var(--sans); font-weight: 500; white-space: nowrap; cursor: pointer;
     transition: background-color 150ms var(--ease), transform 150ms var(--ease), box-shadow 150ms var(--ease);
   }
   .pill:hover { text-decoration: none; }
-  .pill:active { transform: scale(0.97); }
+  .pill:active { transform: scale(0.96); }
   /* Header controls are 32–36px tall; their hit areas extend to 44px. */
   .search-trigger, .pill.small { position: relative; }
   .search-trigger::before, .pill.small::before { content: ""; position: absolute; inset: -6px -2px; }
@@ -508,8 +509,8 @@
   /* Interactive demos */
   .demo { min-width: 0; }
   .pill.action {
-    height: 40px; padding: 0 18px; font-size: 15px; border: 0; cursor: pointer;
-    background: var(--accent); color: var(--accent-ink); font-family: var(--sans);
+    height: 40px; padding: 0 18px; font-size: 15px;
+    background: var(--accent); color: var(--accent-ink);
   }
   @media (hover: hover) and (pointer: fine) { .pill.action:hover { background: var(--accent-hover); } }
   .pill.action.quiet { background: var(--surface); color: var(--ink); box-shadow: var(--raised); }
@@ -636,7 +637,7 @@
   .table td.us { color: var(--ink); font-weight: 500; }
   @media (max-width: 640px) { .table { font-size: 14px; } .table th, .table td { padding-right: 12px; } }
 
-  .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; }
+  .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; scroll-margin-top: 72px; }
   .waitlist h3 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); text-wrap: balance; }
   .waitlist > p { margin: 10px 0 0; font-size: 16px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
   .waitlist-form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
@@ -650,7 +651,6 @@
   .waitlist-form input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
   .waitlist-form input[aria-invalid="true"] { border-color: var(--bad); }
   .waitlist .waitlist-note[data-error] { color: var(--bad); }
-  @media (hover: hover) and (pointer: fine) { .waitlist-form .pill:hover { background: var(--accent-hover); } }
   .waitlist .waitlist-note { margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
 
   /* Closing */
@@ -1038,7 +1038,7 @@ hookgres.start();
           <input id="waitlist-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@company.com" required>
           <button class="pill large" type="submit">Join the waitlist</button>
         </form>
-        <p class="waitlist-note" id="waitlist-note">We'll only email you about Hookgres Pro. Unsubscribe anytime. The form is hosted by <a href="https://tally.so">Tally</a>.</p>
+        <p class="waitlist-note" id="waitlist-note">We’ll only email you about Hookgres Pro. Unsubscribe anytime. The form is hosted by <a href="https://tally.so">Tally</a>.</p>
       </div>
     </div>
   </section>
