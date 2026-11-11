@@ -210,7 +210,7 @@
     transition: background-color 150ms var(--ease), transform 150ms var(--ease), box-shadow 150ms var(--ease);
   }
   .pill:hover { text-decoration: none; }
-  .pill:active { transform: scale(0.97); }
+  .pill:active { transform: scale(0.96); }
   /* Header controls are 32–36px tall; their hit areas extend to 44px. */
   .search-trigger, .pill.small { position: relative; }
   .search-trigger::before, .pill.small::before { content: ""; position: absolute; inset: -6px -2px; }
@@ -637,7 +637,7 @@
   .table td.us { color: var(--ink); font-weight: 500; }
   @media (max-width: 640px) { .table { font-size: 14px; } .table th, .table td { padding-right: 12px; } }
 
-  .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; }
+  .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; scroll-margin-top: 72px; }
   .waitlist h3 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); text-wrap: balance; }
   .waitlist > p { margin: 10px 0 0; font-size: 16px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
   .waitlist-form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
@@ -1038,7 +1038,7 @@ hookgres.start();
           <input id="waitlist-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@company.com" required>
           <button class="pill large" type="submit">Join the waitlist</button>
         </form>
-        <p class="waitlist-note" id="waitlist-note">We'll only email you about Hookgres Pro. Unsubscribe anytime. The form is hosted by <a href="https://tally.so">Tally</a>.</p>
+        <p class="waitlist-note" id="waitlist-note">We’ll only email you about Hookgres Pro. Unsubscribe anytime. The form is hosted by <a href="https://tally.so">Tally</a>.</p>
       </div>
     </div>
   </section>
