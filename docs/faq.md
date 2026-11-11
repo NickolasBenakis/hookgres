@@ -16,16 +16,16 @@ transaction-level advisory locks, and no `LISTEN` unless you turn on
 work through a pooler in transaction mode, such as PgBouncer or Supavisor;
 leave `notify` off there. Pooler setups aren't part of CI yet.
 
-## Can I use it with Prisma, Drizzle or Kysely?
+## Can I use it with Prisma, Drizzle, Kysely or another ORM?
 
-Hookgres needs a `pg.Pool` for itself. Your ORM can keep its own connection.
-For [transactional sends](/guides/sending#inside-your-transaction), pass
-`send()` a client with a node-postgres style `query(text, values)` method
-that runs inside your transaction. For Kysely and Prisma, `hookgres/kysely`
-and `hookgres/prisma` export adapters that turn their transaction into one;
-for Drizzle, pass its underlying `pg` client. If your ORM can't give you one, call
-`send()` right after the commit instead. You lose the outbox guarantee, but
-everything else works.
+Yes. Hookgres needs a `pg.Pool` for itself; your ORM can keep its own
+connection. For [transactional sends](/guides/sending#inside-your-transaction),
+pass `send()` a client with a node-postgres style `query(text, values)` method
+that runs inside your transaction. `hookgres/prisma` and `hookgres/kysely`
+export one, and [Using your ORM's transaction](/guides/orms) has tested
+recipes of a few lines for Drizzle, postgres.js, Knex, Sequelize and TypeORM.
+If your stack has no transactions, call `send()` right after the change is
+saved instead. You lose the outbox guarantee, but everything else works.
 
 ## Is delivery exactly once?
 

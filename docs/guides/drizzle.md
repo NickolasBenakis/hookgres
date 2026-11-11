@@ -1,14 +1,13 @@
 # Using Hookgres with Drizzle
 
 This guide shows how to call `send()` inside a Drizzle transaction, so a
-webhook is queued only if your change commits. It assumes Drizzle's
-node-postgres driver (`drizzle-orm/node-postgres`). Hookgres uses `pg` too, so
-both share one connection pool.
+webhook is queued only if your change commits. It works with Drizzle's
+node-postgres and postgres.js drivers.
 
 ## Set up
 
-Create the pool once and give it to both Drizzle and Hookgres, for example in
-`db.ts`:
+Hookgres needs a `pg` pool of its own. With the node-postgres driver, Drizzle
+can share it, for example in `db.ts`:
 
 ```ts
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -17,48 +16,26 @@ import pg from "pg";
 import * as schema from "./schema.js";
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-// Use the same options for both Drizzle instances below.
-const options = { schema };
-
-export const db = drizzle({ client: pool, ...options });
+export const db = drizzle({ client: pool, schema });
 export const hookgres = new Hookgres({ pool });
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-/**
- * Runs `fn` in a Drizzle transaction on one pooled connection and hands it
- * that connection too, so `hookgres.send(..., { client })` joins the
- * transaction.
- */
-export async function transaction<T>(
-  fn: (tx: Tx, client: pg.PoolClient) => Promise<T>,
-  config?: Parameters<typeof db.transaction>[1],
-): Promise<T> {
-  const client = await pool.connect();
-  try {
-    return await drizzle({ client, ...options }).transaction(
-      (tx) => fn(tx, client),
-      config,
-    );
-  } finally {
-    client.release();
-  }
-}
 ```
 
-`send()` joins a transaction when you pass it the `pg` client that runs the
-transaction. Drizzle's `tx` object doesn't expose that client, so
-`transaction()` above checks one connection out of the pool, builds a Drizzle
-instance on it, and starts the transaction there. Drizzle runs a transaction
-on the connection it was given, so `tx` and `client` are the same
-transaction. Use this helper instead of `db.transaction()` wherever a
-transaction sends webhooks; `db` works as before everywhere else.
+With the postgres.js driver, keep your `postgres()` client for Drizzle and give
+Hookgres a small `pg` pool on the same `DATABASE_URL`
+(`npm install hookgres pg`).
 
-Both Drizzle instances must be built with the same options. If you pass
-`casing`, a `logger` or anything else to `drizzle()`, put it in `options` so
-the transaction's queries are built the same way as `db`'s. The second
-argument of `transaction()` takes the same settings as `db.transaction()`,
-for example `{ isolationLevel: "serializable" }`.
+`send()` takes a `client` with a node-postgres style `query(text, values)`
+method that runs on your transaction. Drizzle's `tx` doesn't have one, so copy
+this wrapper into `db.ts` too:
+
+<<< @/snippets/orms/drizzle.ts
+
+How it works: `fromDrizzle()` turns Hookgres's query into Drizzle SQL with the
+values as bound parameters, and runs it with `tx.execute()` on the
+transaction's connection. Raw queries skip Drizzle's column mapping, so a
+`casing` setting doesn't rename the columns `send()` reads. Hookgres's CI runs
+this exact wrapper on both drivers, and with `casing` set. Other stacks are in
+[Using your ORM's transaction](/guides/orms).
 
 The examples use this table, in `schema.ts`:
 
@@ -76,11 +53,11 @@ export const invoices = pgTable("invoices", {
 
 ```ts
 import { eq } from "drizzle-orm";
-import { hookgres, transaction } from "./db.js";
+import { db, fromDrizzle, hookgres } from "./db.js";
 import { invoices } from "./schema.js";
 
 export async function markPaid(invoiceId: string) {
-  return transaction(async (tx, client) => {
+  return db.transaction(async (tx) => {
     const [invoice] = await tx
       .update(invoices)
       .set({ status: "paid" })
@@ -94,7 +71,7 @@ export async function markPaid(invoiceId: string) {
         eventType: "invoice.paid",
         payload: { invoiceId },
       },
-      { client },
+      { client: fromDrizzle(tx) },
     );
   });
 }
@@ -106,14 +83,14 @@ back with your update:
 
 ```ts
 export async function markPaidThenFail(invoiceId: string) {
-  await transaction(async (tx, client) => {
+  await db.transaction(async (tx) => {
     await tx
       .update(invoices)
       .set({ status: "paid" })
       .where(eq(invoices.id, invoiceId));
     await hookgres.send(
       { tenantId: "acme", eventType: "invoice.paid", payload: { invoiceId } },
-      { client },
+      { client: fromDrizzle(tx) },
     );
     throw new Error("Payment provider declined"); // rolls back both
   });
@@ -140,19 +117,14 @@ shutdown, call `await hookgres.stop()` before `await pool.end()`.
 
 ## Pitfalls
 
-- **Passing the pool instead of the client.** `send(input, { client: pool })`
-  or `{ client: db.$client }` runs on a different connection, outside your
-  transaction. The webhook is then queued even if the transaction rolls back.
-  Always pass the `client` from `transaction()`.
+- **Wrapping `db` instead of `tx`.** `fromDrizzle(db)` or `{ client: pool }`
+  runs on a different connection, outside your transaction. The webhook is
+  then queued even if the transaction rolls back. Always wrap the `tx` your
+  callback receives.
 - **Leaving out `client`.** Without it, `send()` commits on its own right
   away.
-- **Reaching into Drizzle internals.** The transaction's connection is a
-  private field on `tx`. Don't read it; use the helper above.
-- **The postgres.js driver.** This guide doesn't cover
-  `drizzle-orm/postgres-js`. Drizzle doesn't expose the connection of its
-  transactions, and a postgres.js transaction can't be wrapped in a Drizzle
-  instance. Use the node-postgres driver for transactions that send
-  webhooks.
+- **`neon-http`.** That driver has no interactive transactions, so there's no
+  `tx` to join. Use `neon-serverless`, or send after the change is saved.
 - **Pool size.** A transaction holds its connection until it commits, and a
   worker started with `notify: true` holds one more. Size the pool's `max`
   for both.

@@ -85,7 +85,17 @@ for (const file of pages) {
     .replace(
       "<CostCalculator />",
       `An interactive calculator for these numbers is at ${site}/docs/compare.`,
+    )
+    // VitePress code-snippet imports (`<<< @/snippets/x.ts`): inline the code,
+    // fenced with the file's extension as its language.
+    .replace(
+      /^<<< @\/([^\s{[#]+\.(\w+))\r?$/gm,
+      (_, path, lang) =>
+        `\`\`\`${lang}\n${readFileSync(join(docsDir, path), "utf8").trimEnd()}\n\`\`\``,
     );
+  if (/^<<< /m.test(markdown)) {
+    throw new Error(`docs/${file}: a <<< snippet import wasn't inlined`);
+  }
   const target = join(out, "docs", file === "index.md" ? "index.md" : file);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, markdown);

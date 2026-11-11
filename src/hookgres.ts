@@ -1843,8 +1843,12 @@ function toMessage(row: Row): Message {
     eventType: row.event_type as string,
     payload: row.payload,
     idempotencyKey: row.idempotency_key as string | null,
-    createdAt: row.created_at as Date,
-    redactedAt: (row.redacted_at as Date | null | undefined) ?? null,
+    // send() may run on a caller's client whose driver returns timestamps as
+    // strings (Drizzle does), so parse them instead of trusting the type.
+    createdAt: new Date(row.created_at as Date | string),
+    redactedAt: row.redacted_at
+      ? new Date(row.redacted_at as Date | string)
+      : null,
   };
 }
 
