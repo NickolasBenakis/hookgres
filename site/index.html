@@ -426,7 +426,15 @@
   .split.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
   .split.flip > :first-child { order: 2; }
   @media (max-width: 900px) { .split, .split.flip { grid-template-columns: minmax(0, 1fr); } .split.flip > :first-child { order: 0; } }
-  .tx-bug { margin-top: clamp(64px, 8vw, 104px); }
+  .tx-bug { margin-top: clamp(64px, 8vw, 104px); scroll-margin-top: 72px; }
+  .seen { margin-top: clamp(32px, 4vw, 48px); }
+  .seen h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-wrap: balance; }
+  .seen ul { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .seen-card { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 18px 20px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+  .seen blockquote { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+  .seen-src { font-size: 13.5px; color: var(--ink-3); }
+  .seen-src:hover { color: var(--ink); }
+  @media (max-width: 760px) { .seen ul { grid-template-columns: minmax(0, 1fr); } }
   .head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 20px 40px; }
   .more { margin: 20px 0 0; font-size: 15.5px; font-weight: 500; }
   .more a::after { content: " ›"; }
@@ -839,7 +847,7 @@ hookgres.start();
         </div>
       </div>
     </div>
-    <div class="wrap tx-bug">
+    <div class="wrap tx-bug" id="rollback-demo">
       <div class="head-row">
         <div>
           <p class="kicker">The bug it fixes</p>
@@ -853,6 +861,24 @@ hookgres.start();
           <source data-src="/media/rollback-demo-2x.mp4" type="video/mp4">
         </video>
         <button type="button" class="video-toggle" aria-controls="rollback-video" hidden>Pause</button>
+      </div>
+      <div class="seen">
+        <h3>Not a contrived example. Other teams hit these bugs in 2026:</h3>
+        <ul>
+          <li class="seen-card">
+            <blockquote>“…the entire batch is rolled back, but the webhook for the earlier (now rolled-back) request has already been dispatched.”</blockquote>
+            <a class="seen-src" href="https://issues.apache.org/jira/browse/FINERACT-2570">Apache Fineract, March 2026</a>
+          </li>
+          <li class="seen-card">
+            <blockquote>“REST API dispatches events for writes that were rolled back”</blockquote>
+            <a class="seen-src" href="https://github.com/netbox-community/netbox/issues/22978">NetBox, August 2026</a>
+          </li>
+          <li class="seen-card">
+            <blockquote>“If that process dies — for any reason — the webhook dies with it.”</blockquote>
+            <a class="seen-src" href="https://dodopayments.com/engineering/building-webhooks-never-fail">Dodo Payments, January 2026</a>
+          </li>
+        </ul>
+        <p class="more"><a href="/docs/answers/webhooks-for-rolled-back-changes">Why the usual fixes close only one gap</a></p>
       </div>
     </div>
   </section>

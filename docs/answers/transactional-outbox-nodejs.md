@@ -16,6 +16,8 @@ await sendWebhook("invoice.paid", { id }); // separate system
 There's no way to commit both atomically. A crash, deploy or network error
 between them leaves your database and your customers disagreeing. Retrying the
 whole function doesn't help: the update already happened.
+[Webhooks sent for rolled-back changes](/answers/webhooks-for-rolled-back-changes)
+shows both failures in real projects.
 
 ## The pattern
 
