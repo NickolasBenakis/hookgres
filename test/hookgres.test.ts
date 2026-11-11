@@ -882,6 +882,30 @@ describe("fairness", () => {
   });
 });
 
+describe("payload loading", () => {
+  it("sends one fanned-out message's body, unchanged, to each endpoint", async () => {
+    const hw = ctx.create({
+      concurrency: 5,
+      maxInFlightPerEndpoint: 5,
+    });
+    for (let i = 0; i < 5; i++) {
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    }
+    await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: { big: "x".repeat(1000), n: 1.5 },
+    });
+    expect(await hw.runOnce()).toBe(5);
+    const bodies = new Set(receiver.requests.map((r) => r.body));
+    expect(bodies.size).toBe(1);
+    const envelope = JSON.parse([...bodies][0] ?? "") as WebhookEnvelope<{
+      n: number;
+    }>;
+    expect(envelope.data.n).toBe(1.5);
+  });
+});
+
 describe("caller clients", () => {
   it("handles a client that maps result columns to camelCase", async () => {
     const hw = ctx.create();

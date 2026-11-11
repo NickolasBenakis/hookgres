@@ -235,6 +235,8 @@ interface ClaimedDelivery {
    * the same message. Missing if the message was deleted meanwhile.
    */
   body?: string;
+  /** Why the payload couldn't be loaded; recorded as a failed attempt. */
+  loadError?: string;
   /** Only possible when a replay raced a redaction. */
   redacted: boolean;
   url: string;
@@ -1805,21 +1807,45 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * memory there would abort the claim and retry it forever.
    */
   private async loadBodies(claimed: ClaimedDelivery[]): Promise<void> {
-    const ids = [
-      ...new Set(claimed.filter((d) => !d.redacted).map((d) => d.message_id)),
-    ];
-    if (ids.length === 0) return;
-    const { rows } = await this.query<{ id: string; payload: string }>(
-      `SELECT id, payload::text AS payload FROM ${this.t.messages}
-       WHERE id = ANY ($1::text[]) AND payload IS NOT NULL`,
-      [ids],
-      this.workerDb,
+    // Not for deliveries process() fails without sending: loading a payload
+    // too big for the worker must not happen again on every reclaim.
+    const sendable = claimed.filter(
+      (d) =>
+        !d.redacted &&
+        !d.disabled &&
+        d.attempt_count <= this.retrySchedule.length + 1,
     );
-    const payloads = new Map(rows.map((r) => [r.id, r.payload]));
+    const ids = [...new Set(sendable.map((d) => d.message_id))];
+    if (ids.length === 0) return;
+    let payloads: Map<string, string | null>;
+    try {
+      payloads = await this.loadPayloads(ids);
+    } catch {
+      // The claim has committed: don't drop the batch. Load message by
+      // message, and record a failed attempt for any that still fails.
+      payloads = new Map();
+      for (const id of ids) {
+        try {
+          for (const [k, v] of await this.loadPayloads([id]))
+            payloads.set(k, v);
+        } catch (error) {
+          for (const d of sendable) {
+            if (d.message_id === id) {
+              d.loadError = `Couldn't load the payload: ${(error as Error).message}`;
+            }
+          }
+        }
+      }
+    }
     const bodies = new Map<string, string>();
-    for (const delivery of claimed) {
+    for (const delivery of sendable) {
+      if (delivery.loadError) continue;
+      if (!payloads.has(delivery.message_id)) continue; // deleted meanwhile
       const payload = payloads.get(delivery.message_id);
-      if (payload === undefined) continue;
+      if (payload == null) {
+        delivery.redacted = true; // redacted after the claim
+        continue;
+      }
       let body = bodies.get(delivery.message_id);
       if (body === undefined) {
         const timestamp = new Date(delivery.message_created_ms).toISOString();
@@ -1828,6 +1854,18 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       }
       delivery.body = body;
     }
+  }
+
+  private async loadPayloads(
+    ids: string[],
+  ): Promise<Map<string, string | null>> {
+    const { rows } = await this.query<{ id: string; payload: string | null }>(
+      `SELECT id, payload::text AS payload FROM ${this.t.messages}
+       WHERE id = ANY ($1::text[])`,
+      [ids],
+      this.workerDb,
+    );
+    return new Map(rows.map((r) => [r.id, r.payload]));
   }
 
   /** Puts claimed deliveries back, as if they had never been claimed. */
@@ -2010,7 +2048,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     }
     // Deleted (deleteMessages, cleanup) after the claim: the delivery went
     // with it, so there's nothing to send or record.
-    if (delivery.body === undefined && !delivery.redacted) return;
+    if (
+      delivery.body === undefined &&
+      !delivery.redacted &&
+      !delivery.loadError &&
+      !delivery.disabled &&
+      delivery.attempt_count <= this.retrySchedule.length + 1
+    ) {
+      return;
+    }
     if (delivery.redacted) {
       await this.failWithoutSending(delivery, "Payload was redacted");
       return;
@@ -2193,6 +2239,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   }
 
   private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
+    if (delivery.loadError) {
+      return {
+        ok: false,
+        statusCode: null,
+        responseBody: null,
+        error: delivery.loadError,
+        durationMs: 0,
+      };
+    }
     const body = delivery.body as string;
     const timestamp = Math.floor(Date.now() / 1000);
     const secrets = delivery.previous_secret
