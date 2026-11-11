@@ -47,8 +47,8 @@ try {
 ```
 
 The other examples show only the `send()` call; `client` is the same
-transaction client. Prisma, Drizzle, Kysely, postgres.js, Knex, Sequelize
-and TypeORM work too: see [Using your ORM's transaction](/guides/orms).
+transaction client. Prisma, Drizzle, Kysely, postgres.js, Knex, Sequelize,
+TypeORM and MikroORM work too: see [Using your ORM's transaction](/guides/orms).
 
 A booking that fails to save never reaches the CRM, and one that saves always
 does, even if your server restarts a second later.

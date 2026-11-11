@@ -235,8 +235,8 @@ export class InvoicesController {
 
 The `idempotencyKey` means paying the same invoice twice queues one webhook.
 With Prisma, pass `fromPrisma(tx)` from `hookgres/prisma` as `client`; with
-TypeORM or another ORM, pass the transaction's underlying `pg` client. See
-[Sending webhooks](/guides/sending#using-an-orm).
+TypeORM, MikroORM or another ORM, use the matching recipe in
+[Using your ORM's transaction](/guides/orms).
 
 ## Endpoint management routes
 

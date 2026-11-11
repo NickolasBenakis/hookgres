@@ -23,6 +23,12 @@ importers:
       '@changesets/cli':
         specifier: ^3.0.3
         version: 3.0.3
+      '@mikro-orm/core':
+        specifier: ^7.2.8
+        version: 7.2.8(dataloader@2.2.3)
+      '@mikro-orm/postgresql':
+        specifier: ^7.2.8
+        version: 7.2.8(@mikro-orm/core@7.2.8(dataloader@2.2.3))
       '@testcontainers/postgresql':
         specifier: ^12.2.1
         version: 12.2.1(bare-buffer@3.7.1)
@@ -568,6 +574,27 @@ packages:
   '@manypkg/tools@2.1.2':
     resolution: {integrity: sha512-6QEf6yqFbETdwGITKq57aYoPfX/3K8XFNwsAlx0C1M7o8cb79sv1M3w+tWuWvIcSbNqrLF7OD7YpZMVVz335hQ==}
     engines: {node: '>=20.0.0'}
+
+  '@mikro-orm/core@7.2.8':
+    resolution: {integrity: sha512-9E7wApevmNrqswey8pVT65nyBz1ejOafcdyHV2aKU9FmxnWr/MbfOVNlnpMe6D3+r+wsrVyx3dBJ0mHqTYQTCw==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      dataloader: 2.2.3
+    peerDependenciesMeta:
+      dataloader:
+        optional: true
+
+  '@mikro-orm/postgresql@7.2.8':
+    resolution: {integrity: sha512-spAGvR8xfXGK0+mwsAsN3Kt5cg2Ge3DgXT3rNOeA7IxaBXpl+NMwXu5cSWes4jHlhWKJ4jzXyTo6xH+we9fbNA==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': 7.2.8
+
+  '@mikro-orm/sql@7.2.8':
+    resolution: {integrity: sha512-551INWnMri4veRmOVcGeM4hCn559OgXzxhZqWmVYeF5RDpavlVPBbYdiPaBd7NIOssPEG+LkcDH7lt2l67U4PQ==}
+    engines: {node: '>= 22.17.0'}
+    peerDependencies:
+      '@mikro-orm/core': 7.2.8
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -2022,6 +2049,11 @@ packages:
   pg-connection-string@2.6.2:
     resolution: {integrity: sha512-ch6OwaeaPYcova4kKZ15sbJ2hKb/VP48ZD2gE7i1J+L4MspCtBMAx8nMgz7bksc7IojCIIWuEhHibSMFH8m8oA==}
 
+  pg-cursor@2.22.1:
+    resolution: {integrity: sha512-X10ldv3wwBONQkOSwgWEbaEITMGLd92V2Zd+xsFPhDt3nhhU3hpAT08SERBChnIFmomczLax6lKXLJrHPPXfxA==}
+    peerDependencies:
+      pg: ^8
+
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
@@ -2065,6 +2097,10 @@ packages:
     resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
     engines: {node: '>=4'}
 
+  postgres-array@3.0.4:
+    resolution: {integrity: sha512-nAUSGfSDGOaOAEGwqsRY27GPOea7CNipJPOA7lPbdEpx5Kg3qzdP0AaWC5MlhTWV9s4hFX39nomVZ+C4tnGOJQ==}
+    engines: {node: '>=12'}
+
   postgres-bytea@1.0.1:
     resolution: {integrity: sha512-5+5HqXnsZPE65IJZSMkZtURARZelel2oXUEO8rH83VS/hxH5vv1uHquPg5wZs8yMAfdv971IU+kcPUczi7NVBQ==}
     engines: {node: '>=0.10.0'}
@@ -2073,9 +2109,17 @@ packages:
     resolution: {integrity: sha512-suDmjLVQg78nMK2UZ454hAG+OAW+HQPZ6n++TNDUX+L0+uUlLywnoxJKDou51Zm+zTCjrCl0Nq6J9C5hP9vK/Q==}
     engines: {node: '>=0.10.0'}
 
+  postgres-date@2.1.0:
+    resolution: {integrity: sha512-K7Juri8gtgXVcDfZttFKVmhglp7epKb1K4pgrkLxehjqkrgPhfG6OO8LHLkfaqkbpjNRnra018XwAr1yQFWGcA==}
+    engines: {node: '>=12'}
+
   postgres-interval@1.2.0:
     resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
     engines: {node: '>=0.10.0'}
+
+  postgres-interval@4.1.0:
+    resolution: {integrity: sha512-nJLACcOHi2iyRuMJeW6CuIA0Dc0i1YEpRr26XDyHAfxPjYUJOFxwZjmOc5oFFctTTh/OlRAMlnlXEJvr170fJg==}
+    engines: {node: '>=12'}
 
   postgres@4.1.0:
     resolution: {integrity: sha512-s+0WH67YAyLdBQUb6XczbziBhY+C9uiQsg9S8R5RHdZhk6sdyK6202E+T2tXpiInSEEjDLRSJ3OpYBe3PN6MsQ==}
@@ -3193,6 +3237,28 @@ snapshots:
       jju: 1.4.0
       tinyglobby: 0.2.17
       yaml: 2.9.1
+
+  '@mikro-orm/core@7.2.8(dataloader@2.2.3)':
+    optionalDependencies:
+      dataloader: 2.2.3
+
+  '@mikro-orm/postgresql@7.2.8(@mikro-orm/core@7.2.8(dataloader@2.2.3))':
+    dependencies:
+      '@mikro-orm/core': 7.2.8(dataloader@2.2.3)
+      '@mikro-orm/sql': 7.2.8(@mikro-orm/core@7.2.8(dataloader@2.2.3))
+      kysely: 0.29.8
+      pg: 8.23.1
+      pg-cursor: 2.22.1(pg@8.23.1)
+      postgres-array: 3.0.4
+      postgres-date: 2.1.0
+      postgres-interval: 4.1.0
+    transitivePeerDependencies:
+      - pg-native
+
+  '@mikro-orm/sql@7.2.8(@mikro-orm/core@7.2.8(dataloader@2.2.3))':
+    dependencies:
+      '@mikro-orm/core': 7.2.8(dataloader@2.2.3)
+      kysely: 0.29.8
 
   '@oxc-project/types@0.156.0': {}
 
@@ -4350,6 +4416,10 @@ snapshots:
 
   pg-connection-string@2.6.2: {}
 
+  pg-cursor@2.22.1(pg@8.23.1):
+    dependencies:
+      pg: 8.23.1
+
   pg-int8@1.0.1: {}
 
   pg-pool@3.14.0(pg@8.23.1):
@@ -4392,13 +4462,19 @@ snapshots:
 
   postgres-array@2.0.0: {}
 
+  postgres-array@3.0.4: {}
+
   postgres-bytea@1.0.1: {}
 
   postgres-date@1.0.7: {}
 
+  postgres-date@2.1.0: {}
+
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
+
+  postgres-interval@4.1.0: {}
 
   postgres@4.1.0: {}
 

@@ -86,6 +86,8 @@
     "@biomejs/biome": "^2.6.6",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@mikro-orm/core": "^7.2.8",
+    "@mikro-orm/postgresql": "^7.2.8",
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",

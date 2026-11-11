@@ -67,7 +67,7 @@ available as raw markdown at `https://hookgres.dev/docs/<page>.md`.
    that runs inside the transaction. For Prisma pass
    `{ client: fromPrisma(tx) }` (from `hookgres/prisma`), for Kysely
    `{ client: fromKysely(trx) }` (from `hookgres/kysely`). For Drizzle,
-   postgres.js, Knex, Sequelize and TypeORM, copy the tested wrapper from
+   postgres.js, Knex, Sequelize, TypeORM and MikroORM, copy the tested wrapper from
    https://hookgres.dev/docs/guides/orms.md into the app and pass
    `{ client: fromDrizzle(tx) }` (or the matching one).
 
