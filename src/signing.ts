@@ -179,12 +179,17 @@ function readHeader(headers: HeaderBag, name: string): string | undefined {
  * @see https://hookgres.dev/docs/guides/verifying
  */
 export function verifyWebhook<T = unknown>(options: VerifyOptions): T {
-  const { headers, body, toleranceSeconds = 300 } = options;
-  // NaN (an unset env variable through Number()) would turn the replay check
-  // off without a word, since no comparison with NaN is true.
+  const { headers, body } = options;
+  // Numeric strings (from process.env) are accepted. NaN would turn the
+  // replay check off without a word, since no comparison with NaN is true;
+  // pass Infinity to turn it off on purpose.
+  const toleranceSeconds =
+    typeof options.toleranceSeconds === "string"
+      ? Number(options.toleranceSeconds)
+      : (options.toleranceSeconds ?? 300);
   if (
     typeof toleranceSeconds !== "number" ||
-    !Number.isFinite(toleranceSeconds) ||
+    Number.isNaN(toleranceSeconds) ||
     toleranceSeconds < 0
   ) {
     throw new TypeError(

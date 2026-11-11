@@ -183,9 +183,9 @@ describe("HookgresValidationError", () => {
   it("is thrown for numeric options that would break the worker", async () => {
     const pool = ctx.pool;
     for (const [options, message] of [
-      [{ concurrency: Number.NaN }, /^concurrency must be an integer/],
-      [{ concurrency: 2.5 }, /^concurrency must be an integer/],
-      [{ concurrency: 0 }, /^concurrency must be an integer/],
+      [{ concurrency: Number.NaN }, /^concurrency must be a positive integer/],
+      [{ concurrency: 2.5 }, /^concurrency must be a positive integer/],
+      [{ concurrency: 0 }, /^concurrency must be a positive integer/],
       [{ lockTimeoutMs: Number.NaN }, /^lockTimeoutMs must be a number/],
       [{ lockTimeoutMs: Number.POSITIVE_INFINITY }, /^lockTimeoutMs must be/],
       [{ requestTimeoutMs: Number.NaN }, /^requestTimeoutMs must be/],
@@ -211,6 +211,19 @@ describe("HookgresValidationError", () => {
     ] as Array<[Partial<HookgresOptions>, RegExp]>) {
       await expectValidation(() => new Hookgres({ pool, ...options }), message);
     }
+    // Numeric strings (from process.env) keep working, as they did through
+    // implicit coercion, and so do large concurrency values.
+    const fromEnv = new Hookgres({
+      pool,
+      concurrency: "25" as unknown as number,
+      pollIntervalMs: "500" as unknown as number,
+    });
+    expect(() => new Hookgres({ pool, concurrency: 5000 })).not.toThrow();
+    const clamped = new Hookgres({ pool, schema: ctx.schema });
+    expect(
+      (await clamped.listDeliveries({ limit: 0 })).length,
+    ).toBeLessThanOrEqual(1); // clamped to 1, as before
+    void fromEnv;
     // null still means "never disable".
     expect(
       () => new Hookgres({ pool, disableEndpointAfterMs: null }),
@@ -225,15 +238,7 @@ describe("HookgresValidationError", () => {
     });
     await expectValidation(
       () => hw.listDeliveries({ limit: Number.NaN }),
-      /^listDeliveries limit must be a positive integer/,
-    );
-    await expectValidation(
-      () => hw.listDeliveries({ limit: 2.5 }),
-      /^listDeliveries limit/,
-    );
-    await expectValidation(
-      () => hw.listDeliveries({ limit: 0 }),
-      /^listDeliveries limit/,
+      /^listDeliveries limit must be a number/,
     );
     await expectValidation(
       () =>
@@ -297,12 +302,12 @@ describe("HookgresValidationError", () => {
       /must be JSON-serialisable/,
     );
     await expectValidation(
-      () => send({}, "k".repeat(1001)),
-      /^idempotencyKey is longer than 1000 bytes/,
+      () => send({}, "k".repeat(2001)),
+      /^idempotencyKey is longer than 2000 bytes/,
     );
     // Whole emoji, and keys at the limit, are fine.
     await expect(
-      send({ text: "ok 😀" }, "k".repeat(1000)),
+      send({ text: "ok 😀" }, "k".repeat(2000)),
     ).resolves.toBeTruthy();
   });
 
@@ -322,6 +327,23 @@ describe("HookgresValidationError", () => {
     expect(() =>
       verifyWebhook({ secret, headers, body, toleranceSeconds: -1 }),
     ).toThrow(TypeError);
+    // Infinity turns the check off on purpose; numeric strings are accepted.
+    expect(
+      verifyWebhook({
+        secret,
+        headers,
+        body,
+        toleranceSeconds: Number.POSITIVE_INFINITY,
+      }),
+    ).toEqual({});
+    expect(() =>
+      verifyWebhook({
+        secret,
+        headers,
+        body,
+        toleranceSeconds: "300" as unknown as number,
+      }),
+    ).toThrow(/outside tolerance/);
   });
 
   it("is thrown by sign() for an empty secret", async () => {

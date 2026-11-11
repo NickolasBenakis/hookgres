@@ -60,18 +60,22 @@ an integer from 0 to 4096, if `lockTimeoutMs` isn't greater than `requestTimeout
 throws for a duration that isn't a finite number in range, NaN included (as in
 `Number(process.env.X)` of an unset variable):
 
-- `requestTimeoutMs`, `pollIntervalMs` and `lockTimeoutMs`: from 1 to
-  2147483647 (about 24.8 days, the longest a Node.js timer can wait).
-- `retrySchedule` entries, `disableEndpointAfterMs` and
-  `secretRotationGraceMs`: from 0 to 100 years. `disableEndpointAfterMs` can
-  also be `null`.
-- `concurrency`: an integer from 1 to 1000.
+- `requestTimeoutMs` and `pollIntervalMs`: from 1 to 2147483647 (about 24.8
+  days, the longest a Node.js timer can wait).
+- `lockTimeoutMs`, `retrySchedule` entries, `disableEndpointAfterMs` and
+  `secretRotationGraceMs`: from 0 to 100 years (`lockTimeoutMs` from 1).
+  `disableEndpointAfterMs` can also be `null`.
+- `concurrency`: a positive integer.
 
-Every query the worker runs times out after `lockTimeoutMs`, so a query stuck
-on a dead connection goes to `onError` instead of stalling the worker. When
-Hookgres creates the pool from `connectionString`, it also turns on TCP
-keepalive and a 10-second connection timeout. If you pass your own pool, set
-`keepAlive: true` on it too.
+Numeric strings, such as values read from `process.env`, are accepted.
+
+Every query the worker runs, including the wait for a pool connection, gives
+up after `lockTimeoutMs` (at most about 24.8 days). On a timeout, Hookgres
+cancels the statement on the server and reports the error to `onError`
+instead of stalling the worker. When Hookgres creates the pool from
+`connectionString`, it also turns on TCP keepalive, probing idle connections
+after 10 seconds. If you pass your own pool, consider `keepAlive: true` and
+`keepAliveInitialDelayMillis` too.
 
 With `blockPrivateAddresses` on, it emits a process warning (once per
 instance) if a custom `fetch` is given (`HOOKGRES_SSRF_CUSTOM_FETCH`) or if

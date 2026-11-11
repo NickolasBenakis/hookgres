@@ -58,6 +58,13 @@ Webhooks sent this way go out on the worker's next poll (within
 `pollIntervalMs`, 1 second by default), because the worker can't see them
 until you commit.
 
+While your transaction is open, `send()` holds a light lock (`FOR KEY SHARE`)
+on the endpoints it queued for. A `deleteEndpoint()` for one of them waits for
+your transaction to finish. At the default `READ COMMITTED` isolation level,
+an endpoint deleted while `send()` runs is skipped. Under `REPEATABLE READ` or
+`SERIALIZABLE`, Postgres raises a serialization error instead (code `40001`),
+which you retry like any other serialization failure.
+
 ::: tip Same database
 The transactional guarantee needs Hookgres's tables in the same database as
 your data. They live in their own schema, so they don't mix with your tables.
@@ -81,7 +88,7 @@ for Drizzle, postgres.js, Knex, Sequelize, TypeORM and MikroORM. Guides:
 Set `idempotencyKey` when the same event could be sent more than once, for
 example from a job that may retry. A second `send()` with the same key for the
 same tenant returns the original message with `deduplicated: true` and queues
-nothing. Keys can be up to 1000 bytes; hash anything longer.
+nothing. Keys can be up to 2000 bytes; hash anything longer.
 
 ```ts
 await hookgres.send({

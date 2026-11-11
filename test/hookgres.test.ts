@@ -868,6 +868,13 @@ describe("worker database timeouts", () => {
       await locker.query("ROLLBACK");
       locker.release();
     }
+    // The timed-out statement was cancelled on the server too: it didn't
+    // record the attempt once the lock was released.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const { rows } = await ctx.pool.query(
+      `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
+    );
+    expect(rows[0].n).toBe(0);
   });
 
   it("returns Date objects even when the pool parses timestamps as strings", async () => {
@@ -921,7 +928,7 @@ describe("worker database timeouts", () => {
     const hw = new Hookgres({ connectionString: inject("databaseUrl") });
     const options = hw.pool.options as pg.PoolConfig;
     expect(options.keepAlive).toBe(true);
-    expect(options.connectionTimeoutMillis).toBe(10_000);
+    expect(options.keepAliveInitialDelayMillis).toBe(10_000);
     return hw.close();
   });
 });
@@ -1749,6 +1756,34 @@ describe("delivery hooks", () => {
       nextAttemptAt: null,
     });
     expect(rec.disabled).toHaveLength(1);
+  });
+
+  it("reports an endpoint disabled once when two workers disable it together", async () => {
+    const rec = recorder();
+    const options = {
+      ...rec,
+      retrySchedule: [60_000],
+      disableEndpointAfterMs: 0,
+      concurrency: 1,
+    };
+    const one = ctx.create(options);
+    const two = ctx.create(options);
+    const ep = await one.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+    });
+    receiver.respond = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return 500;
+    };
+    await one.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await one.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await Promise.all([one.runOnce(), two.runOnce()]);
+
+    expect(receiver.requests).toHaveLength(2);
+    expect(rec.disabled).toEqual([
+      expect.objectContaining({ endpointId: ep.id }),
+    ]);
   });
 
   it("reports an endpoint disabled automatically, once", async () => {

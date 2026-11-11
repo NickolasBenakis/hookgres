@@ -72,8 +72,11 @@ const MAX_DURATION_MS = 100 * 365 * DAY;
 /** Longest delay a Node.js timer supports; longer ones fire at once. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
-/** Longest idempotency key, in bytes, that fits Postgres's btree index. */
-const MAX_IDEMPOTENCY_KEY_BYTES = 1000;
+/**
+ * Longest idempotency key, in bytes. Postgres's btree index entries are
+ * limited to about 2700 bytes, shared with the tenant id; this leaves room.
+ */
+const MAX_IDEMPOTENCY_KEY_BYTES = 2000;
 
 /** Time `drain()` allows on top of `requestTimeoutMs` for a batch's queries. */
 const DRAIN_MARGIN_MS = SECOND;
@@ -315,10 +318,11 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     } else if (options.connectionString) {
       this.pool = new pg.Pool({
         connectionString: options.connectionString,
-        // Notice dead connections (a network partition) instead of waiting
-        // for the OS to give up on them, which takes about 15 minutes.
+        // Probe idle connections after 10s (the OS default is 2 hours), so
+        // ones a network partition killed are found. A query in progress on
+        // a dead connection is bounded by the worker's query timeout.
         keepAlive: true,
-        connectionTimeoutMillis: 10 * SECOND,
+        keepAliveInitialDelayMillis: 10 * SECOND,
       });
       this.ownsPool = true;
     } else {
@@ -388,23 +392,17 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       "",
       MAX_TIMER_MS,
     );
-    const concurrency = options.concurrency ?? 10;
-    if (
-      !Number.isInteger(concurrency) ||
-      concurrency < 1 ||
-      concurrency > 1000
-    ) {
+    const concurrency = numeric(options.concurrency ?? 10);
+    if (!Number.isInteger(concurrency) || (concurrency as number) < 1) {
       throw new HookgresValidationError(
-        `concurrency must be an integer from 1 to 1000, e.g. 10 (the default). See ${DOCS}/reference/configuration`,
+        `concurrency must be a positive integer, e.g. 10 (the default), got ${String(options.concurrency)}. See ${DOCS}/reference/configuration`,
       );
     }
-    this.concurrency = concurrency;
+    this.concurrency = concurrency as number;
     this.lockTimeoutMs = durationOption(
       "lockTimeoutMs",
       options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND,
       1,
-      "",
-      MAX_TIMER_MS,
     );
     if (this.lockTimeoutMs <= this.requestTimeoutMs) {
       throw new HookgresValidationError(
@@ -414,15 +412,10 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     // The worker's queries get the same bound as a claim's lock: past it,
     // another worker may take the delivery over anyway, and a query stuck on
     // a dead connection fails (to onError) instead of stalling the loop.
+    const workerTimeoutMs = Math.min(this.lockTimeoutMs, MAX_TIMER_MS);
     this.workerDb = {
       query: <R extends QueryResultRow>(text: string, values?: unknown[]) =>
-        // node-postgres supports a per-query query_timeout; @types/pg only
-        // declares it on the client config.
-        this.pool.query<R>({
-          text,
-          values,
-          query_timeout: this.lockTimeoutMs,
-        } as pg.QueryConfig),
+        this.timedQuery<R>(text, values, workerTimeoutMs),
     };
     this.secretRotationGraceMs = durationOption(
       "secretRotationGraceMs",
@@ -762,7 +755,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * `*`, a missing or non-JSON payload (a function or symbol), a payload
    * string with `\u0000` (through `fromPrisma`, that one arrives as Prisma's
    * own error) or with half a surrogate pair, or an `idempotencyKey` over
-   * 1000 bytes.
+   * 2000 bytes.
    *
    * @example
    * const client = await pool.connect();
@@ -828,7 +821,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     const idempotencyKey = input.idempotencyKey ?? null;
     if (
       idempotencyKey !== null &&
-      Buffer.byteLength(idempotencyKey) > MAX_IDEMPOTENCY_KEY_BYTES
+      Buffer.byteLength(String(idempotencyKey)) > MAX_IDEMPOTENCY_KEY_BYTES
     ) {
       throw new HookgresValidationError(
         `idempotencyKey is longer than ${MAX_IDEMPOTENCY_KEY_BYTES} bytes: use a short key like "invoice.paid:in_123", or a hash of a longer one. See ${DOCS}/guides/sending`,
@@ -865,6 +858,8 @@ export class Hookgres<E extends EventMap = AnyEvents> {
          FROM ${this.t.endpoints} e
          WHERE e.tenant_id = $2
           AND NOT e.disabled
+          -- Nothing to lock when the idempotency key deduplicated the send.
+          AND EXISTS (SELECT 1 FROM m)
           AND (
             e.event_types IS NULL
             OR $3 = ANY (e.event_types)
@@ -1201,13 +1196,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     if (input.messageId) add("message_id = ?", input.messageId);
     if (input.endpointId) add("endpoint_id = ?", input.endpointId);
     if (input.status) add("status = ?", input.status);
-    const limit = input.limit ?? 50;
-    if (!Number.isInteger(limit) || limit < 1) {
+    const limit = numeric(input.limit ?? 50);
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
       throw new HookgresValidationError(
-        `listDeliveries limit must be a positive integer (at most 500 are returned), got ${String(limit)}. See ${DOCS}/reference/api`,
+        `listDeliveries limit must be a number (1 to 500), got ${String(input.limit)}. See ${DOCS}/reference/api`,
       );
     }
-    values.push(Math.min(limit, 500));
+    values.push(Math.min(Math.max(1, Math.trunc(limit)), 500));
     const { rows } = await this.query(
       `SELECT * FROM ${this.t.deliveries}
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -1458,6 +1453,61 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     try {
       return await db.query<R>(text, values);
     } catch (error) {
+      throw explainMissingTables(error, this.schema);
+    }
+  }
+
+  /**
+   * Runs a worker query that gives up after `timeoutMs`: waiting for a pool
+   * connection, and running. On a timeout it also cancels the statement on
+   * the server, so a query that was only waiting (on a lock, say) doesn't
+   * commit later behind the worker's back, and discards the connection.
+   */
+  private async timedQuery<R extends QueryResultRow>(
+    text: string,
+    values: unknown[] | undefined,
+    timeoutMs: number,
+  ): Promise<QueryResult<R>> {
+    const connecting = this.pool.connect();
+    let timer: NodeJS.Timeout | undefined;
+    const client = await Promise.race([
+      connecting,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Timed out after ${timeoutMs}ms waiting for a database connection`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]).catch((error) => {
+      // Hand back the connection if it arrives after all.
+      connecting.then(
+        (late) => late.release(),
+        () => {},
+      );
+      throw error;
+    });
+    clearTimeout(timer);
+    try {
+      // node-postgres supports a per-query query_timeout; @types/pg only
+      // declares it on the client config.
+      const result = await client.query<R>({
+        text,
+        values,
+        query_timeout: timeoutMs,
+      } as pg.QueryConfig);
+      client.release();
+      return result;
+    } catch (error) {
+      const pid = (client as { processID?: number }).processID;
+      if ((error as Error).message === "Query read timeout" && pid) {
+        this.pool.query("SELECT pg_cancel_backend($1)", [pid]).catch(() => {});
+      }
+      client.release(error as Error);
       throw explainMissingTables(error, this.schema);
     }
   }
@@ -2128,8 +2178,11 @@ function redactCredentials(text: string): string {
  * as strings (a custom type parser). Accept both, so the types hold.
  */
 function toDate(value: unknown): Date {
-  return value instanceof Date ? value : new Date(value as string);
+  return value instanceof Date ? value : parseTimestamptz(String(value));
 }
+
+/** node-postgres's own timestamptz parser, which handles Postgres's format. */
+const parseTimestamptz = pg.types.getTypeParser(1184) as (text: string) => Date;
 
 function toDateOrNull(value: unknown): Date | null {
   return value == null ? null : toDate(value);
@@ -2174,10 +2227,8 @@ function toMessage(row: Row): Message {
     idempotencyKey: row.idempotency_key as string | null,
     // send() may run on a caller's client whose driver returns timestamps as
     // strings (Drizzle does), so parse them instead of trusting the type.
-    createdAt: new Date(row.created_at as Date | string),
-    redactedAt: row.redacted_at
-      ? new Date(row.redacted_at as Date | string)
-      : null,
+    createdAt: toDate(row.created_at),
+    redactedAt: toDateOrNull(row.redacted_at),
   };
 }
 
@@ -2215,11 +2266,12 @@ function toAttempt(row: Row): Attempt {
  */
 function durationOption(
   name: string,
-  value: number,
+  input: number,
   min: number,
   hint = "",
   max = MAX_DURATION_MS,
 ): number {
+  const value = numeric(input);
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
@@ -2264,4 +2316,14 @@ function serialisePayload(payload: unknown): string {
     );
   }
   return json;
+}
+
+/**
+ * Numbers passed as strings (often straight from process.env) used to work
+ * through implicit coercion, so keep accepting numeric strings.
+ */
+function numeric(value: unknown): unknown {
+  return typeof value === "string" && value.trim() !== ""
+    ? Number(value)
+    : value;
 }
