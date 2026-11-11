@@ -54,10 +54,24 @@ reject, never affect delivery. Hookgres reports them with
 `process.emitWarning` (code `HOOKGRES_HOOK_ERROR`).
 
 The constructor throws if neither `pool` nor `connectionString` is given, if
-`schema` is invalid, if `retrySchedule` contains a negative or non-finite
-number, if `retryJitter` isn't between 0 and 1, if `responseBodyLimit` isn't
+`schema` is invalid, if `retryJitter` isn't between 0 and 1, if `responseBodyLimit` isn't
 an integer from 0 to 4096, if `lockTimeoutMs` isn't greater than `requestTimeoutMs`, or if a
-`blockPrivateAddresses.allow` entry isn't an IP address or CIDR.
+`blockPrivateAddresses.allow` entry isn't an IP address or CIDR. It also
+throws for a duration that isn't a finite number in range, NaN included (as in
+`Number(process.env.X)` of an unset variable):
+
+- `requestTimeoutMs`, `pollIntervalMs` and `lockTimeoutMs`: from 1 to
+  2147483647 (about 24.8 days, the longest a Node.js timer can wait).
+- `retrySchedule` entries, `disableEndpointAfterMs` and
+  `secretRotationGraceMs`: from 0 to 100 years. `disableEndpointAfterMs` can
+  also be `null`.
+- `concurrency`: an integer from 1 to 1000.
+
+Every query the worker runs times out after `lockTimeoutMs`, so a query stuck
+on a dead connection goes to `onError` instead of stalling the worker. When
+Hookgres creates the pool from `connectionString`, it also turns on TCP
+keepalive and a 10-second connection timeout. If you pass your own pool, set
+`keepAlive: true` on it too.
 
 With `blockPrivateAddresses` on, it emits a process warning (once per
 instance) if a custom `fetch` is given (`HOOKGRES_SSRF_CUSTOM_FETCH`) or if

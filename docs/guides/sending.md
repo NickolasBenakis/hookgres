@@ -81,7 +81,7 @@ for Drizzle, postgres.js, Knex, Sequelize, TypeORM and MikroORM. Guides:
 Set `idempotencyKey` when the same event could be sent more than once, for
 example from a job that may retry. A second `send()` with the same key for the
 same tenant returns the original message with `deduplicated: true` and queues
-nothing.
+nothing. Keys can be up to 1000 bytes; hash anything longer.
 
 ```ts
 await hookgres.send({
@@ -109,7 +109,11 @@ payloads with Zod or Valibot, see [Typed events](/guides/typed-events).
 
 ## Payloads
 
-The payload can be any JSON-serialisable value. It's stored as `jsonb` and
+The payload can be any JSON-serialisable value. `send()` throws a
+`HookgresValidationError` for one that isn't (a function, a symbol, an object
+whose `toJSON()` returns `undefined`), and for strings Postgres can't store:
+ones with a NUL character, or with half of a UTF-16 surrogate pair (text cut in
+the middle of an emoji). It's stored as `jsonb` and
 delivered as `data` inside the envelope. Prefer ids over personal data; see
 [Privacy and GDPR](/guides/privacy):
 

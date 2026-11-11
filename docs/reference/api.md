@@ -190,13 +190,13 @@ See [Cron or serverless](/guides/workers#cron-or-serverless).
 Verifies a webhook and returns its parsed body. Throws
 `WebhookVerificationError` otherwise.
 
-| Option             | Type                 | Notes                                                 |
-| ------------------ | -------------------- | ----------------------------------------------------- |
-| `secret`           | `string \| string[]` | One secret, or several during a rotation.             |
-| `headers`          | object or `Headers`  | Node-style headers object, or anything with `.get()`. |
-| `body`             | `string \| Buffer`   | The raw body, exactly as received.                    |
-| `toleranceSeconds` | `number`             | Maximum clock difference. Defaults to `300`.          |
-| `now`              | `number`             | Current time in milliseconds, for tests.              |
+| Option             | Type                 | Notes                                                      |
+| ------------------ | -------------------- | ---------------------------------------------------------- |
+| `secret`           | `string \| string[]` | One secret, or several during a rotation.                  |
+| `headers`          | object or `Headers`  | Node-style headers object, or anything with `.get()`.      |
+| `body`             | `string \| Buffer`   | The raw body, exactly as received.                         |
+| `toleranceSeconds` | `number`             | Maximum clock difference, at least `0`. Defaults to `300`. |
+| `now`              | `number`             | Current time in milliseconds, for tests.                   |
 
 ### `sign(secret, id, timestamp, body): string`
 

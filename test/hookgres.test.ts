@@ -756,6 +756,176 @@ describe("endpoint health", () => {
   });
 });
 
+describe("locking", () => {
+  async function openSend(hw: Hookgres, tenantId: string) {
+    const client = await ctx.pool.connect();
+    await client.query("BEGIN");
+    await hw.send({ tenantId, eventType: "e", payload: {} }, { client });
+    return client;
+  }
+
+  it("records a failed attempt while an app transaction that sent to the endpoint is open", async () => {
+    const hw = ctx.create({ retrySchedule: [60_000] });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    // Holds FOR KEY SHARE on the endpoint through the deliveries foreign key.
+    const client = await openSend(hw, "acme");
+    try {
+      const started = Date.now();
+      const processed = await Promise.race([
+        hw.runOnce(),
+        new Promise((resolve) => setTimeout(() => resolve("blocked"), 2000)),
+      ]);
+      expect(processed).toBe(1);
+      expect(Date.now() - started).toBeLessThan(2000);
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  });
+
+  it("send() doesn't fail when another endpoint of the tenant is deleted meanwhile", async () => {
+    const hw = ctx.create();
+    const doomed = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+    });
+    const kept = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+    });
+    // The delete holds the endpoint row until it commits.
+    const deleter = await ctx.pool.connect();
+    await deleter.query("BEGIN");
+    await deleter.query(`DELETE FROM "${ctx.schema}".endpoints WHERE id = $1`, [
+      doomed.id,
+    ]);
+    const sending = hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await deleter.query("COMMIT");
+    deleter.release();
+
+    const result = await sending;
+    expect(result.deliveryCount).toBe(1);
+    const deliveries = await hw.listDeliveries({
+      messageId: result.message.id,
+    });
+    expect(deliveries.map((d) => d.endpointId)).toEqual([kept.id]);
+  });
+
+  it("deleteEndpoint() doesn't deadlock with a worker recording failures", async () => {
+    const hw = ctx.create({ retrySchedule: [0, 0, 0], concurrency: 20 });
+    receiver.respond = () => 500;
+    for (let round = 0; round < 8; round++) {
+      const ep = await hw.createEndpoint({
+        tenantId: "acme",
+        url: receiver.url,
+      });
+      await Promise.all(
+        Array.from({ length: 20 }, () =>
+          hw.send({ tenantId: "acme", eventType: "e", payload: {} }),
+        ),
+      );
+      const working = hw.runOnce();
+      await new Promise((resolve) => setTimeout(resolve, round * 3));
+      await expect(hw.deleteEndpoint(ep.id)).resolves.toBe(true);
+      await working;
+    }
+  });
+});
+
+describe("worker database timeouts", () => {
+  it("gives up on a stuck worker query after lockTimeoutMs and keeps going", async () => {
+    const errors: unknown[] = [];
+    const hw = ctx.create({
+      retrySchedule: [60_000],
+      requestTimeoutMs: 500,
+      lockTimeoutMs: 1000,
+      onError: (error) => {
+        errors.push(error);
+      },
+    });
+    const ep = await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    // Stands in for a query stuck on a dead connection: recording the failed
+    // attempt waits for this lock.
+    const locker = await ctx.pool.connect();
+    await locker.query("BEGIN");
+    await locker.query(
+      `SELECT 1 FROM "${ctx.schema}".endpoints WHERE id = $1 FOR UPDATE`,
+      [ep.id],
+    );
+    try {
+      const outcome = await Promise.race([
+        hw.runOnce().then(() => "returned"),
+        new Promise((resolve) => setTimeout(() => resolve("stuck"), 4000)),
+      ]);
+      expect(outcome).toBe("returned");
+      expect(String(errors[0])).toMatch(/timeout/i);
+    } finally {
+      await locker.query("ROLLBACK");
+      locker.release();
+    }
+  });
+
+  it("returns Date objects even when the pool parses timestamps as strings", async () => {
+    const stringPool = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      types: {
+        getTypeParser: (oid: number, format?: string) =>
+          oid === 1184
+            ? (value: string) => value
+            : pg.types.getTypeParser(oid, format as "text"),
+      } as pg.CustomTypesConfig,
+    });
+    try {
+      const attempts: AttemptEvent[] = [];
+      const hw = ctx.create({
+        pool: stringPool,
+        retrySchedule: [60_000],
+        onAttempt: (event) => {
+          attempts.push(event);
+        },
+      });
+      const ep = await hw.createEndpoint({
+        tenantId: "acme",
+        url: receiver.url,
+      });
+      receiver.respond = () => 500;
+      const { message } = await hw.send({
+        tenantId: "acme",
+        eventType: "e",
+        payload: {},
+      });
+      await hw.runOnce();
+      const [delivery] = await hw.listDeliveries({ messageId: message.id });
+      const [attempt] = await hw.listAttempts(delivery?.id ?? "");
+      for (const value of [
+        ep.createdAt,
+        ep.updatedAt,
+        delivery?.nextAttemptAt,
+        delivery?.createdAt,
+        attempt?.createdAt,
+        attempts[0]?.nextAttemptAt,
+      ]) {
+        expect(value).toBeInstanceOf(Date);
+      }
+    } finally {
+      await stringPool.end();
+    }
+  });
+
+  it("keeps connections it creates alive and bounded", () => {
+    const hw = new Hookgres({ connectionString: inject("databaseUrl") });
+    const options = hw.pool.options as pg.PoolConfig;
+    expect(options.keepAlive).toBe(true);
+    expect(options.connectionTimeoutMillis).toBe(10_000);
+    return hw.close();
+  });
+});
+
 describe("secret rotation", () => {
   it("signs with both secrets during the grace period, then only the new one", async () => {
     const hw = ctx.create();

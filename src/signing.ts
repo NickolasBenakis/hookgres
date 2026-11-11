@@ -180,6 +180,17 @@ function readHeader(headers: HeaderBag, name: string): string | undefined {
  */
 export function verifyWebhook<T = unknown>(options: VerifyOptions): T {
   const { headers, body, toleranceSeconds = 300 } = options;
+  // NaN (an unset env variable through Number()) would turn the replay check
+  // off without a word, since no comparison with NaN is true.
+  if (
+    typeof toleranceSeconds !== "number" ||
+    !Number.isFinite(toleranceSeconds) ||
+    toleranceSeconds < 0
+  ) {
+    throw new TypeError(
+      `verifyWebhook toleranceSeconds must be a non-negative number of seconds, got ${String(toleranceSeconds)}. Omit it to use 300 (5 minutes). See https://hookgres.dev/docs/guides/verifying`,
+    );
+  }
   if (typeof body !== "string" && !Buffer.isBuffer(body)) {
     throw new WebhookVerificationError(
       `Webhook body must be the raw request body (string or Buffer), not parsed JSON: read it before any JSON body parser, e.g. express.raw({ type: "application/json" }) or await request.text(). See https://hookgres.dev/docs/guides/verifying`,
