@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import * as v from "valibot";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import * as z from "zod";
@@ -117,6 +118,23 @@ async function typeChecks(hookgres: Hookgres<Events>, untyped: Hookgres) {
     // @ts-expect-error not in the Valibot schemas
     eventType: "order.created",
     payload: { orderId: "o_1" },
+  });
+
+  // Inferred from ArkType schemas.
+  const ark = new Hookgres({
+    connectionString: "postgres://x",
+    schemas: { "team.renamed": type({ teamId: "string", name: "string" }) },
+  });
+  await ark.send({
+    tenantId: "a",
+    eventType: "team.renamed",
+    payload: { teamId: "t_1", name: "Core" },
+  });
+  await ark.send({
+    tenantId: "a",
+    eventType: "team.renamed",
+    // @ts-expect-error name is missing
+    payload: { teamId: "t_1" },
   });
 
   // send() takes the schema's input; receivers get its output.
@@ -382,6 +400,84 @@ describe("schemas", () => {
       /^Invalid payload for "order\.shipped": payload\.orderId failed/,
     );
     expect(await messageCount()).toBe(1);
+  });
+
+  it("works with ArkType schemas, which keep undeclared keys", async () => {
+    const hw = ctx.create({
+      schemas: { "team.renamed": type({ teamId: "string", name: "string" }) },
+    });
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "team.renamed",
+      payload: { teamId: "t_1", name: "Core", extra: true },
+    });
+    // As the guide says: ArkType objects keep keys they don't declare.
+    expect(message.payload).toEqual({
+      teamId: "t_1",
+      name: "Core",
+      extra: true,
+    });
+    const error = await rejects(
+      () =>
+        hw.send({
+          tenantId: "acme",
+          eventType: "team.renamed",
+          payload: { teamId: "t_1", name: 42 },
+        }),
+      /^Invalid payload for "team\.renamed": payload\.name failed the schema/,
+    );
+    expect(error.issues?.[0]?.message).toBeTypeOf("string");
+    expect(await messageCount()).toBe(1);
+  });
+
+  it("drops undeclared keys with Valibot objects", async () => {
+    const hw = ctx.create({
+      schemas: { "order.shipped": v.object({ orderId: v.string() }) },
+    });
+    const { message } = await hw.send({
+      tenantId: "acme",
+      eventType: "order.shipped",
+      payload: { orderId: "o_1", internal: "drop me" },
+    });
+    expect(message.payload).toEqual({ orderId: "o_1" });
+  });
+
+  it("accepts a wildcard that only matches nested event types", async () => {
+    const receiver = await startReceiver();
+    try {
+      const hw = ctx.create({
+        schemas: {
+          "invoice.line.added": z.object({ lineId: z.string() }),
+          "customer.created": z.object({ customerId: z.string() }),
+        },
+      });
+      const base = { tenantId: "acme", url: receiver.url };
+      // No "invoice.x" schema, only "invoice.line.added": both wildcards match it.
+      const endpoint = await hw.createEndpoint({
+        ...base,
+        eventTypes: ["invoice.*"],
+      });
+      await hw.createEndpoint({ ...base, eventTypes: ["invoice.line.*"] });
+      await rejects(
+        () =>
+          hw.createEndpoint({ ...base, eventTypes: ["invoice.line.added.*"] }),
+        /^Unknown event type "invoice\.line\.added\.\*"/,
+      );
+      await rejects(
+        () => hw.createEndpoint({ ...base, eventTypes: ["invoices.*"] }),
+        /^Unknown event type "invoices\.\*"/,
+      );
+      // And the SQL agrees: the event reaches both endpoints.
+      const { deliveryCount } = await hw.send({
+        tenantId: "acme",
+        eventType: "invoice.line.added",
+        payload: { lineId: "l_1" },
+      });
+      expect(deliveryCount).toBe(2);
+      expect(endpoint.eventTypes).toEqual(["invoice.*"]);
+    } finally {
+      await receiver.close();
+    }
   });
 
   it("rejects endpoint event types that match no schema", async () => {

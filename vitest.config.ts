@@ -1,6 +1,16 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    // Docs snippets import "hookgres"; run them against the source.
+    alias: [
+      {
+        find: /^hookgres$/,
+        replacement: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+      },
+    ],
+  },
   test: {
     globalSetup: ["./test/global-setup.ts"],
     testTimeout: 30_000,
