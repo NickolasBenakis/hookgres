@@ -146,6 +146,28 @@ async function typeChecks(hookgres: Hookgres<Events>, untyped: Hookgres) {
     expectTypeOf(event.data).toEqualTypeOf<{ id: string; amount: number }>();
   }
 
+  // Event maps can be interfaces, not only type aliases.
+  interface EventsInterface {
+    "invoice.paid": { id: string };
+  }
+  const fromInterface = new Hookgres<EventsInterface>({
+    connectionString: "postgres://x",
+  });
+  await fromInterface.send({
+    tenantId: "a",
+    eventType: "invoice.paid",
+    payload: { id: "in_1" },
+  });
+  await fromInterface.send({
+    tenantId: "a",
+    eventType: "invoice.paid",
+    // @ts-expect-error id must be a string
+    payload: { id: 1 },
+  });
+  expectTypeOf<
+    WebhookEvent<EventsInterface>["type"]
+  >().toEqualTypeOf<"invoice.paid">();
+
   // The default SendInput is the pre-0.6 shape.
   expectTypeOf<SendInput>().toEqualTypeOf<{
     tenantId: string;
@@ -226,7 +248,7 @@ describe("schemas", () => {
           eventType: "invoice.paid",
           payload: { id: 1 },
         }),
-      /^Invalid payload for "invoice\.paid": payload\.id: .+; payload\.amount: .+\. Nothing was queued\./,
+      /^Invalid payload for "invoice\.paid": payload\.id, payload\.amount failed the schema \(see `issues`\)\. Nothing was queued\./,
     );
     expect(error.issues?.map((issue) => issue.path)).toEqual([
       ["id"],
@@ -235,12 +257,55 @@ describe("schemas", () => {
     expect(await messageCount()).toBe(0);
   });
 
+  it("never puts payload values in the message", async () => {
+    const hw = ctx.create({
+      schemas: {
+        "user.created": v.object({ email: v.pipe(v.string(), v.email()) }),
+      },
+    });
+    const error = await rejects(
+      () =>
+        hw.send({
+          tenantId: "acme",
+          eventType: "user.created",
+          payload: { email: "secret-value@" },
+        }),
+      /^Invalid payload for "user\.created": payload\.email failed/,
+    );
+    expect(error.message).not.toContain("secret-value");
+    // Valibot quotes the value; it's only in `issues`.
+    expect(JSON.stringify(error.issues)).toContain("secret-value");
+  });
+
+  it("wraps a schema that throws", async () => {
+    const boom = new Error("transform failed");
+    const hw = ctx.create({
+      schemas: {
+        "invoice.paid": z.object({ raw: z.string() }).transform(() => {
+          throw boom;
+        }),
+      },
+    });
+    const error = await rejects(
+      () =>
+        hw.send({
+          tenantId: "acme",
+          eventType: "invoice.paid",
+          payload: { raw: "x" },
+        }),
+      /^The schema for "invoice\.paid" threw while validating the payload/,
+    );
+    expect(error.cause).toBe(boom);
+    expect(error.issues).toBeUndefined();
+    expect(await messageCount()).toBe(0);
+  });
+
   it("rejects an event type that has no schema", async () => {
     const hw = ctx.create({ schemas });
     await rejects(
       () =>
         hw.send({ tenantId: "acme", eventType: "invoice.piad", payload: {} }),
-      /^No schema for event type "invoice\.piad".*Known event types: invoice\.paid, invoice\.voided, customer\.created\./,
+      /^No schema for event type "invoice\.piad": add it to `schemas`.*Nothing was queued\./,
     );
     expect(await messageCount()).toBe(0);
   });
@@ -309,12 +374,12 @@ describe("schemas", () => {
     await rejects(
       () =>
         hw.send({ tenantId: "acme", eventType: "user.deleted", payload: {} }),
-      /^Invalid payload for "user\.deleted": payload\.userId: /,
+      /^Invalid payload for "user\.deleted": payload\.userId failed/,
     );
     await rejects(
       () =>
         hw.send({ tenantId: "acme", eventType: "order.shipped", payload: {} }),
-      /^Invalid payload for "order\.shipped": payload\.orderId: /,
+      /^Invalid payload for "order\.shipped": payload\.orderId failed/,
     );
     expect(await messageCount()).toBe(1);
   });
@@ -324,7 +389,7 @@ describe("schemas", () => {
     const base = { tenantId: "acme", url: "https://example.com/webhooks" };
     await rejects(
       () => hw.createEndpoint({ ...base, eventTypes: ["invoice.piad"] }),
-      /^Unknown event type "invoice\.piad" in eventTypes: it matches none of the event types in `schemas` \(invoice\.paid, invoice\.voided, customer\.created\)/,
+      /^Unknown event type "invoice\.piad" in eventTypes: it matches no event type this app sends\. See /,
     );
     await rejects(
       () => hw.createEndpoint({ ...base, eventTypes: ["order.*"] }),

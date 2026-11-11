@@ -47,25 +47,35 @@ await hookgres.send({
 ```
 
 At runtime, `send()` validates the payload before writing anything. If it's
-invalid, or the event type has no schema, `send()` throws a
-`HookgresValidationError` and nothing is queued. Your transaction is still
-usable, because validation runs no SQL. The error's `issues` are the schema
-library's issues, each with a `message` and a `path`:
+invalid, the event type has no schema, or the schema throws, `send()` throws
+a `HookgresValidationError` and nothing is queued. Your transaction is still
+usable, because validation runs no SQL.
+
+For an invalid payload, the error's message names the failing paths, and
+`issues` holds the schema library's issues, each with a `message` and a
+`path`:
 
 ```ts
 try {
   await hookgres.send({ tenantId, eventType: "invoice.paid", payload });
 } catch (error) {
   if (error instanceof HookgresValidationError && error.issues) {
-    // Invalid payload for "invoice.paid": payload.amount: Invalid input ...
+    // error.message: Invalid payload for "invoice.paid": payload.amount failed the schema ...
+    logger.warn({ issues: error.issues }, error.message);
   }
   throw error;
 }
 ```
 
-Hookgres stores and delivers the schema's **output**. A Zod object drops
-keys it doesn't declare, so a field you didn't mean to send never reaches a
-customer, and transforms run before the payload is stored. Each payload is
+Some libraries quote the received value in their issue messages, so treat
+`issues` like the payload itself: fine for your logs if payloads are, but
+don't return it to API callers. The message never includes payload values.
+
+Hookgres stores and delivers the schema's **output**, so transforms run
+before the payload is stored. A Zod or Valibot object drops keys it doesn't
+declare, so a field you didn't mean to send never reaches a customer. Loose
+objects (`z.looseObject`, `v.looseObject`) and ArkType objects keep them by
+default. Each payload is
 validated once per `send()`.
 
 Any library that implements [Standard Schema](https://standardschema.dev)
@@ -77,7 +87,8 @@ one `schemas` object.
 With `schemas`, `createEndpoint()` and `updateEndpoint()` also reject
 `eventTypes` that match no event type you declared, such as
 `"invoice.piad"`, or `"order.*"` when there's no `order.` event. These
-usually come from your customers, so return the error as a `400`. `null`
+usually come from your customers, so return the error as a `400`. The
+message doesn't list your event types. `null`
 (every event type) is always allowed.
 
 ## With an event map

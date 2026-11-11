@@ -322,7 +322,10 @@ export interface WebhookEnvelope<T = unknown> {
  *
  * @see https://hookgres.dev/docs/guides/typed-events
  */
-export type EventMap = Record<string, unknown>;
+// `any`, not `unknown`: interfaces have no implicit index signature, so only
+// `Record<string, any>` accepts `interface Events { ... }`.
+// biome-ignore lint/suspicious/noExplicitAny: see above
+export type EventMap = Record<string, any>;
 
 /** The default event map: any event type, any payload. */
 export type AnyEvents = Record<string, unknown>;

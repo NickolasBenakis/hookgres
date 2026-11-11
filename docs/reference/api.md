@@ -225,8 +225,9 @@ Thrown when an argument or option you passed is invalid: an endpoint URL
 that isn't `http(s)`, or with `blockPrivateAddresses` points to a private
 address or blocked port; an empty or malformed `eventTypes`; a malformed
 secret; a `send()` event type with `*`, a missing payload, or a payload with
-`\u0000`; with `schemas`, a payload that fails its schema (the error's
-`issues` lists why), an event type with no schema, or endpoint `eventTypes`
+`\u0000`; with `schemas`, a payload that fails its schema (the message names
+the failing paths, and `issues` has the details), a schema that throws, an
+event type with no schema, or endpoint `eventTypes`
 that match none; invalid `cleanup()`, `deleteMessages()` or `drain()` arguments;
 replaying a redacted delivery; and invalid
 `new Hookgres()` options. It extends `Error`, and its message says how to fix
@@ -309,7 +310,7 @@ interface Message {
 
 // Typed events (see /guides/typed-events)
 type EventMap = Record<string, unknown>; // { "invoice.paid": { id: string } }
-type EventSchemas<E> = { [K in keyof E]: StandardSchemaV1<E[K]> };
+type EventSchemas<E> = { [K in keyof E]: StandardSchemaV1<E[K], unknown> };
 type InferEvents<S> = { [K in keyof S]: /* output type of S[K] */ };
 type WebhookEvent<E> = /* WebhookEnvelope<E[K]> & { type: K }, for each K */;
 

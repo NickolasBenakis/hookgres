@@ -813,21 +813,27 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     const schema = this.schemas?.get(input.eventType);
     if (!schema) {
       throw new HookgresValidationError(
-        `No schema for event type "${input.eventType}": add it to \`schemas\` in new Hookgres(), or check the spelling. Known event types: ${[...(this.schemas?.keys() ?? [])].join(", ")}. See ${DOCS}/guides/typed-events`,
+        `No schema for event type "${input.eventType}": add it to \`schemas\` in new Hookgres(), or check the spelling. Nothing was queued. See ${DOCS}/guides/typed-events`,
       );
     }
-    const result = await schema["~standard"].validate(input.payload);
-    if (result.issues) {
-      const details = result.issues
-        .slice(0, 5)
-        .map((issue) => `${issuePath(issue)}: ${issue.message}`)
-        .join("; ");
-      const more =
-        result.issues.length > 5
-          ? ` (and ${result.issues.length - 5} more)`
-          : "";
+    let result: StandardSchemaV1.Result<unknown>;
+    try {
+      result = await schema["~standard"].validate(input.payload);
+    } catch (error) {
+      // e.g. a transform that throws on bad input
       throw new HookgresValidationError(
-        `Invalid payload for "${input.eventType}": ${details}${more}. Nothing was queued. See ${DOCS}/guides/typed-events`,
+        `The schema for "${input.eventType}" threw while validating the payload (see \`cause\`). Nothing was queued. See ${DOCS}/guides/typed-events`,
+        { cause: error },
+      );
+    }
+    if (result.issues) {
+      // Paths only: some libraries quote the received value in their issue
+      // messages, and this message may be returned to API callers or logged.
+      const paths = [...new Set(result.issues.map(issuePath))];
+      const shown = paths.slice(0, 5).join(", ");
+      const more = paths.length > 5 ? ` and ${paths.length - 5} more` : "";
+      throw new HookgresValidationError(
+        `Invalid payload for "${input.eventType}": ${shown}${more} failed the schema (see \`issues\`). Nothing was queued. See ${DOCS}/guides/typed-events`,
         { issues: result.issues },
       );
     }
@@ -847,7 +853,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
           : this.schemas.has(type);
         if (!matches) {
           throw new HookgresValidationError(
-            `Unknown event type "${type}" in eventTypes: it matches none of the event types in \`schemas\` (${known.join(", ")}). See ${DOCS}/guides/typed-events`,
+            `Unknown event type "${type}" in eventTypes: it matches no event type this app sends. See ${DOCS}/guides/typed-events`,
           );
         }
       }

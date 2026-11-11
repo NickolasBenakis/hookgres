@@ -23,7 +23,10 @@ export class HookgresValidationError extends Error {
   override name = "HookgresValidationError";
   /**
    * For a payload that failed its event type's schema (`schemas` option):
-   * the schema library's issues, each with a `message` and a `path`.
+   * the schema library's issues, each with a `message` and a `path`. Only
+   * set in that case. Issues can quote the payload's values, so log them
+   * like payloads and don't return them to API callers; `message` names
+   * only the failing paths.
    */
   readonly issues?: ReadonlyArray<StandardSchemaV1.Issue>;
 
