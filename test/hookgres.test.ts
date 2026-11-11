@@ -80,7 +80,7 @@ describe("migrate", () => {
     try {
       await ctx.create({ schema }).migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3],
+        versions: [1, 2, 3, 4],
         indexes: ["messages_created_idx"],
       });
     } finally {
@@ -117,7 +117,7 @@ describe("migrate", () => {
       );
       await hw.migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3],
+        versions: [1, 2, 3, 4],
         indexes: ["messages_created_idx"],
       });
       expect(await hw.getMessage("msg_old")).toMatchObject({
@@ -154,7 +154,7 @@ describe("migrate", () => {
          CREATE INDEX ON "${schema}".messages (created_at);`,
       );
       await hw.migrate();
-      expect((await schemaState(schema)).versions).toEqual([1, 2, 3]);
+      expect((await schemaState(schema)).versions).toEqual([1, 2, 3, 4]);
       expect(await createdAtIndexes(schema)).toEqual([
         "messages_created_at_idx",
       ]);
@@ -812,6 +812,32 @@ describe("fairness", () => {
     }
   });
 
+  it("still serves other tenants after the wall clock steps back", async () => {
+    const slow = await startReceiver();
+    const realNow = Date.now;
+    try {
+      slow.respond = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return 200;
+      };
+      const hw = ctx.create({ concurrency: 4, requestTimeoutMs: 5000 });
+      await hw.createEndpoint({ tenantId: "noisy", url: slow.url });
+      await hw.createEndpoint({ tenantId: "quiet", url: receiver.url });
+      for (let i = 0; i < 100; i++) {
+        await hw.send({ tenantId: "noisy", eventType: "e", payload: { i } });
+      }
+      hw.start();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      Date.now = () => realNow() - 60 * 60 * 1000; // NTP steps the clock back
+      await hw.send({ tenantId: "quiet", eventType: "e", payload: {} });
+      await waitFor(() => receiver.requests.length === 1, 4000);
+      await hw.stop();
+    } finally {
+      Date.now = realNow;
+      await slow.close();
+    }
+  });
+
   it("doesn't end concurrent drains early while work is due", async () => {
     const one = ctx.create({ concurrency: 5 });
     const two = ctx.create({ concurrency: 5 });
@@ -943,6 +969,37 @@ describe("locking", () => {
       await client.query("ROLLBACK");
       client.release();
     }
+  });
+
+  it("doesn't deadlock workers recording failures while sends run", async () => {
+    const errors: unknown[] = [];
+    const options = {
+      retrySchedule: [0, 0, 0, 0, 0, 0, 0, 0],
+      disableEndpointAfterMs: null,
+      concurrency: 10,
+      maxInFlightPerEndpoint: 10,
+      onError: (error: unknown) => {
+        errors.push(error);
+      },
+    };
+    const workers = [
+      ctx.create(options),
+      ctx.create(options),
+      ctx.create(options),
+    ];
+    await workers[0]?.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    for (const w of workers) w.start();
+    const until = Date.now() + 2500;
+    while (Date.now() < until) {
+      await workers[0]?.send({ tenantId: "acme", eventType: "e", payload: {} });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    await Promise.all(workers.map((w) => w.stop()));
+    const deadlocks = errors.filter(
+      (e) => (e as { code?: string }).code === "40P01",
+    );
+    expect(deadlocks).toEqual([]);
   });
 
   it("send() doesn't fail when another endpoint of the tenant is deleted meanwhile", async () => {

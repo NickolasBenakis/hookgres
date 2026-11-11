@@ -33,7 +33,6 @@ import type {
   SendResult,
   StandardSchemaV1,
   UpdateEndpointInput,
-  WebhookEnvelope,
 } from "./types.js";
 
 const SECOND = 1000;
@@ -229,9 +228,13 @@ interface ClaimedDelivery {
   tenant_id: string;
   message_id: string;
   event_type: string;
-  payload: unknown;
   /** Epoch ms, which every DateStyle gives the same way. */
   message_created_ms: number;
+  /**
+   * The request body, loaded after the claim and shared by every delivery of
+   * the same message. Missing if the message was deleted meanwhile.
+   */
+  body?: string;
   /** Only possible when a replay raced a redaction. */
   redacted: boolean;
   url: string;
@@ -1754,7 +1757,8 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     if (
       kept.length < free &&
       full.length > 0 &&
-      Date.now() >= this.wideClaimAt
+      // Monotonic: a wall-clock step back mustn't stall this for hours.
+      performance.now() >= this.wideClaimAt
     ) {
       try {
         const more = await this.claimPast(free - kept.length, full);
@@ -1768,19 +1772,62 @@ export class Hookgres<E extends EventMap = AnyEvents> {
             await this.unclaim([row]);
           }
         }
-        this.wideClaimBackoff = more.length
-          ? 0
-          : Math.min(
-              Math.max(this.pollIntervalMs, this.wideClaimBackoff * 2),
-              10 * this.pollIntervalMs,
-            );
-        this.wideClaimAt = Date.now() + this.wideClaimBackoff;
+        if (more.length) {
+          this.wideClaimBackoff = 0;
+          this.wideClaimAt = 0;
+        } else {
+          this.backOffWideClaim();
+        }
       } catch (error) {
         // Keep what's already claimed; report the rest.
         this.reportError(error);
+        this.backOffWideClaim();
       }
     }
+    await this.loadBodies(kept);
     return kept;
+  }
+
+  /** Waits longer before the next scan past the window, up to 10 polls. */
+  private backOffWideClaim(): void {
+    this.wideClaimBackoff = Math.min(
+      Math.max(this.pollIntervalMs, this.wideClaimBackoff * 2),
+      10 * this.pollIntervalMs,
+    );
+    this.wideClaimAt = performance.now() + this.wideClaimBackoff;
+  }
+
+  /**
+   * Loads the payload of each claimed message once, as JSON text, and builds
+   * its request body once for all its deliveries. The claim itself returns
+   * no payloads: a big message fanned out to many endpoints would otherwise
+   * be loaded (and parsed) once per delivery, and a worker running out of
+   * memory there would abort the claim and retry it forever.
+   */
+  private async loadBodies(claimed: ClaimedDelivery[]): Promise<void> {
+    const ids = [
+      ...new Set(claimed.filter((d) => !d.redacted).map((d) => d.message_id)),
+    ];
+    if (ids.length === 0) return;
+    const { rows } = await this.query<{ id: string; payload: string }>(
+      `SELECT id, payload::text AS payload FROM ${this.t.messages}
+       WHERE id = ANY ($1::text[]) AND payload IS NOT NULL`,
+      [ids],
+      this.workerDb,
+    );
+    const payloads = new Map(rows.map((r) => [r.id, r.payload]));
+    const bodies = new Map<string, string>();
+    for (const delivery of claimed) {
+      const payload = payloads.get(delivery.message_id);
+      if (payload === undefined) continue;
+      let body = bodies.get(delivery.message_id);
+      if (body === undefined) {
+        const timestamp = new Date(delivery.message_created_ms).toISOString();
+        body = `{"type":${JSON.stringify(delivery.event_type)},"timestamp":"${timestamp}","data":${payload}}`;
+        bodies.set(delivery.message_id, body);
+      }
+      delivery.body = body;
+    }
   }
 
   /** Puts claimed deliveries back, as if they had never been claimed. */
@@ -1799,7 +1846,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private static readonly CLAIM_RETURNING =
     `RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
                  m.tenant_id, m.id AS message_id,
-                 m.event_type, m.payload,
+                 m.event_type,
                  (extract(epoch FROM m.created_at) * 1000)::float8 AS message_created_ms,
                  m.redacted_at IS NOT NULL AS redacted,
                  e.url, e.secret,
@@ -1961,6 +2008,9 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       await this.failWithoutSending(delivery, "Endpoint is disabled");
       return;
     }
+    // Deleted (deleteMessages, cleanup) after the claim: the delivery went
+    // with it, so there's nothing to send or record.
+    if (delivery.body === undefined && !delivery.redacted) return;
     if (delivery.redacted) {
       await this.failWithoutSending(delivery, "Payload was redacted");
       return;
@@ -2055,17 +2105,12 @@ export class Hookgres<E extends EventMap = AnyEvents> {
          SELECT id, endpoint_id FROM ${this.t.deliveries}
          WHERE id = $1 AND lock_token = $2
          FOR UPDATE
-       ), prev AS (
-         -- Reads whether the endpoint was already disabled, so only the
-         -- worker that disables it reports it.
-         -- FOR NO KEY UPDATE, not FOR UPDATE: it doesn't conflict with the
-         -- KEY SHARE locks that open send() transactions hold on the
-         -- endpoint through the deliveries foreign key.
-         SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
-         FROM ${this.t.endpoints} ep
-         WHERE ep.id IN (SELECT endpoint_id FROM cur)
-         FOR NO KEY UPDATE
        ), e AS (
+         -- One UPDATE, no separate lock first: locking the row and then
+         -- updating it in one statement deadlocked between workers once open
+         -- send() transactions held KEY SHARE locks on it. disabled_at is set
+         -- to this transaction's now() only by the update that disables the
+         -- endpoint, which is how only that worker reports it.
          UPDATE ${this.t.endpoints}
          SET failing_since = COALESCE(failing_since, now()),
              disabled = disabled OR (
@@ -2079,10 +2124,15 @@ export class Hookgres<E extends EventMap = AnyEvents> {
                     to_char(COALESCE(failing_since, now()) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
                ELSE disabled_reason
              END,
+             disabled_at = CASE
+               WHEN NOT disabled AND $10::double precision IS NOT NULL AND
+                    COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+               THEN now()
+               ELSE disabled_at
+             END,
              updated_at = now()
-         FROM prev
-         WHERE id = prev.endpoint_id
-         RETURNING id, disabled AND NOT prev.was_disabled AS disabled_now,
+         WHERE id IN (SELECT endpoint_id FROM cur)
+         RETURNING id, disabled AND disabled_at = now() AS disabled_now,
                    -- Disabled automatically, now or earlier: no more retries.
                    -- A manual disable is a pause, so retries continue.
                    disabled AND disabled_reason IS DISTINCT FROM 'Disabled manually'
@@ -2143,12 +2193,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   }
 
   private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
-    const envelope: WebhookEnvelope = {
-      type: delivery.event_type,
-      timestamp: new Date(delivery.message_created_ms).toISOString(),
-      data: delivery.payload,
-    };
-    const body = JSON.stringify(envelope);
+    const body = delivery.body as string;
     const timestamp = Math.floor(Date.now() / 1000);
     const secrets = delivery.previous_secret
       ? [delivery.secret, delivery.previous_secret]
