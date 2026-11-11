@@ -423,6 +423,7 @@
   .split.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
   .split.flip > :first-child { order: 2; }
   @media (max-width: 900px) { .split, .split.flip { grid-template-columns: minmax(0, 1fr); } .split.flip > :first-child { order: 0; } }
+  .tx-bug { margin-top: clamp(64px, 8vw, 104px); }
   .head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 20px 40px; }
   .more { margin: 20px 0 0; font-size: 15.5px; font-weight: 500; }
   .more a::after { content: " ›"; }
@@ -836,6 +837,22 @@ hookgres.start();
         </div>
       </div>
     </div>
+    <div class="wrap tx-bug">
+      <div class="head-row">
+        <div>
+          <p class="kicker">The bug it fixes</p>
+          <h2>A job queue can't roll back with your data.</h2>
+          <p class="sub">The same payment code, run twice. First it queues the webhook with BullMQ inside the transaction: the payment rolls back, but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. Any queue outside Postgres does the same. Then the queue is swapped for <code>hookgres.send()</code>, and the webhook rolls back with the payment. Real BullMQ, Redis and Postgres, played at 2× speed.</p>
+        </div>
+        <a class="pill ghost" href="/docs/guides/sending#inside-your-transaction">How it works</a>
+      </div>
+      <div class="demo-video-stage">
+        <video id="rollback-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/rollback-demo-poster.jpg" aria-label="Terminal recording: an app pays two invoices and queues each webhook with BullMQ inside the transaction. The second payment rolls back, yet the customer's server still receives invoice.paid for in_124, while the invoices table shows in_124 open. The same code with hookgres.send in place of the queue sends only in_123's webhook.">
+          <source data-src="/media/rollback-demo-2x.mp4" type="video/mp4">
+        </video>
+        <button type="button" class="video-toggle" aria-controls="rollback-video" hidden>Pause</button>
+      </div>
+    </div>
   </section>
 
   <section class="band alt">
@@ -1064,12 +1081,12 @@ hookgres.start();
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (selector, root = document) => root.querySelector(selector);
 
-  // Terminal recording: fetch it only when it's about to scroll into view, and play
+  // Terminal recordings: fetch each only when it's about to scroll into view, and play
   // it only while it's on screen. Reduced motion or Save-Data: no autoplay, show controls.
-  {
-    const video = $("#demo-video");
-    const manual = reduceMotion || navigator.connection?.saveData === true;
-    const toggle = $(".video-toggle");
+  const manual = reduceMotion || navigator.connection?.saveData === true;
+  for (const stage of document.querySelectorAll(".demo-video-stage")) {
+    const video = $("video", stage);
+    const toggle = $(".video-toggle", stage);
     let loaded = false;
     let userPaused = false;
     const attach = () => {
