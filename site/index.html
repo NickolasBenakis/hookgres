@@ -561,22 +561,59 @@
 
   .sim { margin-top: 36px; }
   .sim-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  .sim-track { position: relative; padding: 28px 24px 18px; }
-  .sim-line { position: absolute; left: 24px; right: 24px; top: 50px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
-  .sim-progress { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(0); }
-  .sim-slots { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
-  .sim-slot { display: grid; justify-items: center; gap: 10px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .sim-slot .chip-wrap { height: 24px; display: flex; align-items: center; }
-  .sim-slot .attempt { animation: chip-in 260ms var(--ease-out) both; }
+  .sim-track { position: relative; padding: 20px 28px 14px 0; }
+
+  /* Retry chart: attempts evenly spaced, elapsed time on a log scale, so the curve is the backoff. */
+  .chart { position: relative; height: 248px; }
+  .chart-plot { position: absolute; left: 64px; right: 28px; top: 44px; bottom: 34px; }
+  .chart-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .chart-svg path, .chart-svg line { vector-effect: non-scaling-stroke; }
+  .chart-grid line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; }
+  .chart-grid .chart-axis { stroke-dasharray: none; }
+  .chart-line-base { fill: none; stroke: color-mix(in oklch, var(--ink) 22%, transparent); stroke-width: 1.5; stroke-dasharray: 4 5; }
+  .chart-line { fill: none; stroke: var(--accent); stroke-width: 2.25; stroke-linejoin: round; }
+  .chart-area { fill: url(#chart-fill); }
+  .chart-stop-0 { stop-color: var(--accent); stop-opacity: 0.2; }
+  .chart-stop-1 { stop-color: var(--accent); stop-opacity: 0; }
+  .chart-y .tick, .chart-x .tick {
+    position: absolute; font: 500 11px/1 var(--mono); letter-spacing: 0; color: var(--ink-3);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .chart-y .tick { left: 24px; top: calc(44px + (1 - var(--y)) * (100% - 78px)); transform: translateY(-50%); }
+  .chart-x { position: absolute; left: 64px; right: 28px; bottom: 0; height: 22px; }
+  .chart-x .tick { left: calc(var(--x) * 100%); bottom: 4px; transform: translateX(-50%); }
+  .mark, .chart-head { position: absolute; left: calc(var(--x) * 100%); top: calc((1 - var(--y)) * 100%); }
+  .mark-dot {
+    position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--ink) 28%, transparent);
+    transition: background-color 200ms var(--ease) 320ms, box-shadow 200ms var(--ease) 320ms;
+  }
+  .mark[data-state] .mark-dot { background: var(--tone); box-shadow: 0 0 0 4px color-mix(in oklch, var(--tone) 18%, transparent); }
+  .mark[data-state="ok"] { --tone: var(--ok); }
+  .mark[data-state="warn"] { --tone: var(--warn); }
+  .mark[data-state="bad"] { --tone: var(--bad); }
+  .mark-chip { position: absolute; left: 0; bottom: 12px; transform: translateX(-50%); }
+  .mark-chip .attempt { animation: chip-in 260ms var(--ease-out) 320ms both; box-shadow: 0 1px 2px oklch(25% 0.05 var(--h) / 0.08); }
   @keyframes chip-in { from { opacity: 0; transform: translateY(4px) scale(0.95); } }
+  .chart-head {
+    width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; pointer-events: none;
+    background: var(--accent); box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 20%, transparent), 0 0 18px color-mix(in oklch, var(--accent) 55%, transparent);
+    opacity: 0; transition: opacity 200ms var(--ease);
+  }
+  .chart-head[data-on] { opacity: 1; }
   .sim-status { margin: 0; padding: 14px 24px 16px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); min-height: 52px; }
   .sim-status b { font-weight: 600; }
   .sim-status .ok { color: var(--ok); }
   .sim-status .bad { color: var(--bad); }
   @media (max-width: 640px) {
-    .sim-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 18px; }
-    .sim-line { display: none; }
-    .sim-track { padding: 18px 14px 16px; }
+    /* Too narrow for eight chips side by side: the dots carry the colour. */
+    .mark-chip { display: none; }
+    .chart { height: 200px; }
+    .chart-plot { left: 44px; right: 16px; top: 20px; }
+    .chart-x { left: 44px; right: 16px; }
+    .chart-y .tick { left: 10px; top: calc(20px + (1 - var(--y)) * (100% - 54px)); font-size: 10px; }
+    .chart-x .tick { font-size: 10px; }
+    .sim-track { padding: 14px 14px 10px 0; }
     .sim-status { padding: 14px 16px; }
   }
 
@@ -670,6 +707,97 @@
   .footer-links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   footer .footer-inner a { color: var(--ink-2); }
 
+  /* Hero field: a dot grid that leans away from the cursor, with webhooks crossing it.
+     Densest behind the code, gone under the headline so the text stays crisp. */
+  /* Clip sideways only: the glow behind the code may spill past the gutter. */
+  .hero { position: relative; isolation: isolate; overflow-x: clip; }
+  .hero-field {
+    position: absolute; inset: -56px 0 0; z-index: -1; width: 100%; height: calc(100% + 56px); pointer-events: none;
+    -webkit-mask-image: radial-gradient(ellipse 62% 70% at 72% 42%, #000 20%, transparent 78%);
+    mask-image: radial-gradient(ellipse 62% 70% at 72% 42%, #000 20%, transparent 78%);
+  }
+  @media (max-width: 960px) {
+    .hero-field { -webkit-mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 15%, transparent 75%); mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 15%, transparent 75%); }
+  }
+
+  /* The code window floats: a light behind it drifts with the cursor and the card leans in. */
+  .hero-stage { position: relative; perspective: 1400px; min-width: 0; }
+  .hero-glow {
+    position: absolute; inset: 8% -6% -10%; z-index: -1; border-radius: 40px; pointer-events: none;
+    background:
+      radial-gradient(50% 55% at 35% 40%, color-mix(in oklch, var(--accent) 34%, transparent), transparent 70%),
+      radial-gradient(45% 50% at 70% 70%, color-mix(in oklch, oklch(70% 0.14 200) 26%, transparent), transparent 70%);
+    transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0);
+    will-change: transform;
+  }
+  :root[data-theme="dark"] .hero-glow { opacity: 0.7; }
+  .hero-code {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transform-style: preserve-3d; will-change: transform;
+    box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 1px 2px oklch(25% 0.05 var(--h) / 0.08), 0 24px 48px -12px oklch(25% 0.08 var(--h) / 0.28), 0 60px 120px -40px oklch(35% 0.12 var(--h) / 0.35);
+  }
+  :root[data-theme="dark"] .hero-code { box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 0 0 1px oklch(100% 0 0 / 0.1), 0 40px 100px -30px oklch(55% 0.16 var(--h) / 0.35); }
+
+  /* Cursor spotlight: the card's edge catches the light where the pointer is. */
+  [data-spot] { position: relative; }
+  [data-spot]::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+    padding: 1px;
+    background: radial-gradient(220px circle at var(--mx, -500px) var(--my, -500px), color-mix(in oklch, var(--accent) 75%, transparent), transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    opacity: 0; transition: opacity 300ms var(--ease);
+  }
+  [data-spot][data-lit]::after { opacity: 1; }
+  .code[data-spot] { background: radial-gradient(520px circle at var(--mx, -500px) var(--my, -500px), oklch(100% 0 0 / 0.05), transparent 45%), var(--code-bg); }
+  .window[data-spot], .seen-card[data-spot] { background: radial-gradient(420px circle at var(--mx, -500px) var(--my, -500px), color-mix(in oklch, var(--accent) 5%, transparent), transparent 60%), var(--surface); }
+
+  /* Blueprint sketch */
+  .sketch-band { padding-top: clamp(48px, 6vw, 80px); }
+  .flow-sketch {
+    margin: 36px 0 0; border-radius: 20px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--raised);
+  }
+  .sketch-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; border-radius: inherit; }
+  .sketch-scroll:focus-visible { outline-offset: -2px; }
+  .sketch { display: block; width: 100%; min-width: 760px; height: auto; font-family: var(--sans); }
+  .sk-gridline { fill: none; stroke: color-mix(in oklch, var(--accent) 7%, transparent); stroke-width: 1; }
+  .sk-box { fill: var(--surface); stroke: color-mix(in oklch, var(--ink) 16%, transparent); stroke-width: 1; }
+  .sk-frame { fill: color-mix(in oklch, var(--accent) 3%, transparent); stroke: color-mix(in oklch, var(--accent) 45%, transparent); stroke-width: 1.25; stroke-dasharray: 5 5; }
+  .sk-glow { fill: color-mix(in oklch, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1.25; opacity: 0; }
+  .sk-glow-ok { fill: color-mix(in oklch, var(--ok) 10%, transparent); stroke: var(--ok); }
+  .sk-glow-bad { fill: color-mix(in oklch, var(--bad) 10%, transparent); stroke: var(--bad); }
+  .sk-title { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; fill: var(--ink); }
+  .sk-label { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; fill: var(--ink); }
+  .sk-mono, .sk-note { font: 12px var(--mono); letter-spacing: 0; fill: var(--ink-3); }
+  .sk-dim { fill: color-mix(in oklch, var(--ink-3) 80%, transparent); }
+  .sk-ok { fill: var(--ok); }
+  .sk-warn { fill: var(--warn); }
+  .sk-bad, .sk-note-bad { fill: var(--bad); }
+  .sk-dot-ok { fill: var(--ok); }
+  .sk-dot-warn { fill: var(--warn); }
+  .sk-dot-bad { fill: var(--bad); }
+  .sk-line { fill: none; stroke: color-mix(in oklch, var(--ink) 26%, transparent); stroke-width: 1.25; }
+  .sk-retry { stroke: color-mix(in oklch, var(--bad) 45%, transparent); stroke-dasharray: 0.008 0.008; }
+  .sk-streak { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+  .sk-head-halo { opacity: 0.22; }
+  /* First view: lines draw themselves and the boxes settle in, once. */
+  .sk-line:not(.sk-retry) { stroke-dasharray: 1; }
+  .sk-line { transition: stroke-dashoffset 900ms var(--ease-out) 250ms, opacity 400ms var(--ease) 900ms; }
+  .sk-fade { transition: opacity 500ms var(--ease-out), transform 600ms var(--ease-out); transition-delay: calc(var(--d) * 60ms); }
+  .flow-sketch[data-pending] .sk-line:not(.sk-retry) { stroke-dashoffset: 1; }
+  .flow-sketch[data-pending] .sk-retry { opacity: 0; }
+  .flow-sketch[data-pending] .sk-fade { opacity: 0; transform: translateY(6px); }
+  @media (max-width: 640px) {
+    .flow-sketch { margin-top: 24px; border-radius: 16px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-code, .hero-glow { transform: none; }
+    .mark-dot, .chart-head, .sk-line, .sk-fade, [data-spot]::after { transition: none; }
+    .mark-chip .attempt { animation: none; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
@@ -711,6 +839,7 @@
 
 <main>
   <section class="hero">
+    <canvas class="hero-field" aria-hidden="true"></canvas>
     <div class="wrap">
       <div class="hero-grid">
         <div class="hero-copy">
@@ -718,7 +847,7 @@
           <h1>Webhooks that&nbsp;commit with your data.</h1>
           <p class="lede">A TypeScript library that queues webhooks in your Postgres transaction, then signs, retries and logs every delivery. No extra service, no&nbsp;per&#8209;message&nbsp;bill.</p>
 
-          <div class="start">
+          <div class="start" data-spot>
             <div class="start-row">
               <span class="start-tag" id="tag-agent">Agent</span>
               <p class="start-cmd" id="agent-prompt">Add Hookgres webhooks to this app: hookgres.dev/llms.txt</p>
@@ -750,7 +879,9 @@
           </div>
         </div>
 
-        <div class="code hero-code">
+        <div class="hero-stage">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="code hero-code" data-spot>
           <div class="bar">
             <div class="tabs" role="tablist" aria-label="Example code">
               <button type="button" class="tab" role="tab" id="tab-send" aria-controls="code-send" aria-selected="true">app.ts</button>
@@ -800,6 +931,7 @@ hookgres.start();
   }
 }</pre>
         </div>
+        </div>
       </div>
 
       <ul class="caps">
@@ -813,6 +945,106 @@ hookgres.start();
     </div>
   </section>
 
+  <section class="band sketch-band">
+    <div class="wrap">
+      <p class="kicker">How it flows</p>
+      <h2>One commit in. Every endpoint, signed and retried.</h2>
+      <p class="sub"><code>send()</code> writes a row next to your data. After <code>COMMIT</code>, workers claim it with <code>SKIP LOCKED</code>, sign the request and deliver it to each endpoint. A failure goes back on the schedule.</p>
+      <figure class="flow-sketch" data-spot>
+        <!-- biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take focus so keyboard users can scroll it -->
+        <section class="sketch-scroll" tabindex="0" aria-label="Diagram: how a webhook flows. Scrolls sideways on narrow screens.">
+          <svg class="sketch" viewBox="0 0 1200 380" role="img" aria-labelledby="sketch-title">
+            <title id="sketch-title">Your app calls send() inside a transaction that updates the invoices table and inserts a hookgres.messages row. After COMMIT, three workers claim deliveries with FOR UPDATE SKIP LOCKED and post signed requests to acme.com (204), shop.example (503, then 204) and crm.example (500). The failed delivery loops back onto the retry schedule.</title>
+            <defs>
+              <pattern id="sk-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" class="sk-gridline"/></pattern>
+            </defs>
+            <rect class="sk-paper" x="0" y="0" width="1200" height="380" fill="url(#sk-grid)"/>
+
+            <g class="sk-lines">
+              <path class="sk-line" id="sk-a1" d="M220 192C270 192 270 161 324 161" pathLength="1"/>
+              <path class="sk-line" id="sk-a2" d="M220 192C270 192 270 227 324 227" pathLength="1"/>
+              <path class="sk-line" id="sk-m1" d="M656 227C712 227 704 130 760 130" pathLength="1"/>
+              <path class="sk-line" id="sk-m2" d="M656 227C712 227 704 190 760 190" pathLength="1"/>
+              <path class="sk-line" id="sk-m3" d="M656 227C712 227 704 250 760 250" pathLength="1"/>
+              <path class="sk-line" id="sk-e1" d="M910 130C945 130 945 122 980 122" pathLength="1"/>
+              <path class="sk-line" id="sk-e2" d="M910 190C945 190 945 190 980 190" pathLength="1"/>
+              <path class="sk-line" id="sk-e3" d="M910 250C945 250 945 258 980 258" pathLength="1"/>
+              <path class="sk-line sk-retry" id="sk-r3" d="M1078 284C1078 360 600 360 560 254" pathLength="1"/>
+            </g>
+            <text class="sk-note sk-note-bad sk-fade" style="--d:9" x="820" y="370" text-anchor="middle">500 · back on the schedule, 5s → 10h</text>
+
+            <g class="sk-node sk-fade" style="--d:0">
+              <rect class="sk-box" x="24" y="150" width="196" height="84" rx="12"/>
+              <text class="sk-title" x="44" y="185">Your app</text>
+              <text class="sk-mono" x="44" y="209">hookgres.send()</text>
+            </g>
+
+            <g class="sk-fade" style="--d:1">
+              <rect class="sk-frame" x="300" y="56" width="380" height="272" rx="18"/>
+              <text class="sk-title" x="324" y="90">Postgres</text>
+              <text class="sk-mono" x="656" y="90" text-anchor="end">one transaction</text>
+              <text class="sk-mono sk-dim" x="324" y="122">BEGIN</text>
+              <text class="sk-mono sk-ok" x="324" y="300">COMMIT</text>
+            </g>
+            <g class="sk-node sk-fade" style="--d:2">
+              <rect class="sk-box" x="324" y="134" width="332" height="54" rx="10"/>
+              <rect class="sk-glow" data-flash="row1" x="324" y="134" width="332" height="54" rx="10"/>
+              <text class="sk-label" x="344" y="158">invoices</text>
+              <text class="sk-mono" x="344" y="177">in_123 · status = paid</text>
+            </g>
+            <g class="sk-node sk-fade" style="--d:3">
+              <rect class="sk-box" x="324" y="200" width="332" height="54" rx="10"/>
+              <rect class="sk-glow" data-flash="row2" x="324" y="200" width="332" height="54" rx="10"/>
+              <text class="sk-label" x="344" y="224">hookgres.messages</text>
+              <text class="sk-mono" x="344" y="243">invoice.paid · 3 deliveries</text>
+            </g>
+
+            <text class="sk-mono sk-dim sk-fade" style="--d:4" x="835" y="92" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
+            <g class="sk-node sk-fade" style="--d:4">
+              <rect class="sk-box" x="760" y="110" width="150" height="40" rx="10"/>
+              <rect class="sk-glow" data-flash="w1" x="760" y="110" width="150" height="40" rx="10"/>
+              <text class="sk-label" x="780" y="135">worker 1</text>
+            </g>
+            <g class="sk-node sk-fade" style="--d:5">
+              <rect class="sk-box" x="760" y="170" width="150" height="40" rx="10"/>
+              <rect class="sk-glow" data-flash="w2" x="760" y="170" width="150" height="40" rx="10"/>
+              <text class="sk-label" x="780" y="195">worker 2</text>
+            </g>
+            <g class="sk-node sk-fade" style="--d:6">
+              <rect class="sk-box" x="760" y="230" width="150" height="40" rx="10"/>
+              <rect class="sk-glow" data-flash="w3" x="760" y="230" width="150" height="40" rx="10"/>
+              <text class="sk-label" x="780" y="255">worker 3</text>
+            </g>
+
+            <g class="sk-node sk-fade" style="--d:6">
+              <rect class="sk-box" x="980" y="96" width="196" height="52" rx="10"/>
+              <rect class="sk-glow sk-glow-ok" data-flash="e1" x="980" y="96" width="196" height="52" rx="10"/>
+              <text class="sk-label" x="998" y="119">acme.com</text>
+              <text class="sk-mono sk-ok" x="998" y="137">204 · first attempt</text>
+              <circle class="sk-dot sk-dot-ok" cx="1156" cy="122" r="4"/>
+            </g>
+            <g class="sk-node sk-fade" style="--d:7">
+              <rect class="sk-box" x="980" y="164" width="196" height="52" rx="10"/>
+              <rect class="sk-glow sk-glow-ok" data-flash="e2" x="980" y="164" width="196" height="52" rx="10"/>
+              <text class="sk-label" x="998" y="187">shop.example</text>
+              <text class="sk-mono sk-warn" x="998" y="205">503 → 204 · attempt 3</text>
+              <circle class="sk-dot sk-dot-warn" cx="1156" cy="190" r="4"/>
+            </g>
+            <g class="sk-node sk-fade" style="--d:8">
+              <rect class="sk-box" x="980" y="232" width="196" height="52" rx="10"/>
+              <rect class="sk-glow sk-glow-bad" data-flash="e3" x="980" y="232" width="196" height="52" rx="10"/>
+              <text class="sk-label" x="998" y="255">crm.example</text>
+              <text class="sk-mono sk-bad" x="998" y="273">500 · retrying</text>
+              <circle class="sk-dot sk-dot-bad" cx="1156" cy="258" r="4"/>
+            </g>
+
+            <g class="sk-packets"></g>
+          </svg>
+        </section>
+      </figure>
+    </div>
+  </section>
+
   <section class="band">
     <div class="wrap split flip">
       <div>
@@ -823,7 +1055,7 @@ hookgres.start();
         <p class="more"><a href="/docs/guides/sending">Sending webhooks</a></p>
       </div>
       <div class="demo tx-demo" data-state="idle">
-        <div class="code">
+        <div class="code" data-spot>
           <div class="bar"><span>billing.ts</span><span class="bar-hint">Choose how the transaction ends</span></div>
 <pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(
   <span class="s">`UPDATE invoices SET status = 'paid'
@@ -865,15 +1097,15 @@ hookgres.start();
       <div class="seen">
         <h3>Not a contrived example. Other teams hit these bugs in 2026:</h3>
         <ul>
-          <li class="seen-card">
+          <li class="seen-card" data-spot>
             <blockquote>“…the entire batch is rolled back, but the webhook for the earlier (now rolled-back) request has already been dispatched.”</blockquote>
             <a class="seen-src" href="https://issues.apache.org/jira/browse/FINERACT-2570">Apache Fineract, March 2026</a>
           </li>
-          <li class="seen-card">
+          <li class="seen-card" data-spot>
             <blockquote>“REST API dispatches events for writes that were rolled back”</blockquote>
             <a class="seen-src" href="https://github.com/netbox-community/netbox/issues/22978">NetBox, August 2026</a>
           </li>
-          <li class="seen-card">
+          <li class="seen-card" data-spot>
             <blockquote>“If that process dies — for any reason — the webhook dies with it.”</blockquote>
             <a class="seen-src" href="https://dodopayments.com/engineering/building-webhooks-never-fail">Dodo Payments, January 2026</a>
           </li>
@@ -906,8 +1138,23 @@ hookgres.start();
         <div class="window sim-window">
           <div class="window-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
           <div class="sim-track" aria-hidden="true">
-            <div class="sim-line"><span class="sim-progress"></span></div>
-            <div class="sim-slots"></div>
+            <div class="chart">
+              <div class="chart-y"></div>
+              <div class="chart-plot">
+                <svg class="chart-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="chart-stop-0"/><stop offset="1" class="chart-stop-1"/></linearGradient>
+                    <clipPath id="chart-clip"><rect class="chart-reveal" x="0" y="-10" width="0" height="220"/></clipPath>
+                  </defs>
+                  <g class="chart-grid"></g>
+                  <path class="chart-line-base"/>
+                  <g clip-path="url(#chart-clip)"><path class="chart-area"/><path class="chart-line"/></g>
+                </svg>
+                <div class="chart-marks"></div>
+                <span class="chart-head"></span>
+              </div>
+              <div class="chart-x"></div>
+            </div>
           </div>
           <p class="sim-status" role="status" aria-live="polite">Press Send event.</p>
         </div>
@@ -934,7 +1181,7 @@ hookgres.start();
       <div class="demo sig">
         <label class="sig-label" for="sig-payload">Edit the payload. The signature is computed in your browser.</label>
         <textarea id="sig-payload" spellcheck="false" autocomplete="off">{ "invoiceId": "in_123", "amount": 4200 }</textarea>
-        <div class="code">
+        <div class="code" data-spot>
           <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="sig-out" data-label="Copy" aria-label="Copy the signed request">Copy</button></div>
 <pre id="sig-out"><span class="k">webhook-id:</span> <span id="sig-id">msg_…</span>
 <span class="k">webhook-timestamp:</span> <span id="sig-ts">…</span>
@@ -957,7 +1204,7 @@ hookgres.start();
       <h2>Every attempt is a row you can query.</h2>
       <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
       <div class="log-stage">
-        <div class="window" role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
+        <div class="window" data-spot role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
           <div class="window-bar" aria-hidden="true">
             <div class="dots"><i></i><i></i><i></i></div>
             <span class="title">invoice.paid</span>
@@ -1009,7 +1256,7 @@ hookgres.start();
           <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant's endpoints, filtered by event type.</li>
           <li><b>Crash recovery.</b> If a worker dies mid-request, its claim expires and another worker picks it up.</li>
         </ul>
-        <div class="code">
+        <div class="code" data-spot>
           <div class="bar"><span>Failed in the last 24 hours</span><button class="copy" type="button" data-copy-from="sql-code" aria-label="Copy the SQL query">Copy</button></div>
 <pre id="sql-code"><span class="k">select</span> e.tenant_id, e.url, d.last_error
 <span class="k">from</span> hookgres.deliveries d
@@ -1079,7 +1326,7 @@ hookgres.start();
           <a class="pill ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
         </div>
       </div>
-      <div class="code">
+      <div class="code" data-spot>
         <div class="bar"><span>Playground</span><button class="copy" type="button" data-copy="git clone https://github.com/NickolasBenakis/hookgres &amp;&amp; cd hookgres &amp;&amp; docker compose up" aria-label="Copy playground commands">Copy</button></div>
 <pre><span class="c">$ </span>git clone https://github.com/NickolasBenakis/hookgres
 <span class="c">$ </span>cd hookgres
@@ -1381,28 +1628,85 @@ hookgres.start();
       flaky: [503, 503, 204],
       down: [500, 500, 500, 500, 500, 500, 500, 500],
     };
-    const slots = $(".sim-slots");
-    const progress = $(".sim-progress");
+    // Seconds since the first attempt, on a log scale: the curve is the backoff.
+    const elapsed = [0, 5, 305, 2105, 9305, 27305, 63305, 99305];
+    const logT = (t) => Math.log10(1 + t) / Math.log10(1 + elapsed.at(-1));
+    const points = elapsed.map((t, i) => [i / (elapsed.length - 1), logT(t)]);
+    const chart = $(".chart");
+    const head = $(".chart-head", chart);
+    const reveal = $(".chart-reveal", chart);
     const clock = $(".sim-clock");
     const status = $(".sim-status");
     const sendButton = $("#sim-send");
     let mode = "healthy";
     let run = 0;
-    slots.replaceChildren(
-      ...labels.map((label) => {
-        const slot = document.createElement("div");
-        slot.className = "sim-slot";
-        const wrap = document.createElement("div");
-        wrap.className = "chip-wrap";
-        slot.append(wrap, label);
-        return slot;
-      }),
-    );
-    const wraps = [...slots.querySelectorAll(".chip-wrap")];
-    const setProgress = (fraction, animate) => {
-      progress.style.transition = animate && !reduceMotion ? "transform 420ms cubic-bezier(0.65, 0, 0.35, 1)" : "none";
-      progress.style.transform = `scaleX(${fraction})`;
+
+    // Monotone cubic through the attempts (Fritsch–Carlson), in a 1000×200 box.
+    const X = (x) => x * 1000;
+    const Y = (y) => 200 - y * 200;
+    const curve = (() => {
+      const n = points.length;
+      const d = points.slice(0, -1).map(([x, y], i) => (points[i + 1][1] - y) / (points[i + 1][0] - x));
+      const m = points.map((_, i) => (i === 0 ? d[0] : i === n - 1 ? d[n - 2] : d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2));
+      let path = `M${X(points[0][0])} ${Y(points[0][1])}`;
+      for (let i = 0; i < n - 1; i++) {
+        const [x0, y0] = points[i];
+        const [x1, y1] = points[i + 1];
+        const h = (x1 - x0) / 3;
+        path += `C${X(x0 + h)} ${Y(y0 + m[i] * h)} ${X(x1 - h)} ${Y(y1 - m[i + 1] * h)} ${X(x1)} ${Y(y1)}`;
+      }
+      return path;
+    })();
+    $(".chart-line-base", chart).setAttribute("d", curve);
+    $(".chart-line", chart).setAttribute("d", curve);
+    $(".chart-area", chart).setAttribute("d", `${curve}L1000 200L0 200Z`);
+    const gridlines = [["5s", 5], ["1m", 60], ["1h", 3600], ["10h", 36000]];
+    const lines = gridlines.map(([, t]) => `<line x1="0" x2="1000" y1="${Y(logT(t))}" y2="${Y(logT(t))}"/>`).join("");
+    $(".chart-grid", chart).innerHTML = `${lines}<line class="chart-axis" x1="0" x2="1000" y1="200" y2="200"/>`;
+    $(".chart-y", chart).innerHTML = gridlines.map(([label, t]) => `<span class="tick" style="--y:${logT(t)}">${label}</span>`).join("");
+    $(".chart-x", chart).innerHTML = labels.map((label, i) => `<span class="tick" style="--x:${points[i][0]}">${label}</span>`).join("");
+    const marks = $(".chart-marks", chart);
+    marks.innerHTML = points.map(([x, y]) => `<span class="mark" style="--x:${x};--y:${y}"><span class="mark-chip"></span><span class="mark-dot"></span></span>`).join("");
+    const markEls = [...marks.children];
+    const wraps = markEls.map((mark) => $(".mark-chip", mark));
+
+    // The head rides the curve; sample it once to look up y for any x.
+    const samples = (() => {
+      const path = $(".chart-line-base", chart);
+      const length = path.getTotalLength();
+      return Array.from({ length: 241 }, (_, i) => path.getPointAtLength((length * i) / 240));
+    })();
+    const yAt = (x) => {
+      const px = x * 1000;
+      const i = samples.findIndex((p) => p.x >= px);
+      if (i <= 0) return i === 0 ? samples[0].y : samples.at(-1).y;
+      const a = samples[i - 1];
+      const b = samples[i];
+      return a.y + ((b.y - a.y) * (px - a.x)) / (b.x - a.x || 1);
     };
+    let at = 0;
+    let tween = 0;
+    const place = (x) => {
+      at = x;
+      reveal.setAttribute("width", String(x * 1000));
+      head.style.setProperty("--x", x);
+      head.style.setProperty("--y", 1 - yAt(x) / 200);
+    };
+    const setProgress = (fraction, animate) => {
+      cancelAnimationFrame(tween);
+      head.toggleAttribute("data-on", fraction > 0 || animate);
+      if (!animate || reduceMotion) return place(fraction);
+      const from = at;
+      const start = performance.now();
+      const step = (now) => {
+        const p = Math.min(1, (now - start) / 460);
+        const eased = p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2;
+        place(from + (fraction - from) * eased);
+        if (p < 1) tween = requestAnimationFrame(step);
+      };
+      tween = requestAnimationFrame(step);
+    };
+    place(0);
     const say = (html) => {
       status.replaceChildren();
       for (const part of html) status.append(part);
@@ -1421,6 +1725,7 @@ hookgres.start();
       const runMode = mode;
       const codes = outcomes[runMode];
       for (const w of wraps) w.replaceChildren();
+      for (const mark of markEls) delete mark.dataset.state;
       setProgress(0, false);
       clock.textContent = "t = 0s";
       say(["Sending…"]);
@@ -1429,16 +1734,19 @@ hookgres.start();
         if (i > 0) await new Promise((resolve) => setTimeout(resolve, step));
         if (id !== run) return;
         const code = codes[i];
+        const tone = code < 300 ? "ok" : code >= 500 && runMode === "down" ? "bad" : "warn";
         const chip = document.createElement("span");
-        chip.className = `attempt ${code < 300 ? "ok" : code >= 500 && runMode === "down" ? "bad" : "warn"}`;
+        chip.className = `attempt ${tone}`;
         chip.textContent = code;
         wraps[i].append(chip);
+        markEls[i].dataset.state = tone;
         setProgress(i / (labels.length - 1), true);
         clock.textContent = `t = ${labels[i]}`;
         say([`Attempt ${i + 1}: HTTP ${code}`]);
       }
       await new Promise((resolve) => setTimeout(resolve, reduceMotion ? 0 : 300));
       if (id !== run) return;
+      head.removeAttribute("data-on");
       const n = codes.length;
       if (codes[n - 1] < 300) {
         say([strong("Succeeded", "ok"), ` after ${n} attempt${n > 1 ? "s" : ""}. Every attempt is stored in the delivery log.`]);
@@ -1502,6 +1810,7 @@ hookgres.start();
     update();
   }
 </script>
+<script src="/motion.js" defer></script>
 <script src="/search.js" defer></script>
 </body>
 </html>
