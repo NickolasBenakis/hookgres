@@ -68,6 +68,8 @@ export interface OpenTelemetryApi {
     extract(context: OtelContext, carrier: Record<string, string>): OtelContext;
   };
   ROOT_CONTEXT?: OtelContext;
+  /** Makes the key that keeps HTTP instrumentations off webhook requests. */
+  createContextKey?(description: string): symbol;
 }
 
 /** An OpenTelemetry `Context`; opaque to Hookgres. */
@@ -131,6 +133,14 @@ const MAX_TRACE_CONTEXT_BYTES = 1024;
 type TracingApi = Required<
   Pick<OpenTelemetryApi, "trace" | "context" | "propagation" | "ROOT_CONTEXT">
 >;
+type ContextApi = NonNullable<OpenTelemetryApi["context"]>;
+
+/**
+ * The key `@opentelemetry/core`'s `suppressTracing()` sets, which the SDK's
+ * tracers and propagators honor: no spans and no injected headers. Its
+ * `createContextKey` is `Symbol.for(description)`.
+ */
+const SUPPRESS_TRACING = "OpenTelemetry SDK Context Key SUPPRESS_TRACING";
 
 /** What `traceAttempt` needs to know about the delivery. */
 export interface TracedDelivery {
@@ -165,6 +175,8 @@ export class Telemetry {
   /** Set when traces are on. */
   readonly tracing: TracingApi | null = null;
   private readonly tracer: OtelTracer | null = null;
+  private readonly context: ContextApi | null;
+  private readonly suppressKey: symbol;
 
   constructor(
     options: OpenTelemetryOptions,
@@ -172,6 +184,13 @@ export class Telemetry {
     onError: (error: unknown) => void,
   ) {
     const { trace, context, propagation, ROOT_CONTEXT } = options.api;
+    this.context = context ?? null;
+    let suppressKey = Symbol.for(SUPPRESS_TRACING);
+    guard(() => {
+      suppressKey =
+        options.api.createContextKey?.(SUPPRESS_TRACING) ?? suppressKey;
+    });
+    this.suppressKey = suppressKey;
     if (
       options.traces !== false &&
       trace &&
@@ -349,17 +368,26 @@ export class Telemetry {
 
   /**
    * Runs one HTTP attempt in a client span, linked to the `send()` that
-   * queued it. The span is active during the request, so an HTTP
-   * instrumentation's span nests under it.
+   * queued it. With traces off, just runs it untraced.
+   *
+   * Either way, HTTP instrumentations are kept off the request: their span
+   * would record the full URL (often holding a secret), and they'd send the
+   * receiver a `traceparent` and your baggage.
    */
   async traceAttempt<
     R extends { ok: boolean; statusCode: number | null; error: string | null },
   >(delivery: TracedDelivery, run: () => Promise<R>): Promise<R> {
     const tracing = this.tracing;
     const tracer = this.tracer;
-    if (!tracing || !tracer) return run();
-    let span: OtelSpan | undefined;
+    const contextApi = this.context;
+    if (!contextApi) return run();
+    // Suppressed first and on its own, so a broken tracer can't undo it.
     let active: OtelContext | undefined;
+    guard(() => {
+      active = this.suppress(contextApi.active());
+    });
+    if (!tracing || !tracer) return runIn(contextApi, active, run);
+    let span: OtelSpan | undefined;
     guard(() => {
       const attributes: Attributes = {
         "messaging.system": "hookgres",
@@ -390,11 +418,11 @@ export class Telemetry {
         },
         tracing.context.active(),
       );
-      active = tracing.trace.setSpan(tracing.context.active(), span);
+      active = tracing.trace.setSpan(active ?? contextApi.active(), span);
     });
     let result: R;
     try {
-      result = await runIn(tracing, active, run);
+      result = await runIn(contextApi, active, run);
     } catch (error) {
       guard(() => {
         span?.recordException(error instanceof Error ? error : String(error));
@@ -419,6 +447,16 @@ export class Telemetry {
       span?.end();
     });
     return result;
+  }
+
+  /** `context` with tracing suppressed, or as is if it can't be. */
+  private suppress(context: OtelContext): OtelContext {
+    const { setValue } = context as {
+      setValue?: (key: symbol, value: unknown) => OtelContext;
+    };
+    return typeof setValue === "function"
+      ? setValue.call(context, this.suppressKey, true)
+      : context;
   }
 
   /** Stops reading queue stats, so a closed instance doesn't query. */
@@ -447,23 +485,24 @@ function guard(record: () => void): void {
 
 /** Runs `run` with `context` active, or plainly if there's none. */
 async function runIn<R>(
-  tracing: TracingApi,
+  contextApi: ContextApi,
   context: OtelContext | undefined,
   run: () => Promise<R>,
 ): Promise<R> {
   if (!context) return run();
   let running: Promise<R> | undefined;
   try {
-    return await tracing.context.with(context, () => {
+    await contextApi.with(context, () => {
       running = run();
       return running;
     });
   } catch {
-    // The context manager itself failed: send anyway, untraced, and never
-    // twice. An error from the request itself is the request's.
-    if (!running) return run();
-    return running;
+    // The context manager failed, or the request did: either way, the
+    // outcome is the request's own, below.
   }
+  // Never what `with` returned (a broken one may return anything), and never
+  // a second send: run untraced only if it never ran.
+  return running ?? run();
 }
 
 /**

@@ -122,8 +122,7 @@ webhook from the request that caused it to every attempt to deliver it:
   a cron route: retries can run for a day, and a day-long trace confuses
   most tracing backends. Follow the link to get from one to the other.
 
-The attempt span is active during the request, so if you also use an HTTP
-instrumentation, its span nests under it. An attempt that fails before any
+An attempt that fails before any
 request is made, such as a payload that couldn't be loaded, has no span; it
 still counts in the metrics. Attributes:
 
@@ -139,12 +138,19 @@ What Hookgres leaves out on purpose:
 
 - **The endpoint URL.** Many webhook URLs carry a secret in the path or
   query, so only the host, port and scheme are recorded.
-- **`traceparent` on the webhook request.** Your trace ids would go to every
-  customer. Hookgres never adds it, but an HTTP instrumentation for `fetch`
-  (undici) or `node:http` injects it into every outgoing request, webhooks
-  included. To keep it off webhooks, configure that instrumentation to skip
-  them, for example with its `ignoreOutgoingRequestHook`, or to not inject
-  for outgoing requests.
+- **`traceparent` and baggage on the webhook request.** Your trace ids and
+  application data would go to every customer.
+- **HTTP instrumentation spans for webhook requests.** An instrumentation for
+  `fetch` (undici) or `node:http`, like the ones auto-instrumentation turns
+  on, would record each request's full URL and add `traceparent` and
+  `baggage` headers to it. Hookgres sends webhooks with tracing suppressed,
+  the way OpenTelemetry exporters send their own requests, so these
+  instrumentations skip them; with traces on, the `deliver webhook` span
+  covers the request instead. Suppression also applies with `traces: false`,
+  as long as the `api` you pass includes `context`, as the real module does.
+  It covers a custom `fetch` too, so spans or headers your fetch adds through
+  OpenTelemetry are skipped as well. Without the `opentelemetry` option,
+  configure your instrumentations to skip webhook requests yourself.
 - **Baggage.** It's application data, possibly personal, so it isn't stored
   with the message, whichever propagator you use. Only the trace context is (`traceparent`, `tracestate`,
   or your propagator's equivalent), and only if under 1 KB.

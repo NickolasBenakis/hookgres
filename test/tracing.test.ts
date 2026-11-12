@@ -73,6 +73,7 @@ function tracing() {
         propagator.extract(context, carrier, otel.defaultTextMapGetter),
     },
     ROOT_CONTEXT: otel.ROOT_CONTEXT,
+    createContextKey: otel.createContextKey,
   };
   const tracer = provider.getTracer("test");
   const spans = (name: string): ReadableSpan[] =>
@@ -88,9 +89,29 @@ function tracing() {
     }
     return manager.with(context, fn).finally(() => span.end());
   };
+  /**
+   * A fetch that does what an HTTP instrumentation (undici, node:http) does:
+   * a client span recording the URL, and trace headers on the request.
+   */
+  const activeSpanIds: (string | undefined)[] = [];
+  const instrumentedFetch: typeof fetch = (input, init) => {
+    const active = manager.active();
+    activeSpanIds.push(otel.trace.getSpanContext(active)?.spanId);
+    const span = provider
+      .getTracer("instrumentation-undici")
+      .startSpan("POST", { kind: otel.SpanKind.CLIENT }, active);
+    span.setAttribute("url.full", String(input));
+    const headers = new Headers(init?.headers);
+    propagator.inject(otel.trace.setSpan(active, span), headers, {
+      set: (h, k, v) => h.set(k, v),
+    });
+    return fetch(input, { ...init, headers }).finally(() => span.end());
+  };
   return {
     api,
     manager,
+    instrumentedFetch,
+    activeSpanIds,
     spans,
     inRequest,
     close: () => manager.disable(),
@@ -320,6 +341,102 @@ describe("OpenTelemetry traces", () => {
       expect(await hw.runOnce()).toBe(1);
       expect(receiver.requests).toHaveLength(1);
       expect(attempts).toEqual(["succeeded"]);
+    } finally {
+      t.close();
+    }
+  });
+
+  it("keeps HTTP instrumentations off webhook requests", async () => {
+    const t = tracing();
+    try {
+      for (const traces of [true, false]) {
+        const hw = ctx.create({
+          opentelemetry: { api: t.api, traces },
+          fetch: t.instrumentedFetch,
+        });
+        const ep = await hw.createEndpoint({
+          tenantId: "acme",
+          url: `${receiver.url}?token=SECRET`,
+        });
+        await t.inRequest(
+          () => hw.send({ tenantId: "acme", eventType: "e", payload: {} }),
+          true,
+        );
+        // Delivered inside a request with baggage, e.g. drain() in a route.
+        expect(await t.inRequest(() => hw.runOnce(), true)).toBe(1);
+        await hw.deleteEndpoint(ep.id);
+      }
+      expect(receiver.requests).toHaveLength(2);
+      for (const request of receiver.requests) {
+        expect(request.headers.traceparent).toBeUndefined();
+        expect(request.headers.baggage).toBeUndefined();
+        expect(request.headers["uberctx-email"]).toBeUndefined();
+      }
+      expect(t.spans("POST")).toEqual([]);
+      const [deliver] = t.spans("deliver webhook");
+      expect(t.spans("deliver webhook")).toHaveLength(1);
+      // Still active during the request, and still linked to its send().
+      expect(t.activeSpanIds[0]).toBe(deliver?.spanContext().spanId);
+      expect(deliver?.links).toHaveLength(1);
+    } finally {
+      t.close();
+    }
+  });
+
+  it("keeps HTTP instrumentations off and sends once with a misbehaving API", async () => {
+    const t = tracing();
+    try {
+      const broken = () => {
+        throw new Error("broken");
+      };
+      const apis = [
+        // A tracer that throws: no span, still suppressed.
+        {
+          ...t.api,
+          trace: { ...t.api.trace, getTracer: () => ({ startSpan: broken }) },
+        },
+        // A createContextKey that throws: the standard key is used.
+        { ...t.api, createContextKey: broken },
+        // A context manager whose with() returns the wrong thing.
+        ...[true, false].map((traces) => ({
+          ...t.api,
+          traces,
+          context: {
+            active: t.api.context.active,
+            with: <T>(context: otel.Context, fn: () => T): T => {
+              t.manager.with(context, fn);
+              return undefined as T;
+            },
+          },
+        })),
+      ];
+      for (const { traces, ...api } of apis as (typeof t.api & {
+        traces?: boolean;
+      })[]) {
+        const attempts: string[] = [];
+        const hw = ctx.create({
+          opentelemetry: { api, traces },
+          fetch: t.instrumentedFetch,
+          onAttempt: (event) => {
+            attempts.push(event.outcome);
+          },
+        });
+        const ep = await hw.createEndpoint({
+          tenantId: "acme",
+          url: receiver.url,
+        });
+        await t.inRequest(() =>
+          hw.send({ tenantId: "acme", eventType: "e", payload: {} }),
+        );
+        expect(await hw.runOnce()).toBe(1);
+        expect(attempts).toEqual(["succeeded"]);
+        await hw.deleteEndpoint(ep.id);
+      }
+      expect(receiver.requests).toHaveLength(apis.length);
+      for (const request of receiver.requests) {
+        expect(request.headers.traceparent).toBeUndefined();
+      }
+      expect(t.spans("POST")).toEqual([]);
     } finally {
       t.close();
     }
