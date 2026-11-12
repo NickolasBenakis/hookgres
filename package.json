@@ -1,7 +1,7 @@
 {
   "name": "hookgres",
   "version": "0.5.1",
-  "description": "Hookgres: webhooks that commit with your data. Signed, retried, logged webhooks queued in your own Postgres transaction. TypeScript, no extra infrastructure.",
+  "description": "Transactional outbox for webhooks on Postgres: webhook delivery that commits with your data. Signed with Standard Webhooks, retried, logged. TypeScript, no extra infrastructure.",
   "keywords": [
     "webhooks",
     "postgres",
