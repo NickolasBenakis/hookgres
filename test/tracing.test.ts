@@ -7,11 +7,11 @@ import {
   W3CTraceContextPropagator,
 } from "@opentelemetry/core";
 import {
-  BasicTracerProvider,
   InMemorySpanExporter,
   type ReadableSpan,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Receiver, startReceiver, useHookgres } from "./helpers.js";
 
@@ -31,12 +31,27 @@ afterEach(async () => {
  */
 function tracing() {
   const exporter = new InMemorySpanExporter();
-  const provider = new BasicTracerProvider({
-    spanProcessors: [new SimpleSpanProcessor(exporter)],
+  const provider = new TracerProvider({
+    spanProcessors: [new SimpleSpanProcessor({ exporter })],
   });
   const manager = new AsyncLocalStorageContextManager().enable();
   const propagator = new CompositePropagator({
-    propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+    propagators: [
+      new W3CTraceContextPropagator(),
+      new W3CBaggagePropagator(),
+      // Like Jaeger's: baggage under its own keys, not "baggage".
+      {
+        inject(context: otel.Context, carrier: Record<string, string>) {
+          for (const [key, entry] of otel.propagation
+            .getBaggage(context)
+            ?.getAllEntries() ?? []) {
+            carrier[`uberctx-${key}`] = entry.value;
+          }
+        },
+        extract: (context: otel.Context) => context,
+        fields: () => [],
+      },
+    ],
   });
   const api = {
     metrics: { getMeter: () => createNoopMeter() },
@@ -75,6 +90,7 @@ function tracing() {
   };
   return {
     api,
+    manager,
     spans,
     inRequest,
     close: () => manager.disable(),
@@ -252,6 +268,58 @@ describe("OpenTelemetry traces", () => {
       await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
       expect(await hw.runOnce()).toBe(1);
       expect(receiver.requests).toHaveLength(1);
+    } finally {
+      t.close();
+    }
+  });
+
+  it("starts each attempt's own trace even inside a request", async () => {
+    const t = tracing();
+    try {
+      const hw = ctx.create({ opentelemetry: { api: t.api } });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      await t.inRequest(() =>
+        hw.send({ tenantId: "acme", eventType: "e", payload: {} }),
+      );
+      // e.g. drain() from a cron route
+      await t.inRequest(() => hw.runOnce());
+      const cron = t.spans("POST /invoices")[1];
+      const [deliver] = t.spans("deliver webhook");
+      expect(deliver?.parentSpanContext).toBeUndefined();
+      expect(deliver?.spanContext().traceId).not.toBe(
+        cron?.spanContext().traceId,
+      );
+      expect(deliver?.links).toHaveLength(1);
+    } finally {
+      t.close();
+    }
+  });
+
+  it("sends once when the context manager fails after the request started", async () => {
+    const t = tracing();
+    try {
+      const api = {
+        ...t.api,
+        context: {
+          active: t.api.context.active,
+          with: <T>(context: otel.Context, fn: () => T): T => {
+            t.manager.with(context, fn);
+            throw new Error("context manager broke on exit");
+          },
+        },
+      };
+      const attempts: string[] = [];
+      const hw = ctx.create({
+        opentelemetry: { api },
+        onAttempt: (event) => {
+          attempts.push(event.outcome);
+        },
+      });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      expect(await hw.runOnce()).toBe(1);
+      expect(receiver.requests).toHaveLength(1);
+      expect(attempts).toEqual(["succeeded"]);
     } finally {
       t.close();
     }

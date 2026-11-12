@@ -212,10 +212,13 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /** Called when Hookgres disables an endpoint after failing for `disableEndpointAfterMs`. Errors are handled like `onAttempt`'s. */
   onEndpointDisabled?: (event: EndpointDisabledEvent) => void;
   /**
-   * Report metrics through OpenTelemetry: delivery attempts and their
-   * duration, disabled endpoints, worker errors and, from the database, the
-   * queue's size and lag. Pass your own `@opentelemetry/api` module; Hookgres
-   * doesn't depend on it, and without this option records nothing.
+   * Report metrics and traces through OpenTelemetry. Metrics: delivery
+   * attempts and their duration, disabled endpoints, worker errors and, from
+   * the database, the queue's size and lag. Traces: a span per `send()` and
+   * one per delivery attempt, linked to it; storing the link needs migration
+   * 5, so run `migrate()` first, or set `traces: false`. Pass your own
+   * `@opentelemetry/api` module; Hookgres doesn't depend on it, and without
+   * this option records nothing.
    *
    * @example
    * import * as otel from "@opentelemetry/api";
@@ -2284,21 +2287,23 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       return;
     }
 
-    const outcome = this.telemetry
-      ? await this.telemetry.traceAttempt(
-          {
-            deliveryId: delivery.id,
-            messageId: delivery.message_id,
-            endpointId: delivery.endpoint_id,
-            tenantId: delivery.tenant_id,
-            eventType: delivery.event_type,
-            attemptNumber: delivery.attempt_count,
-            url: delivery.url,
-            traceContext: delivery.trace_context ?? null,
-          },
-          () => this.attempt(delivery),
-        )
-      : await this.attempt(delivery);
+    // No span without an HTTP request: a payload that failed to load.
+    const outcome =
+      this.telemetry && !delivery.loadError
+        ? await this.telemetry.traceAttempt(
+            {
+              deliveryId: delivery.id,
+              messageId: delivery.message_id,
+              endpointId: delivery.endpoint_id,
+              tenantId: delivery.tenant_id,
+              eventType: delivery.event_type,
+              attemptNumber: delivery.attempt_count,
+              url: delivery.url,
+              traceContext: delivery.trace_context ?? null,
+            },
+            () => this.attempt(delivery),
+          )
+        : await this.attempt(delivery);
     const attemptNumber = delivery.attempt_count;
     // Postgres text can't hold NUL; binary response bodies would make the
     // write fail and the delivery re-send forever.

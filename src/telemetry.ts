@@ -53,7 +53,7 @@ export interface OtelMeter {
  */
 export interface OpenTelemetryApi {
   metrics: { getMeter(name: string, version?: string): OtelMeter };
-  /** For traces; all four of these are needed, as in the real module. */
+  /** For traces: `trace`, `context`, `propagation` and `ROOT_CONTEXT` are all needed, as in the real module. */
   trace?: {
     getTracer(name: string, version?: string): OtelTracer;
     setSpan(context: OtelContext, span: OtelSpan): OtelContext;
@@ -96,6 +96,7 @@ export interface OtelTracer {
       kind?: number;
       attributes?: Attributes;
       links?: { context: OtelSpanContext }[];
+      root?: boolean;
     },
     context?: OtelContext,
   ): OtelSpan;
@@ -128,8 +129,8 @@ const SPAN_STATUS_ERROR = 2;
 const MAX_TRACE_CONTEXT_BYTES = 1024;
 
 type TracingApi = Required<
-  Pick<OpenTelemetryApi, "trace" | "context" | "propagation">
-> & { ROOT_CONTEXT?: OtelContext };
+  Pick<OpenTelemetryApi, "trace" | "context" | "propagation" | "ROOT_CONTEXT">
+>;
 
 /** What `traceAttempt` needs to know about the delivery. */
 export interface TracedDelivery {
@@ -170,14 +171,15 @@ export class Telemetry {
     readStats: () => Promise<QueueStats>,
     onError: (error: unknown) => void,
   ) {
-    const { trace, context, propagation } = options.api;
-    if (options.traces !== false && trace && context && propagation) {
-      this.tracing = {
-        trace,
-        context,
-        propagation,
-        ROOT_CONTEXT: options.api.ROOT_CONTEXT,
-      };
+    const { trace, context, propagation, ROOT_CONTEXT } = options.api;
+    if (
+      options.traces !== false &&
+      trace &&
+      context &&
+      propagation &&
+      ROOT_CONTEXT
+    ) {
+      this.tracing = { trace, context, propagation, ROOT_CONTEXT };
       this.tracer = trace.getTracer("hookgres");
     }
     const meter = options.api.metrics.getMeter("hookgres");
@@ -314,8 +316,11 @@ export class Telemetry {
         tracing.context.active(),
       );
       const carrier: Record<string, string> = {};
+      // From a context holding only the span: no propagator can add the
+      // caller's baggage (application data, possibly personal) to what's
+      // stored.
       tracing.propagation.inject(
-        tracing.trace.setSpan(tracing.context.active(), span),
+        tracing.trace.setSpan(tracing.ROOT_CONTEXT, span),
         carrier,
       );
       traceContext = storable(carrier);
@@ -379,6 +384,9 @@ export class Telemetry {
           kind: SPAN_KIND_CLIENT,
           attributes,
           links: linkTo(tracing, delivery.traceContext),
+          // Its own trace even when run inside a request, e.g. drain() from
+          // a cron route: retries can come a day later.
+          root: true,
         },
         tracing.context.active(),
       );
@@ -444,16 +452,17 @@ async function runIn<R>(
   run: () => Promise<R>,
 ): Promise<R> {
   if (!context) return run();
-  let started = false;
+  let running: Promise<R> | undefined;
   try {
     return await tracing.context.with(context, () => {
-      started = true;
-      return run();
+      running = run();
+      return running;
     });
-  } catch (error) {
-    // The context manager itself failed: send anyway, untraced.
-    if (!started) return run();
-    throw error;
+  } catch {
+    // The context manager itself failed: send anyway, untraced, and never
+    // twice. An error from the request itself is the request's.
+    if (!running) return run();
+    return running;
   }
 }
 
@@ -482,7 +491,7 @@ function linkTo(
 ): { context: OtelSpanContext }[] {
   if (!traceContext) return [];
   const extracted = tracing.propagation.extract(
-    tracing.ROOT_CONTEXT ?? tracing.context.active(),
+    tracing.ROOT_CONTEXT,
     traceContext,
   );
   const context = tracing.trace.getSpanContext(extracted);

@@ -118,16 +118,19 @@ webhook from the request that caused it to every attempt to deliver it:
   context with the message.
 - **`deliver webhook`** (client), one per HTTP attempt, **linked** to the
   `send webhook` span. Each attempt starts its own trace instead of joining
-  the request's: retries can run for a day, and a day-long trace confuses
+  the request's, even when the worker runs inside one, such as `drain()` in
+  a cron route: retries can run for a day, and a day-long trace confuses
   most tracing backends. Follow the link to get from one to the other.
 
 The attempt span is active during the request, so if you also use an HTTP
-instrumentation, its span nests under it. Attributes:
+instrumentation, its span nests under it. An attempt that fails before any
+request is made, such as a payload that couldn't be loaded, has no span; it
+still counts in the metrics. Attributes:
 
-| Span              | Attributes                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `send webhook`    | `messaging.system`, `messaging.operation.type` (`send`), `messaging.message.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.delivery_count`, `hookgres.deduplicated`                                                                                |
-| `deliver webhook` | `messaging.message.id`, `hookgres.delivery.id`, `hookgres.endpoint.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.attempt_number`, `http.request.method`, `http.response.status_code`, `server.address`, `server.port`, `url.scheme`, `error.type` |
+| Span              | Attributes                                                                                                                                                                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send webhook`    | `messaging.system`, `messaging.operation.type` (`send`), `messaging.message.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.delivery_count`, `hookgres.deduplicated`                                                                                                                                            |
+| `deliver webhook` | `messaging.system`, `messaging.operation.type` (`process`), `messaging.message.id`, `hookgres.delivery.id`, `hookgres.endpoint.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.attempt_number`, `http.request.method`, `http.response.status_code`, `server.address`, `server.port`, `url.scheme`, `error.type` |
 
 Span attributes can be specific (ids, tenants): traces are sampled and
 stored per request, not aggregated into series like metrics.
@@ -137,9 +140,13 @@ What Hookgres leaves out on purpose:
 - **The endpoint URL.** Many webhook URLs carry a secret in the path or
   query, so only the host, port and scheme are recorded.
 - **`traceparent` on the webhook request.** Your trace ids would go to every
-  customer. If an HTTP instrumentation adds one anyway, that's its setting.
+  customer. Hookgres never adds it, but an HTTP instrumentation for `fetch`
+  (undici) or `node:http` injects it into every outgoing request, webhooks
+  included. To keep it off webhooks, configure that instrumentation to skip
+  them, for example with its `ignoreOutgoingRequestHook`, or to not inject
+  for outgoing requests.
 - **Baggage.** It's application data, possibly personal, so it isn't stored
-  with the message. Only the trace context is (`traceparent`, `tracestate`,
+  with the message, whichever propagator you use. Only the trace context is (`traceparent`, `tracestate`,
   or your propagator's equivalent), and only if under 1 KB.
 
 Traces need the full `@opentelemetry/api` module (`trace`, `context` and
