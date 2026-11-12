@@ -419,7 +419,12 @@
     line-height: 1.1; letter-spacing: -0.03em; font-weight: 700;
     margin: 0; text-wrap: balance;
   }
-  .kicker { margin: 0 0 10px; font-size: 14px; font-weight: 500; color: var(--accent); }
+  /* Section labels name the real thing in mono, led by the same packet mark the sketch uses. */
+  .kicker {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
+    font: 500 12.5px/1.2 var(--mono); letter-spacing: 0; color: var(--ink-2);
+  }
+  .kicker::before { content: ""; flex: none; width: 14px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent); }
   .sub { font-size: 17px; line-height: 1.55; letter-spacing: -0.01em; color: var(--ink-2); margin: 16px 0 0; max-width: 34em; text-wrap: pretty; }
   .sub code { color: var(--ink); }
   .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(36px, 6vw, 80px); align-items: center; }
@@ -447,8 +452,6 @@
   /* Windows (delivery log, simulator) */
   .window { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; text-align: left; }
   .window-bar { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
-  .dots { display: flex; gap: 7px; }
-  .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
   .window-bar .title { font-weight: 500; color: var(--ink); }
   .window-bar .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; letter-spacing: 0; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .log { padding: 6px 18px 12px; }
@@ -565,6 +568,7 @@
 
   /* Retry chart: attempts evenly spaced, elapsed time on a log scale, so the curve is the backoff. */
   .chart { position: relative; height: 248px; }
+  .chart-caption { position: absolute; left: 24px; top: 4px; font-size: 12px; color: var(--ink-3); }
   .chart-plot { position: absolute; left: 64px; right: 28px; top: 44px; bottom: 34px; }
   .chart-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .chart-svg path, .chart-svg line { vector-effect: non-scaling-stroke; }
@@ -609,9 +613,10 @@
     /* Too narrow for eight chips side by side: the dots carry the colour. */
     .mark-chip { display: none; }
     .chart { height: 200px; }
-    .chart-plot { left: 44px; right: 16px; top: 20px; }
+    .chart-plot { left: 44px; right: 16px; top: 34px; }
+    .chart-caption { left: 10px; top: 0; font-size: 11.5px; }
     .chart-x { left: 44px; right: 16px; }
-    .chart-y .tick { left: 10px; top: calc(20px + (1 - var(--y)) * (100% - 54px)); font-size: 10px; }
+    .chart-y .tick { left: 10px; top: calc(34px + (1 - var(--y)) * (100% - 68px)); font-size: 10px; }
     .chart-x .tick { font-size: 10px; }
     .sim-track { padding: 14px 14px 10px 0; }
     .sim-status { padding: 14px 16px; }
@@ -720,23 +725,23 @@
     .hero-field { -webkit-mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 15%, transparent 75%); mask-image: radial-gradient(ellipse 90% 50% at 50% 70%, #000 15%, transparent 75%); }
   }
 
-  /* The code window floats: a light behind it drifts with the cursor and the card leans in. */
+  /* The code window floats. The cursor is the light: the card leans toward it and its
+     shadow falls away from it, so depth comes from a shadow, not a glow. */
   .hero-stage { position: relative; perspective: 1400px; min-width: 0; }
-  .hero-glow {
-    position: absolute; inset: 8% -6% -10%; z-index: -1; border-radius: 40px; pointer-events: none;
-    background:
-      radial-gradient(50% 55% at 35% 40%, color-mix(in oklch, var(--accent) 34%, transparent), transparent 70%),
-      radial-gradient(45% 50% at 70% 70%, color-mix(in oklch, oklch(70% 0.14 200) 26%, transparent), transparent 70%);
+  .hero-shadow {
+    position: absolute; inset: 10% 10% 28px; z-index: -1; border-radius: 28px; pointer-events: none;
+    box-shadow: 0 36px 80px -16px oklch(28% 0.09 var(--h) / 0.34), 0 80px 140px -50px oklch(40% 0.14 var(--h) / 0.3);
     transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0);
     will-change: transform;
   }
-  :root[data-theme="dark"] .hero-glow { opacity: 0.7; }
+  /* A shadow can't show on true black, so dark mode keeps a faint tinted underlight. */
+  :root[data-theme="dark"] .hero-shadow { box-shadow: 0 40px 110px -30px oklch(55% 0.16 var(--h) / 0.32); }
   .hero-code {
     transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-    transform-style: preserve-3d; will-change: transform;
-    box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 1px 2px oklch(25% 0.05 var(--h) / 0.08), 0 24px 48px -12px oklch(25% 0.08 var(--h) / 0.28), 0 60px 120px -40px oklch(35% 0.12 var(--h) / 0.35);
+    will-change: transform;
+    box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 0 0 1px oklch(25% 0.05 var(--h) / 0.06), 0 1px 2px oklch(25% 0.05 var(--h) / 0.1), 0 8px 20px -8px oklch(25% 0.08 var(--h) / 0.25);
   }
-  :root[data-theme="dark"] .hero-code { box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 0 0 1px oklch(100% 0 0 / 0.1), 0 40px 100px -30px oklch(55% 0.16 var(--h) / 0.35); }
+  :root[data-theme="dark"] .hero-code { box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.08), 0 0 0 1px oklch(100% 0 0 / 0.1); }
 
   /* Cursor spotlight: the card's edge catches the light where the pointer is. */
   [data-spot] { position: relative; }
@@ -751,7 +756,7 @@
   }
   [data-spot][data-lit]::after { opacity: 1; }
   .code[data-spot] { background: radial-gradient(520px circle at var(--mx, -500px) var(--my, -500px), oklch(100% 0 0 / 0.05), transparent 45%), var(--code-bg); }
-  .window[data-spot], .seen-card[data-spot] { background: radial-gradient(420px circle at var(--mx, -500px) var(--my, -500px), color-mix(in oklch, var(--accent) 5%, transparent), transparent 60%), var(--surface); }
+  .window[data-spot] { background: radial-gradient(420px circle at var(--mx, -500px) var(--my, -500px), color-mix(in oklch, var(--accent) 5%, transparent), transparent 60%), var(--surface); }
 
   /* Blueprint sketch */
   .sketch-band { padding-top: clamp(48px, 6vw, 80px); }
@@ -779,23 +784,16 @@
   .sk-dot-warn { fill: var(--warn); }
   .sk-dot-bad { fill: var(--bad); }
   .sk-line { fill: none; stroke: color-mix(in oklch, var(--ink) 26%, transparent); stroke-width: 1.25; }
-  .sk-retry { stroke: color-mix(in oklch, var(--bad) 45%, transparent); stroke-dasharray: 0.008 0.008; }
+  .sk-retry { stroke: color-mix(in oklch, var(--bad) 45%, transparent); stroke-dasharray: 5 6; }
   .sk-streak { fill: none; stroke-width: 2.5; stroke-linecap: round; }
   .sk-head-halo { opacity: 0.22; }
-  /* First view: lines draw themselves and the boxes settle in, once. */
-  .sk-line:not(.sk-retry) { stroke-dasharray: 1; }
-  .sk-line { transition: stroke-dashoffset 900ms var(--ease-out) 250ms, opacity 400ms var(--ease) 900ms; }
-  .sk-fade { transition: opacity 500ms var(--ease-out), transform 600ms var(--ease-out); transition-delay: calc(var(--d) * 60ms); }
-  .flow-sketch[data-pending] .sk-line:not(.sk-retry) { stroke-dashoffset: 1; }
-  .flow-sketch[data-pending] .sk-retry { opacity: 0; }
-  .flow-sketch[data-pending] .sk-fade { opacity: 0; transform: translateY(6px); }
   @media (max-width: 640px) {
     .flow-sketch { margin-top: 24px; border-radius: 16px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .hero-code, .hero-glow { transform: none; }
-    .mark-dot, .chart-head, .sk-line, .sk-fade, [data-spot]::after { transition: none; }
+    .hero-code, .hero-shadow { transform: none; }
+    .mark-dot, .chart-head, [data-spot]::after { transition: none; }
     .mark-chip .attempt { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -880,7 +878,7 @@
         </div>
 
         <div class="hero-stage">
-        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-shadow" aria-hidden="true"></div>
         <div class="code hero-code" data-spot>
           <div class="bar">
             <div class="tabs" role="tablist" aria-label="Example code">
@@ -947,7 +945,7 @@ hookgres.start();
 
   <section class="band sketch-band">
     <div class="wrap">
-      <p class="kicker">How it flows</p>
+      <p class="kicker">hookgres.send()</p>
       <h2>One commit in. Every endpoint, signed and retried.</h2>
       <p class="sub"><code>send()</code> writes a row next to your data. After <code>COMMIT</code>, workers claim it with <code>SKIP LOCKED</code>, sign the request and deliver it to each endpoint. A failure goes back on the schedule.</p>
       <figure class="flow-sketch" data-spot>
@@ -961,76 +959,76 @@ hookgres.start();
             <rect class="sk-paper" x="0" y="0" width="1200" height="380" fill="url(#sk-grid)"/>
 
             <g class="sk-lines">
-              <path class="sk-line" id="sk-a1" d="M220 192C270 192 270 161 324 161" pathLength="1"/>
-              <path class="sk-line" id="sk-a2" d="M220 192C270 192 270 227 324 227" pathLength="1"/>
-              <path class="sk-line" id="sk-m1" d="M656 227C712 227 704 130 760 130" pathLength="1"/>
-              <path class="sk-line" id="sk-m2" d="M656 227C712 227 704 190 760 190" pathLength="1"/>
-              <path class="sk-line" id="sk-m3" d="M656 227C712 227 704 250 760 250" pathLength="1"/>
-              <path class="sk-line" id="sk-e1" d="M910 130C945 130 945 122 980 122" pathLength="1"/>
-              <path class="sk-line" id="sk-e2" d="M910 190C945 190 945 190 980 190" pathLength="1"/>
-              <path class="sk-line" id="sk-e3" d="M910 250C945 250 945 258 980 258" pathLength="1"/>
-              <path class="sk-line sk-retry" id="sk-r3" d="M1078 284C1078 360 600 360 560 254" pathLength="1"/>
+              <path class="sk-line" id="sk-a1" d="M220 192C270 192 270 161 324 161"/>
+              <path class="sk-line" id="sk-a2" d="M220 192C270 192 270 227 324 227"/>
+              <path class="sk-line" id="sk-m1" d="M656 227C712 227 704 130 760 130"/>
+              <path class="sk-line" id="sk-m2" d="M656 227C712 227 704 190 760 190"/>
+              <path class="sk-line" id="sk-m3" d="M656 227C712 227 704 250 760 250"/>
+              <path class="sk-line" id="sk-e1" d="M910 130C945 130 945 122 980 122"/>
+              <path class="sk-line" id="sk-e2" d="M910 190C945 190 945 190 980 190"/>
+              <path class="sk-line" id="sk-e3" d="M910 250C945 250 945 258 980 258"/>
+              <path class="sk-line sk-retry" id="sk-r3" d="M1078 284C1078 360 600 360 560 254"/>
             </g>
-            <text class="sk-note sk-note-bad sk-fade" style="--d:9" x="820" y="370" text-anchor="middle">500 · back on the schedule, 5s → 10h</text>
+            <text class="sk-note sk-note-bad" x="820" y="370" text-anchor="middle">500 · back on the schedule, 5s → 10h</text>
 
-            <g class="sk-node sk-fade" style="--d:0">
+            <g class="sk-node">
               <rect class="sk-box" x="24" y="150" width="196" height="84" rx="12"/>
               <text class="sk-title" x="44" y="185">Your app</text>
               <text class="sk-mono" x="44" y="209">hookgres.send()</text>
             </g>
 
-            <g class="sk-fade" style="--d:1">
+            <g>
               <rect class="sk-frame" x="300" y="56" width="380" height="272" rx="18"/>
               <text class="sk-title" x="324" y="90">Postgres</text>
               <text class="sk-mono" x="656" y="90" text-anchor="end">one transaction</text>
               <text class="sk-mono sk-dim" x="324" y="122">BEGIN</text>
               <text class="sk-mono sk-ok" x="324" y="300">COMMIT</text>
             </g>
-            <g class="sk-node sk-fade" style="--d:2">
+            <g class="sk-node">
               <rect class="sk-box" x="324" y="134" width="332" height="54" rx="10"/>
               <rect class="sk-glow" data-flash="row1" x="324" y="134" width="332" height="54" rx="10"/>
               <text class="sk-label" x="344" y="158">invoices</text>
               <text class="sk-mono" x="344" y="177">in_123 · status = paid</text>
             </g>
-            <g class="sk-node sk-fade" style="--d:3">
+            <g class="sk-node">
               <rect class="sk-box" x="324" y="200" width="332" height="54" rx="10"/>
               <rect class="sk-glow" data-flash="row2" x="324" y="200" width="332" height="54" rx="10"/>
               <text class="sk-label" x="344" y="224">hookgres.messages</text>
               <text class="sk-mono" x="344" y="243">invoice.paid · 3 deliveries</text>
             </g>
 
-            <text class="sk-mono sk-dim sk-fade" style="--d:4" x="835" y="92" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
-            <g class="sk-node sk-fade" style="--d:4">
+            <text class="sk-mono sk-dim" x="835" y="92" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
+            <g class="sk-node">
               <rect class="sk-box" x="760" y="110" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w1" x="760" y="110" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="135">worker 1</text>
             </g>
-            <g class="sk-node sk-fade" style="--d:5">
+            <g class="sk-node">
               <rect class="sk-box" x="760" y="170" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w2" x="760" y="170" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="195">worker 2</text>
             </g>
-            <g class="sk-node sk-fade" style="--d:6">
+            <g class="sk-node">
               <rect class="sk-box" x="760" y="230" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w3" x="760" y="230" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="255">worker 3</text>
             </g>
 
-            <g class="sk-node sk-fade" style="--d:6">
+            <g class="sk-node">
               <rect class="sk-box" x="980" y="96" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-ok" data-flash="e1" x="980" y="96" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="119">acme.com</text>
               <text class="sk-mono sk-ok" x="998" y="137">204 · first attempt</text>
               <circle class="sk-dot sk-dot-ok" cx="1156" cy="122" r="4"/>
             </g>
-            <g class="sk-node sk-fade" style="--d:7">
+            <g class="sk-node">
               <rect class="sk-box" x="980" y="164" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-ok" data-flash="e2" x="980" y="164" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="187">shop.example</text>
               <text class="sk-mono sk-warn" x="998" y="205">503 → 204 · attempt 3</text>
               <circle class="sk-dot sk-dot-warn" cx="1156" cy="190" r="4"/>
             </g>
-            <g class="sk-node sk-fade" style="--d:8">
+            <g class="sk-node">
               <rect class="sk-box" x="980" y="232" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-bad" data-flash="e3" x="980" y="232" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="255">crm.example</text>
@@ -1048,7 +1046,7 @@ hookgres.start();
   <section class="band">
     <div class="wrap split flip">
       <div>
-        <p class="kicker">Transactional</p>
+        <p class="kicker">BEGIN … COMMIT</p>
         <h2>Queued in your transaction. Sent only if it commits.</h2>
         <p class="sub">A webhook service is a second system. Call it after your commit, and a crash in between loses the event. Call it before, and a rollback leaves your customer with a webhook for an invoice that was never paid. Hookgres writes the webhook in the same transaction as your data, so you get the outbox and the delivery in one library.</p>
         <p class="sub">Workers claim deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like.</p>
@@ -1082,7 +1080,7 @@ hookgres.start();
     <div class="wrap tx-bug" id="rollback-demo">
       <div class="head-row">
         <div>
-          <p class="kicker">The bug it fixes</p>
+          <p class="kicker">ROLLBACK</p>
           <h2>A job queue can't roll back with your data.</h2>
           <p class="sub">The same payment code, run twice. First it queues the webhook with BullMQ inside the transaction: the payment rolls back, but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. Any queue outside Postgres does the same. Then the queue is swapped for <code>hookgres.send()</code>, and the webhook rolls back with the payment. Real BullMQ, Redis and Postgres, played at 2× speed.</p>
         </div>
@@ -1097,15 +1095,15 @@ hookgres.start();
       <div class="seen">
         <h3>Not a contrived example. Other teams hit these bugs in 2026:</h3>
         <ul>
-          <li class="seen-card" data-spot>
+          <li class="seen-card">
             <blockquote>“…the entire batch is rolled back, but the webhook for the earlier (now rolled-back) request has already been dispatched.”</blockquote>
             <a class="seen-src" href="https://issues.apache.org/jira/browse/FINERACT-2570">Apache Fineract, March 2026</a>
           </li>
-          <li class="seen-card" data-spot>
+          <li class="seen-card">
             <blockquote>“REST API dispatches events for writes that were rolled back”</blockquote>
             <a class="seen-src" href="https://github.com/netbox-community/netbox/issues/22978">NetBox, August 2026</a>
           </li>
-          <li class="seen-card" data-spot>
+          <li class="seen-card">
             <blockquote>“If that process dies — for any reason — the webhook dies with it.”</blockquote>
             <a class="seen-src" href="https://dodopayments.com/engineering/building-webhooks-never-fail">Dodo Payments, January 2026</a>
           </li>
@@ -1119,7 +1117,7 @@ hookgres.start();
     <div class="wrap">
       <div class="head-row">
         <div>
-          <p class="kicker">Retries</p>
+          <p class="kicker">retry schedule · 0s → 27.6h</p>
           <h2>Watch it retry.</h2>
           <p class="sub">Pick how your customer's server behaves and send an event. This runs the default schedule, with 28 hours squeezed into a few seconds.</p>
         </div>
@@ -1136,9 +1134,10 @@ hookgres.start();
       </div>
       <div class="demo sim">
         <div class="window sim-window">
-          <div class="window-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
+          <div class="window-bar"><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
           <div class="sim-track" aria-hidden="true">
             <div class="chart">
+              <span class="chart-caption">Time since the first attempt</span>
               <div class="chart-y"></div>
               <div class="chart-plot">
                 <svg class="chart-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden="true">
@@ -1156,7 +1155,7 @@ hookgres.start();
               <div class="chart-x"></div>
             </div>
           </div>
-          <p class="sim-status" role="status" aria-live="polite">Press Send event.</p>
+          <p class="sim-status" role="status" aria-live="polite">Pick how the receiver behaves, then press Send event.</p>
         </div>
       </div>
       <div class="numbers">
@@ -1172,7 +1171,7 @@ hookgres.start();
   <section class="band">
     <div class="wrap split">
       <div>
-        <p class="kicker">Signatures</p>
+        <p class="kicker">webhook-signature</p>
         <h2>What your customers receive.</h2>
         <p class="sub">A JSON envelope and three signed headers. The <code>webhook-id</code> stays the same across retries. Delivery is at least once, so receivers deduplicate on it.</p>
         <p class="langs"><b>Verify in any language</b> with the official Standard Webhooks libraries: JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir.</p>
@@ -1200,13 +1199,12 @@ hookgres.start();
 
   <section class="band alt">
     <div class="wrap">
-      <p class="kicker">Delivery log</p>
+      <p class="kicker">hookgres.deliveries</p>
       <h2>Every attempt is a row you can query.</h2>
       <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
       <div class="log-stage">
         <div class="window" data-spot role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
           <div class="window-bar" aria-hidden="true">
-            <div class="dots"><i></i><i></i><i></i></div>
             <span class="title">invoice.paid</span>
             <span class="meta log-id">msg_01m6yb1bw7xncca4sw5028556c</span>
           </div>
@@ -1272,7 +1270,7 @@ hookgres.start();
     <div class="wrap">
       <div class="head-row">
         <div>
-          <p class="kicker">In your terminal</p>
+          <p class="kicker">npm install hookgres pg</p>
           <h2>Install it, send inside a transaction, watch it retry.</h2>
           <p class="sub">The published package, a real Postgres and a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged. Played at 2× speed.</p>
         </div>
@@ -1289,7 +1287,7 @@ hookgres.start();
 
   <section class="band alt">
     <div class="wrap">
-      <p class="kicker">Compared</p>
+      <p class="kicker">library vs. hosted service</p>
       <h2>A library, not a service.</h2>
       <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
       <table class="table">
@@ -1319,7 +1317,7 @@ hookgres.start();
   <section class="band cta">
     <div class="wrap split">
       <div>
-        <h2>Ship webhooks this afternoon.</h2>
+        <h2>Your next webhook ships in your next&nbsp;commit.</h2>
         <p class="sub">Add the package, run <code>migrate()</code>, start sending. Or try the playground first: Postgres plus three fake customer endpoints (healthy, flaky and down) at <code>localhost:3000</code>.</p>
         <div class="actions">
           <a class="pill large" href="/docs/getting-started">Get started</a>

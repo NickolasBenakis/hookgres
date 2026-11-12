@@ -55,7 +55,10 @@
   // Hero field
   const hero = document.querySelector(".hero");
   const canvas = document.querySelector(".hero-field");
-  if (hero && canvas) {
+  const copyEl = document.querySelector(".hero-copy");
+  const stageEl = document.querySelector(".hero-stage");
+  const capsEl = document.querySelector(".hero .caps");
+  if (hero && canvas && copyEl && stageEl && capsEl) {
     const ctx = canvas.getContext("2d");
     const GAP = 22;
     // Touch screens have no cursor to light the field, so they get the still
@@ -110,7 +113,7 @@
         for (const s of streaks) {
           if (s.row !== d.row) continue;
           const behind = s.x - d.x;
-          if (behind > 0 && behind < s.len)
+          if (behind > 0 && behind < s.len && d.x > s.start)
             glow = Math.max(glow, (1 - behind / s.len) * s.alpha);
         }
         const size = 1.3 + glow * 1.4;
@@ -123,11 +126,12 @@
       // A webhook in flight: a short comet along one row of the grid.
       for (const s of streaks) {
         const y = s.row * GAP - GAP / 2;
+        const tail = Math.max(s.start, s.x - s.len);
         const grad = ctx.createLinearGradient(s.x - s.len, y, s.x, y);
         grad.addColorStop(0, `rgba(${ar},${ag},${ab},0)`);
         grad.addColorStop(1, `rgba(${ar},${ag},${ab},${0.55 * s.alpha})`);
         ctx.fillStyle = grad;
-        ctx.fillRect(s.x - s.len, y - 0.75, s.len, 1.5);
+        ctx.fillRect(tail, y - 0.75, s.x - tail, 1.5);
         ctx.fillStyle = `rgba(${ar},${ag},${ab},${0.9 * s.alpha})`;
         ctx.beginPath();
         ctx.arc(s.x, y, 1.9, 0, Math.PI * 2);
@@ -154,20 +158,35 @@
 
       if (now - lastSpawn > 700 + Math.random() * 900 && streaks.length < 4) {
         lastSpawn = now;
-        const rows = Math.floor(h / GAP);
-        streaks.push({
-          row: 1 + Math.floor(Math.random() * Math.max(1, rows - 1)),
-          x: w * (0.25 + Math.random() * 0.2),
-          len: 90 + Math.random() * 70,
-          speed: 260 + Math.random() * 180,
-          alpha: 0,
-        });
+        // Streaks stay out of the text: right of the copy when the hero has two
+        // columns, below it when they stack.
+        const copy = copyEl.getBoundingClientRect();
+        const sideBySide = copy.right < stageEl.getBoundingClientRect().left;
+        const minX = sideBySide ? copy.right - rect.left + 24 : 0;
+        const minRow = sideBySide
+          ? 1
+          : Math.ceil((copy.bottom - rect.top) / GAP) + 1;
+        // ...and above the feature list under the hero.
+        const rows = Math.min(
+          Math.floor(h / GAP),
+          Math.floor((capsEl.getBoundingClientRect().top - rect.top) / GAP),
+        );
+        const start = minX + Math.random() * Math.max(0, (w - minX) * 0.15);
+        if (rows > minRow)
+          streaks.push({
+            row:
+              minRow + Math.floor(Math.random() * Math.max(1, rows - minRow)),
+            start,
+            x: start,
+            len: 90 + Math.random() * 70,
+            speed: 260 + Math.random() * 180,
+            alpha: 0,
+          });
       }
       for (let i = streaks.length - 1; i >= 0; i--) {
         const s = streaks[i];
         s.x += s.speed * dt;
-        const life = s.x / w;
-        s.alpha = Math.min(1, (life - 0.25) * 6) * Math.min(1, (1 - life) * 4);
+        s.alpha = Math.min(1, (s.x - s.start) / 80, (w - s.x) / (w * 0.2));
         if (s.x - s.len > w) streaks.splice(i, 1);
       }
       draw();
@@ -181,11 +200,11 @@
     if (!still) whileVisible(hero, tick, "0px");
   }
 
-  // Floating code window: leans toward the cursor, its light drifts the other way.
+  // Floating code window: leans toward the cursor, its shadow falls away from it.
   const stage = document.querySelector(".hero-stage");
   if (stage && finePointer && !reduce) {
     const card = stage.querySelector(".hero-code");
-    const glow = stage.querySelector(".hero-glow");
+    const shadow = stage.querySelector(".hero-shadow");
     const cur = { rx: 0, ry: 0, gx: 0, gy: 0 };
     whileVisible(stage, () => {
       const rect = stage.getBoundingClientRect();
@@ -211,8 +230,8 @@
       const target = {
         rx: -ny * 2.4,
         ry: nx * 3.2,
-        gx: -nx * 22,
-        gy: -ny * 18,
+        gx: -nx * 16,
+        gy: -ny * 14,
       };
       let moving = false;
       for (const k in cur) {
@@ -222,8 +241,8 @@
       if (!moving) return;
       card.style.setProperty("--rx", `${cur.rx.toFixed(3)}deg`);
       card.style.setProperty("--ry", `${cur.ry.toFixed(3)}deg`);
-      glow.style.setProperty("--gx", `${cur.gx.toFixed(2)}px`);
-      glow.style.setProperty("--gy", `${cur.gy.toFixed(2)}px`);
+      shadow.style.setProperty("--gx", `${cur.gx.toFixed(2)}px`);
+      shadow.style.setProperty("--gy", `${cur.gy.toFixed(2)}px`);
     });
   }
 
@@ -270,7 +289,7 @@
     document.addEventListener("pointerleave", queue);
   }
 
-  // Flow sketch: draws itself once, then packets run the path of one commit.
+  // Flow sketch: packets run the path of one commit, with a beat of rest between runs.
   const sketch = document.querySelector(".flow-sketch");
   if (sketch) {
     const svg = sketch.querySelector("svg");
@@ -290,7 +309,7 @@
       bad: "var(--bad)",
     };
     // [path, start s, duration s, colour, node to light on arrival]
-    const CYCLE = 5.2;
+    const CYCLE = 6.4;
     const plan = [
       ["a1", 0, 0.6, "accent", "row1"],
       ["a2", 0, 0.6, "accent", "row2"],
@@ -375,18 +394,7 @@
       for (const node of ["row1", "row2", "e1"])
         flashes[node].style.opacity = "0.6";
     } else {
-      sketch.dataset.pending = "";
-      const reveal = new IntersectionObserver(
-        ([entry]) => {
-          if (!entry.isIntersecting) return;
-          reveal.disconnect();
-          delete sketch.dataset.pending;
-          // Packets start once the lines have finished drawing.
-          setTimeout(() => whileVisible(sketch, frame, "0px"), 1100);
-        },
-        { threshold: 0.35 },
-      );
-      reveal.observe(sketch);
+      whileVisible(sketch, frame, "0px");
     }
   }
 }
