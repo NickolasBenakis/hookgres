@@ -1,9 +1,9 @@
-# Metrics and monitoring
+# Metrics, traces and monitoring
 
 Two questions matter for webhooks in production: are they going out, and how
 far behind are they? `stats()` answers both from the database at any time.
 The `opentelemetry` option exports the same numbers, plus per-attempt
-metrics, to whatever OpenTelemetry backend you use.
+metrics and traces, to whatever OpenTelemetry backend you use.
 
 ## Read the queue with `stats()`
 
@@ -39,8 +39,8 @@ check is fine; calling it on every request isn't.
 
 ## OpenTelemetry
 
-Pass your app's `@opentelemetry/api` module and Hookgres records its metrics
-through whatever SDK and exporter you configured. Hookgres doesn't depend on
+Pass your app's `@opentelemetry/api` module and Hookgres records metrics and
+traces through whatever SDK and exporter you configured. Hookgres doesn't depend on
 OpenTelemetry; without this option it records nothing.
 
 ```ts
@@ -107,6 +107,46 @@ to `onError`.
 - The share of `hookgres.delivery.attempts` with `hookgres.outcome="failed"`
   jumping: many endpoints failing at once usually means a problem on your
   side, like a broken payload or an egress outage, not your customers'.
+
+## Traces
+
+With the same option, Hookgres also records spans, so you can follow a
+webhook from the request that caused it to every attempt to deliver it:
+
+- **`send webhook`** (producer), a child of whatever span is active when you
+  call `send()`, usually your HTTP request's. Hookgres stores its trace
+  context with the message.
+- **`deliver webhook`** (client), one per HTTP attempt, **linked** to the
+  `send webhook` span. Each attempt starts its own trace instead of joining
+  the request's: retries can run for a day, and a day-long trace confuses
+  most tracing backends. Follow the link to get from one to the other.
+
+The attempt span is active during the request, so if you also use an HTTP
+instrumentation, its span nests under it. Attributes:
+
+| Span              | Attributes                                                                                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send webhook`    | `messaging.system`, `messaging.operation.type` (`send`), `messaging.message.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.delivery_count`, `hookgres.deduplicated`                                                                                |
+| `deliver webhook` | `messaging.message.id`, `hookgres.delivery.id`, `hookgres.endpoint.id`, `hookgres.tenant_id`, `hookgres.event_type`, `hookgres.attempt_number`, `http.request.method`, `http.response.status_code`, `server.address`, `server.port`, `url.scheme`, `error.type` |
+
+Span attributes can be specific (ids, tenants): traces are sampled and
+stored per request, not aggregated into series like metrics.
+
+What Hookgres leaves out on purpose:
+
+- **The endpoint URL.** Many webhook URLs carry a secret in the path or
+  query, so only the host, port and scheme are recorded.
+- **`traceparent` on the webhook request.** Your trace ids would go to every
+  customer. If an HTTP instrumentation adds one anyway, that's its setting.
+- **Baggage.** It's application data, possibly personal, so it isn't stored
+  with the message. Only the trace context is (`traceparent`, `tracestate`,
+  or your propagator's equivalent), and only if under 1 KB.
+
+Traces need the full `@opentelemetry/api` module (`trace`, `context` and
+`propagation`), which is what you pass anyway. To record metrics only, set
+`traces: false`. Storing the trace context needs migration 5
+(`messages.trace_context`), which `migrate()` adds; run it before turning
+traces on. Messages queued before then are delivered with unlinked spans.
 
 ## Hooks
 

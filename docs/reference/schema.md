@@ -27,15 +27,16 @@ hold.
 
 ## `messages`
 
-| Column            | Type          | Notes                                                        |
-| ----------------- | ------------- | ------------------------------------------------------------ |
-| `id`              | `text`        | `msg_` followed by a time-sortable id. Sent as `webhook-id`. |
-| `tenant_id`       | `text`        |                                                              |
-| `event_type`      | `text`        |                                                              |
-| `payload`         | `jsonb`       | `NULL` once redacted.                                        |
-| `idempotency_key` | `text`        | Unique per tenant when set.                                  |
-| `created_at`      | `timestamptz` | Sent as the envelope's `timestamp`.                          |
-| `redacted_at`     | `timestamptz` | When `redactPayloads` cleared the payload, or `NULL`.        |
+| Column            | Type          | Notes                                                                       |
+| ----------------- | ------------- | --------------------------------------------------------------------------- |
+| `id`              | `text`        | `msg_` followed by a time-sortable id. Sent as `webhook-id`.                |
+| `tenant_id`       | `text`        |                                                                             |
+| `event_type`      | `text`        |                                                                             |
+| `payload`         | `jsonb`       | `NULL` once redacted.                                                       |
+| `idempotency_key` | `text`        | Unique per tenant when set.                                                 |
+| `created_at`      | `timestamptz` | Sent as the envelope's `timestamp`.                                         |
+| `redacted_at`     | `timestamptz` | When `redactPayloads` cleared the payload, or `NULL`.                       |
+| `trace_context`   | `jsonb`       | OpenTelemetry trace context of the `send()`, when traces are on, or `NULL`. |
 
 ## `deliveries`
 

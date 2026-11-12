@@ -113,4 +113,12 @@ ALTER TABLE {{schema}}.endpoints ADD COLUMN disabled_at timestamptz;
 ALTER TABLE {{schema}}.endpoints ADD COLUMN disabled_xid xid8;
 `,
   },
+  {
+    version: 5,
+    // The OpenTelemetry trace context of the send() that queued a message,
+    // so its delivery spans can link back to it. Catalog only.
+    sql: `
+ALTER TABLE {{schema}}.messages ADD COLUMN trace_context jsonb;
+`,
+  },
 ];
