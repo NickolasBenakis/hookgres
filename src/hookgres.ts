@@ -1527,30 +1527,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     values: unknown[] | undefined,
     timeoutMs: number,
   ): Promise<QueryResult<R>> {
-    const connecting = this.pool.connect();
-    let timer: NodeJS.Timeout | undefined;
-    const client = await Promise.race([
-      connecting,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `Timed out after ${timeoutMs}ms waiting for a database connection`,
-              ),
-            ),
-          timeoutMs,
-        );
-      }),
-    ]).catch((error) => {
-      // Hand back the connection if it arrives after all.
-      connecting.then(
-        (late) => late.release(),
-        () => {},
-      );
-      throw error;
-    });
-    clearTimeout(timer);
+    const client = await this.connectWithin(timeoutMs);
     try {
       // node-postgres supports a per-query query_timeout; @types/pg only
       // declares it on the client config.
@@ -1566,16 +1543,70 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       if ((error as Error).message === "Query read timeout" && pid) {
         // Wait for the cancel, so the caller never sees the timeout while the
         // statement could still commit. Bounded: the database may be gone.
-        await this.pool
-          .query({
-            text: "SELECT pg_cancel_backend($1)",
-            values: [pid],
-            query_timeout: Math.min(timeoutMs, 5 * SECOND),
-          } as pg.QueryConfig)
-          .catch(() => {});
+        // Keeping this connection checked out until then keeps the pid ours.
+        await this.cancelBackend(pid, Math.min(timeoutMs, 5 * SECOND)).catch(
+          () => {},
+        );
       }
       client.release(error as Error);
       throw explainMissingTables(error, this.schema);
+    }
+  }
+
+  /** Checks out a pool connection, giving up after `timeoutMs`. */
+  private async connectWithin(timeoutMs: number): Promise<pg.PoolClient> {
+    const connecting = this.pool.connect();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        connecting,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Timed out after ${timeoutMs}ms waiting for a database connection`,
+                ),
+              ),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } catch (error) {
+      // Hand back the connection if it arrives after all.
+      connecting.then(
+        (late) => late.release(),
+        () => {},
+      );
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Cancels a statement over a connection of its own, outside the pool: the
+   * pool may be full of connections waiting on the same lock, or on their
+   * own cancels.
+   */
+  private async cancelBackend(pid: number, timeoutMs: number): Promise<void> {
+    const Client =
+      (this.pool as unknown as { Client?: typeof pg.Client }).Client ??
+      pg.Client;
+    const client = new Client({
+      ...this.pool.options,
+      connectionTimeoutMillis: timeoutMs,
+    });
+    client.on("error", () => {});
+    try {
+      await client.connect();
+      await client.query({
+        text: "SELECT pg_cancel_backend($1)",
+        values: [pid],
+        query_timeout: timeoutMs,
+      } as pg.QueryConfig);
+    } finally {
+      client.end().catch(() => {});
     }
   }
 
@@ -1745,57 +1776,78 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       );
       claimed = await this.claim(free, allowance);
     }
-    // A lock-expired row bypasses the window's per-endpoint ranking; put
-    // anything over an endpoint's share back.
-    const kept: ClaimedDelivery[] = [];
-    const extra: ClaimedDelivery[] = [];
-    for (const row of claimed) {
-      const left = allowance.get(row.endpoint_id) ?? cap;
-      if (left > 0) {
-        allowance.set(row.endpoint_id, left - 1);
-        kept.push(row);
-      } else {
-        extra.push(row);
-      }
-    }
-    if (extra.length > 0) await this.unclaim(extra);
-
-    // The window only holds the oldest due rows. If full endpoints' backlogs
-    // fill it, look past it so other tenants still get served. That scan
-    // reads those backlogs, so after one that finds nothing, back off.
-    const full = [...allowance].filter(([, n]) => n === 0).map(([id]) => id);
-    if (
-      kept.length < free &&
-      full.length > 0 &&
-      // Monotonic: a wall-clock step back mustn't stall this for hours.
-      performance.now() >= this.wideClaimAt
-    ) {
-      try {
-        const more = await this.claimPast(free - kept.length, full);
-        for (const row of more) {
+    // These rows are committed as claimed with an attempt counted. Until
+    // they're returned or put back, an error would strand them until their
+    // lock expires, with an attempt spent and nothing sent.
+    const held = new Set(claimed);
+    const putBack = async (rows: ClaimedDelivery[]) => {
+      await this.unclaim(rows);
+      for (const row of rows) held.delete(row);
+    };
+    try {
+      // A lock-expired row bypasses the window's per-endpoint ranking; put
+      // anything over an endpoint's share back.
+      const kept: ClaimedDelivery[] = [];
+      const take = (rows: ClaimedDelivery[]) => {
+        const extra: ClaimedDelivery[] = [];
+        for (const row of rows) {
           const left = allowance.get(row.endpoint_id) ?? cap;
           if (left > 0) {
             allowance.set(row.endpoint_id, left - 1);
             kept.push(row);
           } else {
             extra.push(row);
-            await this.unclaim([row]);
           }
         }
-        if (more.length) {
-          this.wideClaimBackoff = 0;
-          this.wideClaimAt = 0;
-        } else {
+        return extra;
+      };
+      // If putting rows back fails they stay held: still worth delivering
+      // the rest, and the lock expiry recovers them.
+      const extra = take(claimed);
+      if (extra.length > 0)
+        await putBack(extra).catch((e) => this.reportError(e));
+
+      // The window only holds the oldest due rows. If full endpoints' backlogs
+      // fill it, look past it so other tenants still get served. That scan
+      // reads those backlogs, so after one that finds nothing, back off.
+      const full = [...allowance].filter(([, n]) => n === 0).map(([id]) => id);
+      if (
+        kept.length < free &&
+        full.length > 0 &&
+        // Monotonic: a wall-clock step back mustn't stall this for hours.
+        performance.now() >= this.wideClaimAt
+      ) {
+        let more: ClaimedDelivery[] | undefined;
+        try {
+          more = await this.claimPast(free - kept.length, full);
+        } catch (error) {
+          // Keep what's already claimed; report the rest.
+          this.reportError(error);
           this.backOffWideClaim();
         }
-      } catch (error) {
-        // Keep what's already claimed; report the rest.
-        this.reportError(error);
-        this.backOffWideClaim();
+        if (more) {
+          for (const row of more) held.add(row);
+          const over = take(more);
+          if (over.length > 0)
+            await putBack(over).catch((e) => this.reportError(e));
+          if (more.length) {
+            this.wideClaimBackoff = 0;
+            this.wideClaimAt = 0;
+          } else {
+            this.backOffWideClaim();
+          }
+        }
       }
+      await this.loadBodies(kept);
+      return kept;
+    } catch (error) {
+      if (held.size > 0) {
+        await this.unclaim([...held]).catch((unclaimError) =>
+          this.reportError(unclaimError),
+        );
+      }
+      throw error;
     }
-    await this.loadBodies(kept);
-    return kept;
   }
 
   /** Waits longer before the next scan past the window, up to 10 polls. */

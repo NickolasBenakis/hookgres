@@ -51,7 +51,8 @@ A few things to check on the hosts and the database:
 - **Rolling upgrades.** Workers of different Hookgres versions can share a
   schema during a deploy. A delivery is never lost or sent twice because of
   it, but a behaviour fix only holds everywhere once every worker runs the
-  new version.
+  new version. Run `migrate()` before any process on the new version starts:
+  old workers ignore new columns, but new workers need them.
 
 ## Block internal addresses (SSRF)
 

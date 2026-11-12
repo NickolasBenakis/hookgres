@@ -1118,6 +1118,116 @@ describe("worker database timeouts", () => {
     expect(rows[0].n).toBe(0);
   });
 
+  it("cancels a timed-out query even when the pool has no spare connection", async () => {
+    // The worker's only connection is the one that timed out: the cancel
+    // mustn't wait for a second one that never comes.
+    const tinyPool = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      max: 1,
+    });
+    tinyPool.on("error", () => {});
+    try {
+      const hw = ctx.create({
+        pool: tinyPool,
+        retrySchedule: [60_000],
+        requestTimeoutMs: 500,
+        lockTimeoutMs: 1000,
+        onError: () => {},
+      });
+      const ep = await hw.createEndpoint({
+        tenantId: "acme",
+        url: receiver.url,
+      });
+      receiver.respond = () => 500;
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      const locker = await ctx.pool.connect();
+      await locker.query("BEGIN");
+      await locker.query(
+        `SELECT 1 FROM "${ctx.schema}".endpoints WHERE id = $1 FOR UPDATE`,
+        [ep.id],
+      );
+      try {
+        const outcome = await Promise.race([
+          hw.runOnce().then(() => "returned"),
+          new Promise((resolve) => setTimeout(() => resolve("stuck"), 6000)),
+        ]);
+        expect(outcome).toBe("returned");
+      } finally {
+        await locker.query("ROLLBACK");
+        locker.release();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { rows } = await ctx.pool.query(
+        `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
+      );
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await tinyPool.end();
+    }
+  });
+
+  it("cancels timed-out queries while others queue for the only connection", async () => {
+    const tinyPool = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      max: 1,
+    });
+    tinyPool.on("error", () => {});
+    try {
+      const hw = ctx.create({
+        pool: tinyPool,
+        concurrency: 2,
+        retrySchedule: [60_000],
+        requestTimeoutMs: 500,
+        lockTimeoutMs: 1000,
+        onError: () => {},
+      });
+      const a = await hw.createEndpoint({ tenantId: "a", url: receiver.url });
+      const b = await hw.createEndpoint({ tenantId: "b", url: receiver.url });
+      receiver.respond = () => 500;
+      await hw.send({ tenantId: "a", eventType: "e", payload: {} });
+      await hw.send({ tenantId: "b", eventType: "e", payload: {} });
+      const locker = await ctx.pool.connect();
+      await locker.query("BEGIN");
+      await locker.query(
+        `SELECT 1 FROM "${ctx.schema}".endpoints WHERE id = ANY($1) FOR UPDATE`,
+        [[a.id, b.id]],
+      );
+      try {
+        await Promise.race([
+          hw.runOnce(),
+          new Promise((resolve) => setTimeout(resolve, 8000)),
+        ]);
+      } finally {
+        await locker.query("ROLLBACK");
+        locker.release();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { rows } = await ctx.pool.query(
+        `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
+      );
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await tinyPool.end();
+    }
+  });
+
+  it("puts claimed deliveries back when preparing them fails", async () => {
+    const hw = ctx.create({ onError: () => {} });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    (hw as unknown as { loadBodies: () => Promise<void> }).loadBodies =
+      async () => {
+        throw new Error("boom");
+      };
+    await expect(hw.runOnce()).rejects.toThrow("boom");
+    const { rows } = await ctx.pool.query(
+      `SELECT status, attempt_count, lock_token FROM "${ctx.schema}".deliveries`,
+    );
+    expect(rows).toEqual([
+      { status: "pending", attempt_count: 0, lock_token: null },
+    ]);
+  });
+
   it("returns Date objects even when the pool parses timestamps as strings", async () => {
     const stringPool = new pg.Pool({
       connectionString: inject("databaseUrl"),
