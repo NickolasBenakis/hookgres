@@ -162,6 +162,7 @@ export default defineConfig({
           { text: "Rotating secrets", link: "/guides/secret-rotation" },
           { text: "Verifying webhooks", link: "/guides/verifying" },
           { text: "Going to production", link: "/guides/production" },
+          { text: "Metrics and monitoring", link: "/guides/observability" },
           { text: "Database cost", link: "/guides/database-cost" },
           {
             text: "Fixed IPs and data residency",

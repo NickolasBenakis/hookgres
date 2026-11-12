@@ -171,8 +171,10 @@ No long-running process? Drain the queue from a cron job with
   [Typed events](https://hookgres.dev/docs/guides/typed-events).
 - **Delivery log and replay.** Status code, response body, error and timing for
   every attempt, in tables you can query. `replayDelivery(id)` sends it again.
-- **Delivery hooks.** `onAttempt` and `onEndpointDisabled` feed your metrics
-  and alerts, for example OpenTelemetry.
+- **Metrics.** `stats()` reads queue size and lag from the database, and the
+  `opentelemetry` option exports attempts, durations, errors and queue gauges
+  to your OpenTelemetry backend. `onAttempt` and `onEndpointDisabled` hooks
+  cover the rest.
 - **Instant wake-up.** With `notify: true`, workers in other processes start
   sending as soon as a `send()` commits, using LISTEN/NOTIFY.
 - **Secret rotation.** After `rotateEndpointSecret`, the old secret keeps

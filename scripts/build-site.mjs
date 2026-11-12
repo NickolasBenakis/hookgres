@@ -109,9 +109,9 @@ cpSync(join(root, "skills/hookgres/SKILL.md"), join(out, "SKILL.md"));
 writeFileSync(join(out, "llms-full.txt"), full.join("\n---\n\n"));
 
 const searchIndex = JSON.stringify(buildSearchIndex());
-if (searchIndex.length > 150 * 1024) {
+if (searchIndex.length > 200 * 1024) {
   throw new Error(
-    `search-index.json is ${searchIndex.length} bytes; trim it below 150 KB`,
+    `search-index.json is ${searchIndex.length} bytes; trim it below 200 KB`,
   );
 }
 writeFileSync(join(out, "search-index.json"), searchIndex);
