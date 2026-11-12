@@ -33,7 +33,6 @@ import type {
   SendResult,
   StandardSchemaV1,
   UpdateEndpointInput,
-  WebhookEnvelope,
 } from "./types.js";
 
 const SECOND = 1000;
@@ -229,9 +228,15 @@ interface ClaimedDelivery {
   tenant_id: string;
   message_id: string;
   event_type: string;
-  payload: unknown;
   /** Epoch ms, which every DateStyle gives the same way. */
   message_created_ms: number;
+  /**
+   * The request body, loaded after the claim and shared by every delivery of
+   * the same message. Missing if the message was deleted meanwhile.
+   */
+  body?: string;
+  /** Why the payload couldn't be loaded; recorded as a failed attempt. */
+  loadError?: string;
   /** Only possible when a replay raced a redaction. */
   redacted: boolean;
   url: string;
@@ -1522,30 +1527,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     values: unknown[] | undefined,
     timeoutMs: number,
   ): Promise<QueryResult<R>> {
-    const connecting = this.pool.connect();
-    let timer: NodeJS.Timeout | undefined;
-    const client = await Promise.race([
-      connecting,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `Timed out after ${timeoutMs}ms waiting for a database connection`,
-              ),
-            ),
-          timeoutMs,
-        );
-      }),
-    ]).catch((error) => {
-      // Hand back the connection if it arrives after all.
-      connecting.then(
-        (late) => late.release(),
-        () => {},
-      );
-      throw error;
-    });
-    clearTimeout(timer);
+    const client = await this.connectWithin(timeoutMs);
     try {
       // node-postgres supports a per-query query_timeout; @types/pg only
       // declares it on the client config.
@@ -1561,16 +1543,70 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       if ((error as Error).message === "Query read timeout" && pid) {
         // Wait for the cancel, so the caller never sees the timeout while the
         // statement could still commit. Bounded: the database may be gone.
-        await this.pool
-          .query({
-            text: "SELECT pg_cancel_backend($1)",
-            values: [pid],
-            query_timeout: Math.min(timeoutMs, 5 * SECOND),
-          } as pg.QueryConfig)
-          .catch(() => {});
+        // Keeping this connection checked out until then keeps the pid ours.
+        await this.cancelBackend(pid, Math.min(timeoutMs, 5 * SECOND)).catch(
+          () => {},
+        );
       }
       client.release(error as Error);
       throw explainMissingTables(error, this.schema);
+    }
+  }
+
+  /** Checks out a pool connection, giving up after `timeoutMs`. */
+  private async connectWithin(timeoutMs: number): Promise<pg.PoolClient> {
+    const connecting = this.pool.connect();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        connecting,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Timed out after ${timeoutMs}ms waiting for a database connection`,
+                ),
+              ),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } catch (error) {
+      // Hand back the connection if it arrives after all.
+      connecting.then(
+        (late) => late.release(),
+        () => {},
+      );
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Cancels a statement over a connection of its own, outside the pool: the
+   * pool may be full of connections waiting on the same lock, or on their
+   * own cancels.
+   */
+  private async cancelBackend(pid: number, timeoutMs: number): Promise<void> {
+    const Client =
+      (this.pool as unknown as { Client?: typeof pg.Client }).Client ??
+      pg.Client;
+    const client = new Client({
+      ...this.pool.options,
+      connectionTimeoutMillis: timeoutMs,
+    });
+    client.on("error", () => {});
+    try {
+      await client.connect();
+      await client.query({
+        text: "SELECT pg_cancel_backend($1)",
+        values: [pid],
+        query_timeout: timeoutMs,
+      } as pg.QueryConfig);
+    } finally {
+      client.end().catch(() => {});
     }
   }
 
@@ -1731,56 +1767,178 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     const cap = this.maxInFlightPerEndpoint;
     const allowance = new Map<string, number>();
     for (const [id, n] of inFlight) allowance.set(id, Math.max(0, cap - n));
-    const claimed = await this.claim(free, allowance);
-    // A lock-expired row bypasses the window's per-endpoint ranking; put
-    // anything over an endpoint's share back.
-    const kept: ClaimedDelivery[] = [];
-    const extra: ClaimedDelivery[] = [];
-    for (const row of claimed) {
-      const left = allowance.get(row.endpoint_id) ?? cap;
-      if (left > 0) {
-        allowance.set(row.endpoint_id, left - 1);
-        kept.push(row);
-      } else {
-        extra.push(row);
-      }
+    let claimed = await this.claim(free, allowance);
+    if (claimed.length === 0 && (await this.hasDueWork())) {
+      // Due rows exist but were locked by a concurrent claim's scan, which
+      // lasts milliseconds: try once more instead of reporting nothing.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 5 + Math.random() * 20),
+      );
+      claimed = await this.claim(free, allowance);
     }
-    if (extra.length > 0) await this.unclaim(extra);
-
-    // The window only holds the oldest due rows. If full endpoints' backlogs
-    // fill it, look past it so other tenants still get served. That scan
-    // reads those backlogs, so after one that finds nothing, back off.
-    const full = [...allowance].filter(([, n]) => n === 0).map(([id]) => id);
-    if (
-      kept.length < free &&
-      full.length > 0 &&
-      Date.now() >= this.wideClaimAt
-    ) {
-      try {
-        const more = await this.claimPast(free - kept.length, full);
-        for (const row of more) {
+    // These rows are committed as claimed with an attempt counted. Until
+    // they're returned or put back, an error would strand them until their
+    // lock expires, with an attempt spent and nothing sent.
+    const held = new Set(claimed);
+    const putBack = async (rows: ClaimedDelivery[]) => {
+      await this.unclaim(rows);
+      for (const row of rows) held.delete(row);
+    };
+    try {
+      // A lock-expired row bypasses the window's per-endpoint ranking; put
+      // anything over an endpoint's share back.
+      const kept: ClaimedDelivery[] = [];
+      const take = (rows: ClaimedDelivery[]) => {
+        const extra: ClaimedDelivery[] = [];
+        for (const row of rows) {
           const left = allowance.get(row.endpoint_id) ?? cap;
           if (left > 0) {
             allowance.set(row.endpoint_id, left - 1);
             kept.push(row);
           } else {
             extra.push(row);
-            await this.unclaim([row]);
           }
         }
-        this.wideClaimBackoff = more.length
-          ? 0
-          : Math.min(
-              Math.max(this.pollIntervalMs, this.wideClaimBackoff * 2),
-              10 * this.pollIntervalMs,
-            );
-        this.wideClaimAt = Date.now() + this.wideClaimBackoff;
-      } catch (error) {
-        // Keep what's already claimed; report the rest.
-        this.reportError(error);
+        return extra;
+      };
+      // If putting rows back fails they stay held: still worth delivering
+      // the rest, and the lock expiry recovers them.
+      const extra = take(claimed);
+      if (extra.length > 0)
+        await putBack(extra).catch((e) => this.reportError(e));
+
+      // The window only holds the oldest due rows. If full endpoints' backlogs
+      // fill it, look past it so other tenants still get served. That scan
+      // reads those backlogs, so after one that finds nothing, back off.
+      const full = [...allowance].filter(([, n]) => n === 0).map(([id]) => id);
+      if (
+        kept.length < free &&
+        full.length > 0 &&
+        // Monotonic: a wall-clock step back mustn't stall this for hours.
+        performance.now() >= this.wideClaimAt
+      ) {
+        let more: ClaimedDelivery[] | undefined;
+        try {
+          more = await this.claimPast(free - kept.length, full);
+        } catch (error) {
+          // Keep what's already claimed; report the rest.
+          this.reportError(error);
+          this.backOffWideClaim();
+        }
+        if (more) {
+          for (const row of more) held.add(row);
+          const over = take(more);
+          if (over.length > 0)
+            await putBack(over).catch((e) => this.reportError(e));
+          if (more.length) {
+            this.wideClaimBackoff = 0;
+            this.wideClaimAt = 0;
+          } else {
+            this.backOffWideClaim();
+          }
+        }
+      }
+      await this.loadBodies(kept);
+      return kept;
+    } catch (error) {
+      if (held.size > 0) {
+        await this.unclaim([...held]).catch((unclaimError) =>
+          this.reportError(unclaimError),
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** Waits longer before the next scan past the window, up to 10 polls. */
+  private backOffWideClaim(): void {
+    this.wideClaimBackoff = Math.min(
+      Math.max(this.pollIntervalMs, this.wideClaimBackoff * 2),
+      10 * this.pollIntervalMs,
+    );
+    this.wideClaimAt = performance.now() + this.wideClaimBackoff;
+  }
+
+  /**
+   * Loads the payload of each claimed message once, as JSON text, and builds
+   * its request body once for all its deliveries. The claim itself returns
+   * no payloads: a big message fanned out to many endpoints would otherwise
+   * be loaded (and parsed) once per delivery, and a worker running out of
+   * memory there would abort the claim and retry it forever.
+   */
+  private async loadBodies(claimed: ClaimedDelivery[]): Promise<void> {
+    // Not for deliveries process() fails without sending: loading a payload
+    // too big for the worker must not happen again on every reclaim.
+    const sendable = claimed.filter(
+      (d) =>
+        !d.redacted &&
+        !d.disabled &&
+        d.attempt_count <= this.retrySchedule.length + 1,
+    );
+    const ids = [...new Set(sendable.map((d) => d.message_id))];
+    if (ids.length === 0) return;
+    let payloads: Map<string, string | null>;
+    try {
+      payloads = await this.loadPayloads(ids);
+    } catch {
+      // The claim has committed: don't drop the batch. Load message by
+      // message, and record a failed attempt for any that still fails.
+      payloads = new Map();
+      for (const id of ids) {
+        try {
+          for (const [k, v] of await this.loadPayloads([id]))
+            payloads.set(k, v);
+        } catch (error) {
+          for (const d of sendable) {
+            if (d.message_id === id) {
+              d.loadError = `Couldn't load the payload: ${(error as Error).message}`;
+            }
+          }
+        }
       }
     }
-    return kept;
+    const bodies = new Map<string, string>();
+    for (const delivery of sendable) {
+      if (delivery.loadError) continue;
+      if (!payloads.has(delivery.message_id)) continue; // deleted meanwhile
+      const payload = payloads.get(delivery.message_id);
+      if (payload == null) {
+        delivery.redacted = true; // redacted after the claim
+        continue;
+      }
+      let body = bodies.get(delivery.message_id);
+      if (body === undefined) {
+        const timestamp = new Date(delivery.message_created_ms).toISOString();
+        body = `{"type":${JSON.stringify(delivery.event_type)},"timestamp":"${timestamp}","data":${payload}}`;
+        bodies.set(delivery.message_id, body);
+      }
+      delivery.body = body;
+    }
+  }
+
+  private async loadPayloads(
+    ids: string[],
+  ): Promise<Map<string, string | null>> {
+    const { rows } = await this.query<{ id: string; payload: string | null }>(
+      `SELECT id, payload::text AS payload FROM ${this.t.messages}
+       WHERE id = ANY ($1::text[])`,
+      [ids],
+      this.workerDb,
+    );
+    return new Map(rows.map((r) => [r.id, r.payload]));
+  }
+
+  /** Whether any pending delivery is due (one index probe). */
+  private async hasDueWork(): Promise<boolean> {
+    const { rows } = await this.query<{ due: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM ${this.t.deliveries}
+         WHERE status = 'pending' AND next_attempt_at <= now()
+       ) AS due`,
+      [],
+      this.workerDb,
+    );
+    return rows[0]?.due === true;
   }
 
   /** Puts claimed deliveries back, as if they had never been claimed. */
@@ -1799,7 +1957,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private static readonly CLAIM_RETURNING =
     `RETURNING d.id, d.lock_token, d.attempt_count, d.endpoint_id,
                  m.tenant_id, m.id AS message_id,
-                 m.event_type, m.payload,
+                 m.event_type,
                  (extract(epoch FROM m.created_at) * 1000)::float8 AS message_created_ms,
                  m.redacted_at IS NOT NULL AS redacted,
                  e.url, e.secret,
@@ -1961,6 +2119,17 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       await this.failWithoutSending(delivery, "Endpoint is disabled");
       return;
     }
+    // Deleted (deleteMessages, cleanup) after the claim: the delivery went
+    // with it, so there's nothing to send or record.
+    if (
+      delivery.body === undefined &&
+      !delivery.redacted &&
+      !delivery.loadError &&
+      !delivery.disabled &&
+      delivery.attempt_count <= this.retrySchedule.length + 1
+    ) {
+      return;
+    }
     if (delivery.redacted) {
       await this.failWithoutSending(delivery, "Payload was redacted");
       return;
@@ -2055,17 +2224,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
          SELECT id, endpoint_id FROM ${this.t.deliveries}
          WHERE id = $1 AND lock_token = $2
          FOR UPDATE
-       ), prev AS (
-         -- Reads whether the endpoint was already disabled, so only the
-         -- worker that disables it reports it.
-         -- FOR NO KEY UPDATE, not FOR UPDATE: it doesn't conflict with the
-         -- KEY SHARE locks that open send() transactions hold on the
-         -- endpoint through the deliveries foreign key.
-         SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
-         FROM ${this.t.endpoints} ep
-         WHERE ep.id IN (SELECT endpoint_id FROM cur)
-         FOR NO KEY UPDATE
        ), e AS (
+         -- One UPDATE, no separate lock first: locking the row and then
+         -- updating it in one statement deadlocked between workers once open
+         -- send() transactions held KEY SHARE locks on it. disabled_xid is set
+         -- to this transaction's id only by the update that disables the
+         -- endpoint, which is how only that worker reports it. (A timestamp
+         -- can't do this: two workers can start in the same microsecond.)
          UPDATE ${this.t.endpoints}
          SET failing_since = COALESCE(failing_since, now()),
              disabled = disabled OR (
@@ -2079,10 +2244,21 @@ export class Hookgres<E extends EventMap = AnyEvents> {
                     to_char(COALESCE(failing_since, now()) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
                ELSE disabled_reason
              END,
+             disabled_at = CASE
+               WHEN NOT disabled AND $10::double precision IS NOT NULL AND
+                    COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+               THEN now()
+               ELSE disabled_at
+             END,
+             disabled_xid = CASE
+               WHEN NOT disabled AND $10::double precision IS NOT NULL AND
+                    COALESCE(failing_since, now()) <= now() - make_interval(secs => $10::double precision / 1000)
+               THEN pg_current_xact_id()
+               ELSE disabled_xid
+             END,
              updated_at = now()
-         FROM prev
-         WHERE id = prev.endpoint_id
-         RETURNING id, disabled AND NOT prev.was_disabled AS disabled_now,
+         WHERE id IN (SELECT endpoint_id FROM cur)
+         RETURNING id, disabled AND disabled_xid = pg_current_xact_id() AS disabled_now,
                    -- Disabled automatically, now or earlier: no more retries.
                    -- A manual disable is a pause, so retries continue.
                    disabled AND disabled_reason IS DISTINCT FROM 'Disabled manually'
@@ -2143,12 +2319,16 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   }
 
   private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
-    const envelope: WebhookEnvelope = {
-      type: delivery.event_type,
-      timestamp: new Date(delivery.message_created_ms).toISOString(),
-      data: delivery.payload,
-    };
-    const body = JSON.stringify(envelope);
+    if (delivery.loadError) {
+      return {
+        ok: false,
+        statusCode: null,
+        responseBody: null,
+        error: delivery.loadError,
+        durationMs: 0,
+      };
+    }
+    const body = delivery.body as string;
     const timestamp = Math.floor(Date.now() / 1000);
     const secrets = delivery.previous_secret
       ? [delivery.secret, delivery.previous_secret]

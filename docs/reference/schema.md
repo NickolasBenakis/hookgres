@@ -20,6 +20,8 @@ hold.
 | `metadata`                   | `jsonb`       | Defaults to `{}`.                                |
 | `disabled`                   | `boolean`     |                                                  |
 | `disabled_reason`            | `text`        |                                                  |
+| `disabled_at`                | `timestamptz` | When it was last disabled automatically.         |
+| `disabled_xid`               | `xid8`        | Transaction that last disabled it automatically. |
 | `failing_since`              | `timestamptz` | Start of the current run of failures, or `NULL`. |
 | `created_at`, `updated_at`   | `timestamptz` |                                                  |
 

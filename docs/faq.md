@@ -60,6 +60,13 @@ Postgres allows large `jsonb` values, but keep webhooks small, well under a
 megabyte. Large bodies slow down every retry, and many receivers reject them.
 A common pattern is to send ids and let the receiver fetch the details.
 
+Workers need memory for what they send: a worker loads each message's payload
+once per batch, but every request in flight holds its own copy of the body.
+Budget roughly `concurrency` times your largest payload, several times over;
+in a test, eight in-flight deliveries of a 50 MB payload peaked at about
+900 MB. `send()` doesn't cap the size, so cap it in your app if senders aren't
+under your control.
+
 ## Does it run on Bun or Deno?
 
 It's built and tested for Node.js 22.12+. Other runtimes with node-postgres

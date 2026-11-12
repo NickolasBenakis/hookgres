@@ -80,7 +80,7 @@ describe("migrate", () => {
     try {
       await ctx.create({ schema }).migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3],
+        versions: [1, 2, 3, 4],
         indexes: ["messages_created_idx"],
       });
     } finally {
@@ -117,7 +117,7 @@ describe("migrate", () => {
       );
       await hw.migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3],
+        versions: [1, 2, 3, 4],
         indexes: ["messages_created_idx"],
       });
       expect(await hw.getMessage("msg_old")).toMatchObject({
@@ -154,7 +154,7 @@ describe("migrate", () => {
          CREATE INDEX ON "${schema}".messages (created_at);`,
       );
       await hw.migrate();
-      expect((await schemaState(schema)).versions).toEqual([1, 2, 3]);
+      expect((await schemaState(schema)).versions).toEqual([1, 2, 3, 4]);
       expect(await createdAtIndexes(schema)).toEqual([
         "messages_created_at_idx",
       ]);
@@ -812,6 +812,32 @@ describe("fairness", () => {
     }
   });
 
+  it("still serves other tenants after the wall clock steps back", async () => {
+    const slow = await startReceiver();
+    const realNow = Date.now;
+    try {
+      slow.respond = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return 200;
+      };
+      const hw = ctx.create({ concurrency: 4, requestTimeoutMs: 5000 });
+      await hw.createEndpoint({ tenantId: "noisy", url: slow.url });
+      await hw.createEndpoint({ tenantId: "quiet", url: receiver.url });
+      for (let i = 0; i < 100; i++) {
+        await hw.send({ tenantId: "noisy", eventType: "e", payload: { i } });
+      }
+      hw.start();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      Date.now = () => realNow() - 60 * 60 * 1000; // NTP steps the clock back
+      await hw.send({ tenantId: "quiet", eventType: "e", payload: {} });
+      await waitFor(() => receiver.requests.length === 1, 4000);
+      await hw.stop();
+    } finally {
+      Date.now = realNow;
+      await slow.close();
+    }
+  });
+
   it("doesn't end concurrent drains early while work is due", async () => {
     const one = ctx.create({ concurrency: 5 });
     const two = ctx.create({ concurrency: 5 });
@@ -853,6 +879,30 @@ describe("fairness", () => {
     // Rows over the share went back to pending without spending an attempt.
     const deliveries = await hw.listDeliveries({ limit: 30 });
     expect(deliveries.every((d) => d.attemptCount === 1)).toBe(true);
+  });
+});
+
+describe("payload loading", () => {
+  it("sends one fanned-out message's body, unchanged, to each endpoint", async () => {
+    const hw = ctx.create({
+      concurrency: 5,
+      maxInFlightPerEndpoint: 5,
+    });
+    for (let i = 0; i < 5; i++) {
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    }
+    await hw.send({
+      tenantId: "acme",
+      eventType: "e",
+      payload: { big: "x".repeat(1000), n: 1.5 },
+    });
+    expect(await hw.runOnce()).toBe(5);
+    const bodies = new Set(receiver.requests.map((r) => r.body));
+    expect(bodies.size).toBe(1);
+    const envelope = JSON.parse([...bodies][0] ?? "") as WebhookEnvelope<{
+      n: number;
+    }>;
+    expect(envelope.data.n).toBe(1.5);
   });
 });
 
@@ -945,6 +995,37 @@ describe("locking", () => {
     }
   });
 
+  it("doesn't deadlock workers recording failures while sends run", async () => {
+    const errors: unknown[] = [];
+    const options = {
+      retrySchedule: [0, 0, 0, 0, 0, 0, 0, 0],
+      disableEndpointAfterMs: null,
+      concurrency: 10,
+      maxInFlightPerEndpoint: 10,
+      onError: (error: unknown) => {
+        errors.push(error);
+      },
+    };
+    const workers = [
+      ctx.create(options),
+      ctx.create(options),
+      ctx.create(options),
+    ];
+    await workers[0]?.createEndpoint({ tenantId: "acme", url: receiver.url });
+    receiver.respond = () => 500;
+    for (const w of workers) w.start();
+    const until = Date.now() + 2500;
+    while (Date.now() < until) {
+      await workers[0]?.send({ tenantId: "acme", eventType: "e", payload: {} });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    await Promise.all(workers.map((w) => w.stop()));
+    const deadlocks = errors.filter(
+      (e) => (e as { code?: string }).code === "40P01",
+    );
+    expect(deadlocks).toEqual([]);
+  });
+
   it("send() doesn't fail when another endpoint of the tenant is deleted meanwhile", async () => {
     const hw = ctx.create();
     const doomed = await hw.createEndpoint({
@@ -1035,6 +1116,116 @@ describe("worker database timeouts", () => {
       `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
     );
     expect(rows[0].n).toBe(0);
+  });
+
+  it("cancels a timed-out query even when the pool has no spare connection", async () => {
+    // The worker's only connection is the one that timed out: the cancel
+    // mustn't wait for a second one that never comes.
+    const tinyPool = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      max: 1,
+    });
+    tinyPool.on("error", () => {});
+    try {
+      const hw = ctx.create({
+        pool: tinyPool,
+        retrySchedule: [60_000],
+        requestTimeoutMs: 500,
+        lockTimeoutMs: 1000,
+        onError: () => {},
+      });
+      const ep = await hw.createEndpoint({
+        tenantId: "acme",
+        url: receiver.url,
+      });
+      receiver.respond = () => 500;
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      const locker = await ctx.pool.connect();
+      await locker.query("BEGIN");
+      await locker.query(
+        `SELECT 1 FROM "${ctx.schema}".endpoints WHERE id = $1 FOR UPDATE`,
+        [ep.id],
+      );
+      try {
+        const outcome = await Promise.race([
+          hw.runOnce().then(() => "returned"),
+          new Promise((resolve) => setTimeout(() => resolve("stuck"), 6000)),
+        ]);
+        expect(outcome).toBe("returned");
+      } finally {
+        await locker.query("ROLLBACK");
+        locker.release();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { rows } = await ctx.pool.query(
+        `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
+      );
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await tinyPool.end();
+    }
+  });
+
+  it("cancels timed-out queries while others queue for the only connection", async () => {
+    const tinyPool = new pg.Pool({
+      connectionString: inject("databaseUrl"),
+      max: 1,
+    });
+    tinyPool.on("error", () => {});
+    try {
+      const hw = ctx.create({
+        pool: tinyPool,
+        concurrency: 2,
+        retrySchedule: [60_000],
+        requestTimeoutMs: 500,
+        lockTimeoutMs: 1000,
+        onError: () => {},
+      });
+      const a = await hw.createEndpoint({ tenantId: "a", url: receiver.url });
+      const b = await hw.createEndpoint({ tenantId: "b", url: receiver.url });
+      receiver.respond = () => 500;
+      await hw.send({ tenantId: "a", eventType: "e", payload: {} });
+      await hw.send({ tenantId: "b", eventType: "e", payload: {} });
+      const locker = await ctx.pool.connect();
+      await locker.query("BEGIN");
+      await locker.query(
+        `SELECT 1 FROM "${ctx.schema}".endpoints WHERE id = ANY($1) FOR UPDATE`,
+        [[a.id, b.id]],
+      );
+      try {
+        await Promise.race([
+          hw.runOnce(),
+          new Promise((resolve) => setTimeout(resolve, 8000)),
+        ]);
+      } finally {
+        await locker.query("ROLLBACK");
+        locker.release();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { rows } = await ctx.pool.query(
+        `SELECT count(*)::int AS n FROM "${ctx.schema}".attempts`,
+      );
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await tinyPool.end();
+    }
+  });
+
+  it("puts claimed deliveries back when preparing them fails", async () => {
+    const hw = ctx.create({ onError: () => {} });
+    await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+    await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+    (hw as unknown as { loadBodies: () => Promise<void> }).loadBodies =
+      async () => {
+        throw new Error("boom");
+      };
+    await expect(hw.runOnce()).rejects.toThrow("boom");
+    const { rows } = await ctx.pool.query(
+      `SELECT status, attempt_count, lock_token FROM "${ctx.schema}".deliveries`,
+    );
+    expect(rows).toEqual([
+      { status: "pending", attempt_count: 0, lock_token: null },
+    ]);
   });
 
   it("returns Date objects even when the pool parses timestamps as strings", async () => {
