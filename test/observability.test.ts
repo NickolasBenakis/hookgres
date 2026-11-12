@@ -131,7 +131,12 @@ describe("stats", () => {
 
   it("rejects a blank or non-string filter", async () => {
     const hw = ctx.create();
-    for (const filter of [{ tenantId: "" }, { endpointId: 42 }]) {
+    for (const filter of [
+      { tenantId: "" },
+      { endpointId: 42 },
+      { tenant: "acme" },
+      null,
+    ]) {
       await expect(
         hw.stats(filter as { tenantId?: string }),
       ).rejects.toBeInstanceOf(HookgresValidationError);
@@ -290,6 +295,59 @@ describe("OpenTelemetry metrics", () => {
     }
     expect(errors).toHaveLength(1);
     void hw;
+  });
+
+  it("keeps delivering, and calls every hook, when the meter throws", async () => {
+    const broken = () => {
+      throw new Error("broken meter");
+    };
+    const instrument = { add: broken, record: broken };
+    const api = {
+      metrics: {
+        getMeter: () => ({
+          createCounter: () => instrument,
+          createHistogram: () => instrument,
+          createObservableGauge: () => ({}),
+          addBatchObservableCallback: () => {},
+          removeBatchObservableCallback: broken,
+        }),
+      },
+    };
+    const seen: string[] = [];
+    const hw = ctx.create({
+      retrySchedule: [],
+      disableEndpointAfterMs: 0,
+      opentelemetry: { api },
+      onAttempt: (event) => {
+        seen.push(`attempt:${event.outcome}`);
+      },
+      onEndpointDisabled: () => {
+        seen.push("disabled");
+      },
+      onError: (error) => {
+        seen.push(`error:${(error as Error).message}`);
+      },
+    });
+    const ep = await hw.createEndpoint({
+      tenantId: "acme",
+      url: receiver.url,
+    });
+    receiver.respond = () => 500;
+    await hw.send({ tenantId: "acme", eventType: "e", payload: { i: 1 } });
+    // Queued behind the first; failed as soon as the endpoint is disabled.
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries SET next_attempt_at = now() + interval '1 hour'`,
+    );
+    await hw.send({ tenantId: "acme", eventType: "e", payload: { i: 2 } });
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".deliveries SET next_attempt_at = now() - interval '1 hour'
+       WHERE next_attempt_at < now() + interval '30 minutes'`,
+    );
+    expect(await hw.runOnce()).toBe(1);
+    expect(seen).toEqual(["attempt:failed", "disabled"]);
+    const deliveries = await hw.listDeliveries({ endpointId: ep.id });
+    expect(deliveries.map((d) => d.status)).toEqual(["failed", "failed"]);
+    await hw.close();
   });
 
   it("records nothing and needs nothing without the option", async () => {

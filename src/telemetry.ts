@@ -85,6 +85,7 @@ export class Telemetry {
   private readonly meter: OtelMeter;
   private readonly gauges: OtelObservable[] = [];
   private readonly observeQueue: BatchCallback | null = null;
+  private closed = false;
 
   constructor(
     options: OpenTelemetryOptions,
@@ -141,6 +142,8 @@ export class Telemetry {
       "s",
     );
     this.observeQueue = async (result) => {
+      // An export that began before close() mustn't query a closing pool.
+      if (this.closed) return;
       let stats: QueueStats;
       try {
         stats = await readStats();
@@ -157,38 +160,58 @@ export class Telemetry {
   }
 
   recordAttempt(event: AttemptEvent): void {
-    const attributes: Attributes = { "hookgres.outcome": event.outcome };
-    if (event.statusCode !== null) {
-      attributes["http.response.status_code"] = event.statusCode;
-    }
-    if (event.outcome !== "succeeded") {
-      attributes["error.type"] = errorType(event);
-    }
-    this.attempts.add(1, attributes);
-    this.duration.record(event.durationMs / 1000, attributes);
+    guard(() => {
+      const attributes: Attributes = { "hookgres.outcome": event.outcome };
+      if (event.statusCode !== null) {
+        attributes["http.response.status_code"] = event.statusCode;
+      }
+      if (event.outcome !== "succeeded") {
+        attributes["error.type"] = errorType(event);
+      }
+      this.attempts.add(1, attributes);
+      this.duration.record(event.durationMs / 1000, attributes);
+    });
   }
 
   recordEndpointDisabled(): void {
-    this.disabled.add(1);
+    guard(() => this.disabled.add(1));
   }
 
   recordError(error: unknown): void {
-    const code = (error as { code?: unknown } | null)?.code;
-    this.errors.add(1, {
-      "error.type":
-        typeof code === "string" && code.length <= 32
-          ? code
-          : error instanceof Error
-            ? error.name
-            : "_OTHER",
+    guard(() => {
+      const code = (error as { code?: unknown } | null)?.code;
+      this.errors.add(1, {
+        "error.type":
+          typeof code === "string" && code.length <= 32
+            ? code
+            : error instanceof Error
+              ? error.name
+              : "_OTHER",
+      });
     });
   }
 
   /** Stops reading queue stats, so a closed instance doesn't query. */
   close(): void {
+    this.closed = true;
     if (this.observeQueue) {
-      this.meter.removeBatchObservableCallback(this.observeQueue, this.gauges);
+      const callback = this.observeQueue;
+      guard(() =>
+        this.meter.removeBatchObservableCallback(callback, this.gauges),
+      );
     }
+  }
+}
+
+/**
+ * Metrics must never break delivery: a meter that throws (a broken SDK or
+ * wrapper) loses the measurement, not the attempt's follow-up work.
+ */
+function guard(record: () => void): void {
+  try {
+    record();
+  } catch {
+    // Dropped on purpose; see above.
   }
 }
 

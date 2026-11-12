@@ -73,9 +73,13 @@ runs, as for any instrumented library.
   `onAttempt`.
 - `http.response.status_code` is set when the receiver responded.
 - `error.type` is set on unsuccessful attempts: the status code (`"500"`),
-  `timeout`, `blocked_address`, or `_OTHER` for network errors. On
-  `hookgres.worker.errors` it's the Postgres error code (`"57P01"`) or the
-  error's name.
+  `timeout`, `blocked_address` (an address or port `blockPrivateAddresses`
+  refused), or `_OTHER` for network and other errors without a response. On
+  `hookgres.worker.errors` it's the error's `code`, such as a Postgres error
+  code (`"57P01"`) or a Node one (`"ECONNREFUSED"`), or else its name. A
+  failed queue-gauge query counts there too.
+- If your meter throws, Hookgres drops the measurement and carries on:
+  metrics never get in the way of delivery.
 
 There are no tenant, endpoint or event type attributes: each distinct value
 is a separate time series, and with many customers that gets expensive fast.

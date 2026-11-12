@@ -1288,6 +1288,18 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * @see https://hookgres.dev/docs/guides/observability
    */
   async stats(filter: StatsFilter = {}): Promise<QueueStats> {
+    // A misspelt key would silently widen the result to every tenant.
+    const unknown =
+      typeof filter === "object" && filter !== null
+        ? Object.keys(filter).filter(
+            (key) => key !== "tenantId" && key !== "endpointId",
+          )
+        : null;
+    if (unknown === null || unknown.length > 0) {
+      throw new HookgresValidationError(
+        `stats() accepts { tenantId?, endpointId? }, got ${unknown === null ? String(filter) : `unknown key ${JSON.stringify(unknown[0])}`}. See ${DOCS}/reference/api`,
+      );
+    }
     const values: unknown[] = [];
     let scope = "";
     if (filter.endpointId !== undefined) {
