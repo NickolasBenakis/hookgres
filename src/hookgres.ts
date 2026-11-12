@@ -11,6 +11,7 @@ import {
   type TransportRequest,
   type TransportResponse,
 } from "./ssrf.js";
+import { type OpenTelemetryOptions, Telemetry } from "./telemetry.js";
 import type {
   AnyEvents,
   Attempt,
@@ -28,10 +29,12 @@ import type {
   ListDeliveriesInput,
   Message,
   Queryable,
+  QueueStats,
   SendInput,
   SendOptions,
   SendResult,
   StandardSchemaV1,
+  StatsFilter,
   UpdateEndpointInput,
 } from "./types.js";
 
@@ -209,6 +212,19 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /** Called when Hookgres disables an endpoint after failing for `disableEndpointAfterMs`. Errors are handled like `onAttempt`'s. */
   onEndpointDisabled?: (event: EndpointDisabledEvent) => void;
   /**
+   * Report metrics through OpenTelemetry: delivery attempts and their
+   * duration, disabled endpoints, worker errors and, from the database, the
+   * queue's size and lag. Pass your own `@opentelemetry/api` module; Hookgres
+   * doesn't depend on it, and without this option records nothing.
+   *
+   * @example
+   * import * as otel from "@opentelemetry/api";
+   * new Hookgres({ pool, opentelemetry: { api: otel } });
+   *
+   * @see https://hookgres.dev/docs/guides/observability
+   */
+  opentelemetry?: OpenTelemetryOptions;
+  /**
    * One Standard Schema (Zod, Valibot, ArkType, ...) per event type. Types
    * `send()` from them, and at runtime `send()` validates each payload and
    * stores the schema's output; an invalid payload, or an event type with no
@@ -304,6 +320,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private readonly onError: (error: unknown) => void;
   private readonly onAttempt: HookgresOptions["onAttempt"];
   private readonly onEndpointDisabled: HookgresOptions["onEndpointDisabled"];
+  private readonly telemetry: Telemetry | null;
   private readonly schemas: Map<string, StandardSchemaV1> | null;
   /** NOTIFY channel, or `null` when `notify` is off. */
   private readonly channel: string | null;
@@ -482,9 +499,20 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       }
     }
     this.userAgent = options.userAgent ?? "Hookgres/0.1";
-    this.onError =
+    const onError =
       options.onError ??
       ((error) => console.error("[hookgres] worker error:", error));
+    this.onError = (error) => {
+      this.telemetry?.recordError(error);
+      onError(error);
+    };
+    this.telemetry = options.opentelemetry
+      ? new Telemetry(
+          options.opentelemetry,
+          () => this.stats(),
+          (error) => this.reportError(error),
+        )
+      : null;
     // node-postgres emits "error" on the pool when an idle client's connection
     // drops; without a listener that crashes the process. A pool the caller
     // passed in is theirs to handle.
@@ -1247,6 +1275,64 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   }
 
   /**
+   * Reads the delivery queue right now: how many deliveries are waiting, due
+   * and being sent, and how long the oldest due one has waited (`lagMs`, the
+   * number to alert on). Pass a tenant or endpoint to see just theirs.
+   * Counts every pending delivery, so at very large backlogs it reads more;
+   * fine to call every few seconds, not on every request.
+   *
+   * @example
+   * const { due, lagMs } = await hookgres.stats();
+   * if (lagMs > 60_000) alert(`webhooks are ${lagMs / 1000}s behind`);
+   *
+   * @see https://hookgres.dev/docs/guides/observability
+   */
+  async stats(filter: StatsFilter = {}): Promise<QueueStats> {
+    const values: unknown[] = [];
+    let scope = "";
+    if (filter.endpointId !== undefined) {
+      values.push(requireId("endpointId", filter.endpointId));
+      scope += ` AND endpoint_id = $${values.length}`;
+    }
+    if (filter.tenantId !== undefined) {
+      values.push(requireId("tenantId", filter.tenantId));
+      scope += ` AND endpoint_id IN (SELECT id FROM ${this.t.endpoints} WHERE tenant_id = $${values.length})`;
+    }
+    // One aggregate per status, so each can use its partial index.
+    const { rows } = await this.query<{
+      pending: number;
+      due: number;
+      delivering: number;
+      oldest_due_ms: number | null;
+      lag_ms: number | null;
+    }>(
+      `WITH p AS (
+         SELECT count(*)::int AS pending,
+                count(*) FILTER (WHERE next_attempt_at <= now())::int AS due,
+                min(next_attempt_at) FILTER (WHERE next_attempt_at <= now()) AS oldest
+         FROM ${this.t.deliveries} WHERE status = 'pending'${scope}
+       ), l AS (
+         SELECT count(*)::int AS delivering
+         FROM ${this.t.deliveries} WHERE status = 'delivering'${scope}
+       )
+       SELECT p.pending, p.due, l.delivering,
+              (extract(epoch FROM p.oldest) * 1000)::float8 AS oldest_due_ms,
+              (extract(epoch FROM now() - p.oldest) * 1000)::float8 AS lag_ms
+       FROM p, l`,
+      values,
+    );
+    const row = rows[0];
+    return {
+      pending: row?.pending ?? 0,
+      due: row?.due ?? 0,
+      delivering: row?.delivering ?? 0,
+      oldestDueAt:
+        row?.oldest_due_ms == null ? null : new Date(row.oldest_due_ms),
+      lagMs: Math.max(0, Math.round(row?.lag_ms ?? 0)),
+    };
+  }
+
+  /**
    * Lists every HTTP attempt of a delivery, oldest first, with status code,
    * the start of the response body (see `responseBodyLimit`), error and
    * duration.
@@ -1382,6 +1468,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   async close(): Promise<void> {
     await this.stop();
     this.closeTransport();
+    this.telemetry?.close();
     if (this.ownsPool) await this.pool.end();
   }
 
@@ -1608,6 +1695,11 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     } finally {
       client.end().catch(() => {});
     }
+  }
+
+  private reportAttempt(event: AttemptEvent): void {
+    this.telemetry?.recordAttempt(event);
+    this.callHook<AttemptEvent>("onAttempt", this.onAttempt, event);
   }
 
   private reportError(error: unknown): void {
@@ -2192,7 +2284,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         this.workerDb,
       );
       if (rowCount) {
-        this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
+        this.reportAttempt({
           ...event,
           outcome: "succeeded",
           nextAttemptAt: null,
@@ -2299,12 +2391,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     );
     const result = rows[0];
     if (!result) return;
-    this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
+    this.reportAttempt({
       ...event,
       outcome: result.failed ? "failed" : "retrying",
       nextAttemptAt: result.failed ? null : toDate(result.next_attempt_at),
     });
     if (result.disabled_now) {
+      this.telemetry?.recordEndpointDisabled();
       this.callHook<EndpointDisabledEvent>(
         "onEndpointDisabled",
         this.onEndpointDisabled,
@@ -2450,6 +2543,15 @@ function explainMissingTables(error: unknown, schema: string): unknown {
       : `${original}. Hookgres's tables in schema ${schema} may be from an older version: call \`await hookgres.migrate()\` after upgrading, before the new code serves traffic. See ${DOCS}/getting-started`;
   if (error.stack) error.stack = error.stack.replace(original, error.message);
   return error;
+}
+
+function requireId(name: string, value: unknown): string {
+  if (typeof value !== "string" || value === "") {
+    throw new HookgresValidationError(
+      `stats ${name} must be a non-empty string, got ${JSON.stringify(value)}. See ${DOCS}/reference/api`,
+    );
+  }
+  return value;
 }
 
 function assertUrl(url: string, guard: AddressGuard | null): void {

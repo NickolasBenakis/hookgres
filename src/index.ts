@@ -14,4 +14,8 @@ export {
   WebhookVerificationError,
 } from "./signing.js";
 export { isPrivateAddress } from "./ssrf.js";
+export type {
+  OpenTelemetryApi,
+  OpenTelemetryOptions,
+} from "./telemetry.js";
 export type * from "./types.js";

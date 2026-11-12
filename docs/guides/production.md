@@ -204,45 +204,11 @@ Hookgres catches it and emits a process warning with code
 result the worker actually saved: if another worker took over the delivery
 mid-attempt, that attempt isn't reported.
 
-Here is an OpenTelemetry setup with a counter and a duration histogram.
-Hookgres doesn't depend on OpenTelemetry; install `@opentelemetry/api` in
-your app and configure an SDK as usual.
-
-```ts
-import { metrics } from "@opentelemetry/api";
-import { Hookgres } from "hookgres";
-
-const meter = metrics.getMeter("hookgres");
-const attempts = meter.createCounter("webhook.attempts", {
-  description: "Webhook delivery attempts",
-});
-const duration = meter.createHistogram("webhook.attempt.duration", {
-  description: "Webhook request duration",
-  unit: "ms",
-});
-const disabled = meter.createCounter("webhook.endpoints.disabled");
-
-const hookgres = new Hookgres({
-  pool,
-  onAttempt: (event) => {
-    // Keep attributes low-cardinality: no delivery or message ids.
-    const attributes = {
-      "webhook.event_type": event.eventType,
-      "webhook.outcome": event.outcome,
-      "http.response.status_code": event.statusCode ?? 0,
-    };
-    attempts.add(1, attributes);
-    duration.record(event.durationMs, attributes);
-  },
-  onEndpointDisabled: (event) => {
-    disabled.add(1);
-    logger.warn(event, "webhook endpoint disabled");
-  },
-});
-```
-
-Add `tenantId` as an attribute only if you have few tenants; every distinct
-value is a separate time series.
+For OpenTelemetry metrics, including queue size and lag read from the
+database, pass the `opentelemetry` option instead of writing these hooks by
+hand: see [Metrics and monitoring](/guides/observability). The hooks remain
+for anything else, such as per-tenant numbers for a few large customers:
+every distinct attribute value is a separate time series.
 
 ## Clean up old rows
 

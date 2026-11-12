@@ -132,6 +132,12 @@ See [Privacy and GDPR](/guides/privacy#erase-on-request).
 Newest first. `filter` accepts `messageId`, `endpointId`, `status` and
 `limit` (default 50, maximum 500).
 
+### `stats(filter?): Promise<QueueStats>`
+
+The queue right now: `pending`, `due`, `delivering`, `oldestDueAt` and
+`lagMs`, how long the oldest due delivery has waited. `filter` accepts
+`tenantId` and `endpointId`. See [Metrics and monitoring](/guides/observability).
+
 ### `listAttempts(deliveryId): Promise<Attempt[]>`
 
 Oldest first.
@@ -367,6 +373,14 @@ interface EndpointDisabledEvent {
   endpointId: string;
   tenantId: string;
   reason: string; // the endpoint's new disabledReason
+}
+
+interface QueueStats {
+  pending: number; // waiting, including retries scheduled for later
+  due: number; // pending and due now
+  delivering: number; // claimed by a worker
+  oldestDueAt: Date | null;
+  lagMs: number; // how long the oldest due delivery has waited; 0 if none
 }
 
 interface WebhookEnvelope<T = unknown> {

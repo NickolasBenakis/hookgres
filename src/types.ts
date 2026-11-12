@@ -436,3 +436,23 @@ export declare namespace StandardSchemaV1 {
     Schema["~standard"]["types"]
   >["output"];
 }
+
+/** Narrows `stats()` to one tenant or one endpoint. */
+export interface StatsFilter {
+  tenantId?: string;
+  endpointId?: string;
+}
+
+/** The delivery queue right now, as `stats()` returns it. */
+export interface QueueStats {
+  /** Deliveries waiting, including retries scheduled for later. */
+  pending: number;
+  /** Pending deliveries whose time has come: what workers should be sending. */
+  due: number;
+  /** Deliveries claimed by a worker, including ones whose worker died. */
+  delivering: number;
+  /** When the oldest due delivery became due, or `null` if none is due. */
+  oldestDueAt: Date | null;
+  /** How long the oldest due delivery has been waiting, by the database clock; 0 if none. Alert on this. */
+  lagMs: number;
+}
