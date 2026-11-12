@@ -492,6 +492,36 @@
     .slot:empty { display: none; }
   }
   @media (min-width: 761px) { .log-row .slots { display: contents; } }
+  /* Live log: new deliveries arrive at the top and older rows slide down out of a fixed window. */
+  .log-window .title { margin-right: auto; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
+  .log-window .meta { margin-left: 0; }
+  .log-rows { position: relative; overflow: hidden; }
+  .log-rows[data-live] { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
+  .log-rows .log-row { position: relative; background: var(--surface); }
+  .log-rows .log-row::before {
+    content: ""; position: absolute; inset: 1px 0 0; pointer-events: none;
+    background: linear-gradient(90deg, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%);
+    opacity: 0; transition: opacity 1200ms var(--ease);
+  }
+  .log-rows .log-row[data-new]::before { opacity: 1; transition-duration: 0ms; }
+  .log-row .attempt.pop { animation: chip-in 260ms var(--ease-out) both; }
+  .status.live { color: var(--warn); }
+  .status { transition: color 200ms var(--ease); }
+  .live-toggle {
+    position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 9px;
+    border: 0; border-radius: 999px; cursor: pointer; font: 500 12px/1 var(--sans); letter-spacing: 0;
+    color: var(--ink-2); background: color-mix(in oklch, var(--ink) 7%, transparent);
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+  }
+  .live-toggle[hidden] { display: none; }
+  .live-toggle::before { content: ""; position: absolute; inset: -9px -2px; }
+  .live-toggle:active { transform: scale(0.96); }
+  @media (hover: hover) and (pointer: fine) { .live-toggle:hover { color: var(--ink); background: color-mix(in oklch, var(--ink) 11%, transparent); } }
+  .live-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--ok); animation: live-ping 1.8s var(--ease-out) infinite; }
+  .live-toggle[data-paused] .live-dot { background: var(--ink-3); }
+  .live-toggle[data-paused] .live-dot::after { animation: none; opacity: 0; }
+  @keyframes live-ping { 0% { transform: scale(1); opacity: 0.6; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 
   /* Segmented control (simulator) */
   .seg {
@@ -631,9 +661,8 @@
   }
   .sig textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
   .sig pre { white-space: pre-wrap; word-break: break-all; }
-  .sig-value { transition: opacity 150ms var(--ease); }
-  .sig-value.fresh { animation: flash 420ms var(--ease); }
-  @keyframes flash { from { opacity: 0.35; } }
+  .sig-value { font-variant-numeric: tabular-nums; }
+  .sig mark.tampered { color: var(--bad); background: color-mix(in oklch, var(--bad) 18%, transparent); border-radius: 3px; padding: 0 2px; }
   .sig-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
   .switch { display: inline-flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); cursor: pointer; -webkit-user-select: none; user-select: none; }
   .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -663,6 +692,15 @@
     .number:nth-child(n + 3) { margin-top: 22px; border-top: 1px solid var(--line); }
   }
   @media (max-width: 460px) { .number, .number + .number { padding-right: 12px; } .number + .number:nth-child(even) { padding-left: 14px; } }
+  /* Each default gets a small drawing of itself. */
+  .mini { display: block; width: 120px; height: 32px; margin-bottom: 16px; overflow: visible; }
+  .mini-retry line { stroke: var(--line); stroke-width: 1.5; }
+  .mini-retry circle { fill: var(--accent); }
+  .mini-days rect { fill: var(--bad); }
+  .mini-rotate .old { fill: color-mix(in oklch, var(--ink) 30%, transparent); }
+  .mini-rotate .new { fill: var(--accent); }
+  .mini-rotate .overlap { fill: color-mix(in oklch, var(--ok) 14%, transparent); stroke: var(--ok); stroke-width: 1; stroke-dasharray: 3 3; }
+  .mini-grid rect { fill: var(--ok); opacity: 0.85; }
   .note { margin: 22px 0 0; font-size: 14px; color: var(--ink-3); }
   .note code { color: var(--ink-2); }
 
@@ -685,6 +723,10 @@
   .table thead th { font-size: 13px; color: var(--ink-3); font-weight: 500; padding-block: 12px; border-top: 1px solid var(--line); }
   .table tbody th { color: var(--ink-2); font-weight: 400; width: 36%; }
   .table td.us { color: var(--ink); font-weight: 500; }
+  /* The Hookgres column reads as one lit strip down the table. */
+  .table .us { padding-left: 18px; background: color-mix(in oklch, var(--accent) 6%, transparent); }
+  .table thead .us { color: var(--accent); }
+  .table .us + td, .table .us + th { padding-left: 24px; }
   @media (max-width: 640px) { .table { font-size: 14px; } .table th, .table td { padding-right: 12px; } }
 
   .waitlist { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 40em; scroll-margin-top: 72px; }
@@ -706,11 +748,59 @@
   /* Closing */
   .cta h2 { font-size: clamp(32px, 1rem + 2.6vw, 48px); }
   .cta .actions { margin-top: 28px; }
+  /* The close is a panel of the night band, so the page ends where the engine lives. */
+  .cta-panel { padding: clamp(32px, 5.5vw, 72px); border-radius: 28px; overflow: hidden; box-shadow: 0 40px 80px -40px oklch(25% 0.08 var(--h) / 0.45); }
+  .cta-panel.night::before { -webkit-mask-image: radial-gradient(ellipse 70% 90% at 78% 50%, #000, transparent 75%); mask-image: radial-gradient(ellipse 70% 90% at 78% 50%, #000, transparent 75%); }
+  @media (max-width: 640px) { .cta-panel { border-radius: 20px; margin-inline: -4px; } }
 
   footer { border-top: 1px solid var(--line); padding: 28px 0 calc(40px + env(safe-area-inset-bottom)); font-size: 13px; color: var(--ink-3); }
   .footer-inner { display: flex; flex-wrap: wrap; gap: 14px 28px; justify-content: space-between; }
   .footer-links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   footer .footer-inner a { color: var(--ink-2); }
+
+  /* Night band: the three sections about what happens inside Postgres (retries,
+     signatures, the log) sit in deep Postgres blue. It re-declares the tokens, so every
+     component inside renders its dark variant without its own rules. */
+  :root { --page-bg: var(--bg); --night: oklch(19% 0.05 var(--h)); }
+  :root[data-theme="dark"] { --night: oklch(15% 0.035 var(--h)); }
+  .night {
+    color-scheme: dark;
+    --bg: var(--night);
+    --bg-alt: oklch(23% 0.05 var(--h));
+    --surface: oklch(23.5% 0.05 var(--h));
+    --ink: oklch(96.5% 0.006 var(--h));
+    --ink-2: oklch(78% 0.025 var(--h));
+    --ink-3: oklch(70% 0.025 var(--h));
+    --line: oklch(33% 0.045 var(--h));
+    --accent: oklch(75% 0.13 var(--h));
+    --accent-hover: oklch(81% 0.11 var(--h));
+    --accent-ink: oklch(18% 0.05 var(--h));
+    --ok: oklch(78% 0.15 152);
+    --warn: oklch(82% 0.13 75);
+    --bad: oklch(72% 0.16 27);
+    --code-bg: oklch(15% 0.04 var(--h));
+    --code-line: oklch(28% 0.04 var(--h));
+    --shadow: 0 0 0 1px oklch(100% 0 0 / 0.08), 0 24px 60px -24px oklch(5% 0.05 var(--h) / 0.7);
+    --sheen: inset 0 1px 0 oklch(100% 0 0 / 0.08);
+    --raised: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.1);
+    --raised-hover: var(--sheen), 0 0 0 1px oklch(100% 0 0 / 0.18);
+    --material: linear-gradient(oklch(27% 0.05 var(--h)), oklch(24% 0.05 var(--h)));
+    --button-sheen: inset 0 1px 0 oklch(100% 0 0 / 0.3);
+    position: relative; isolation: isolate;
+    background: var(--night); color: var(--ink);
+  }
+  /* The same dot grid as the hero, faint, so the band reads as one surface. */
+  .night::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: radial-gradient(circle at 1px 1px, oklch(100% 0 0 / 0.07) 1px, transparent 1.4px) 0 0 / 22px 22px;
+    -webkit-mask-image: linear-gradient(transparent, #000 220px, #000 calc(100% - 220px), transparent);
+    mask-image: linear-gradient(transparent, #000 220px, #000 calc(100% - 220px), transparent);
+  }
+  /* Seams: the page eases into the band and back out instead of switching at a hard edge. */
+  .night-in { background: linear-gradient(var(--page-bg), var(--night) 200px); padding-top: clamp(120px, 12vw, 168px); }
+  .night-out { background: linear-gradient(var(--night) calc(100% - 200px), var(--page-bg)); padding-bottom: clamp(120px, 12vw, 168px); }
+  .night .kicker::before { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent), 0 0 14px color-mix(in oklch, var(--accent) 60%, transparent); }
+  .night .seg-thumb { background: oklch(33% 0.06 var(--h)); box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.1), 0 0 0 1px oklch(100% 0 0 / 0.14); }
 
   /* Hero field: a dot grid that leans away from the cursor, with webhooks crossing it.
      Densest behind the code, gone under the headline so the text stays crisp. */
@@ -787,19 +877,50 @@
   .sk-retry { stroke: color-mix(in oklch, var(--bad) 45%, transparent); stroke-dasharray: 5 6; }
   .sk-streak { fill: none; stroke-width: 2.5; stroke-linecap: round; }
   .sk-head-halo { opacity: 0.22; }
+  .sk-glow-frame { fill: color-mix(in oklch, var(--accent) 7%, transparent); stroke-dasharray: 5 5; }
+  /* Focus a step: everything outside it steps back. */
+  .sketch [data-step] { transition: opacity 260ms var(--ease); }
+  .sketch[data-focus] [data-step] { opacity: 0.22; }
+  .sketch[data-focus="1"] [data-step~="1"], .sketch[data-focus="2"] [data-step~="2"],
+  .sketch[data-focus="3"] [data-step~="3"], .sketch[data-focus="4"] [data-step~="4"] { opacity: 1; }
+  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+  .step {
+    position: relative; display: grid; align-content: start; gap: 6px; min-width: 0;
+    padding: 18px 22px 22px; border: 0; background: none; cursor: pointer; text-align: left;
+    font: inherit; color: inherit; transition: background-color 150ms var(--ease);
+  }
+  .step + .step { box-shadow: inset 1px 0 0 var(--line); }
+  .step-tag { font: 500 12.5px/1.2 var(--mono); letter-spacing: 0; color: var(--ink-2); transition: color 200ms var(--ease); }
+  .step-text { font-size: 13.5px; line-height: 1.45; color: var(--ink-3); text-wrap: pretty; transition: color 200ms var(--ease); }
+  .step-bar {
+    position: absolute; left: 0; right: 0; top: -1px; height: 2px; background: var(--accent);
+    transform: scaleX(var(--p, 0)); transform-origin: left; opacity: 0; transition: opacity 200ms var(--ease);
+  }
+  .step[data-active] .step-bar { opacity: 1; }
+  .step[data-active] .step-tag, .step[aria-pressed="true"] .step-tag { color: var(--accent); }
+  .step[data-active] .step-text, .step[aria-pressed="true"] .step-text { color: var(--ink-2); }
+  .step[aria-pressed="true"] { background: color-mix(in oklch, var(--accent) 5%, transparent); }
+  .step:focus-visible { outline-offset: -2px; }
+  @media (hover: hover) and (pointer: fine) { .step:hover { background: color-mix(in oklch, var(--ink) 3%, transparent); } }
+  @media (max-width: 760px) {
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .step:nth-child(3) { box-shadow: inset 0 1px 0 var(--line); }
+    .step:nth-child(4) { box-shadow: inset 1px 0 0 var(--line), inset 0 1px 0 var(--line); }
+    .step { padding: 16px 16px 18px; }
+  }
   @media (max-width: 640px) {
     .flow-sketch { margin-top: 24px; border-radius: 16px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .hero-code, .hero-shadow { transform: none; }
-    .mark-dot, .chart-head, [data-spot]::after { transition: none; }
+    .mark-dot, .chart-head, [data-spot]::after, .sketch [data-step], .step-bar { transition: none; }
     .mark-chip .attempt { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
-    .packet.go, .packet.drop, .sim-slot .attempt, .sig-value.fresh { animation: none; }
+    .packet.go, .packet.drop, .live-dot::after { animation: none; }
     .packet.go { opacity: 0; }
   }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -959,76 +1080,77 @@ hookgres.start();
             <rect class="sk-paper" x="0" y="0" width="1200" height="380" fill="url(#sk-grid)"/>
 
             <g class="sk-lines">
-              <path class="sk-line" id="sk-a1" d="M220 192C270 192 270 161 324 161"/>
-              <path class="sk-line" id="sk-a2" d="M220 192C270 192 270 227 324 227"/>
-              <path class="sk-line" id="sk-m1" d="M656 227C712 227 704 130 760 130"/>
-              <path class="sk-line" id="sk-m2" d="M656 227C712 227 704 190 760 190"/>
-              <path class="sk-line" id="sk-m3" d="M656 227C712 227 704 250 760 250"/>
-              <path class="sk-line" id="sk-e1" d="M910 130C945 130 945 122 980 122"/>
-              <path class="sk-line" id="sk-e2" d="M910 190C945 190 945 190 980 190"/>
-              <path class="sk-line" id="sk-e3" d="M910 250C945 250 945 258 980 258"/>
-              <path class="sk-line sk-retry" id="sk-r3" d="M1078 284C1078 360 600 360 560 254"/>
+              <path class="sk-line" id="sk-a1" data-step="1" d="M220 192C270 192 270 161 324 161"/>
+              <path class="sk-line" id="sk-a2" data-step="1" d="M220 192C270 192 270 227 324 227"/>
+              <path class="sk-line" id="sk-m1" data-step="3" d="M656 227C712 227 704 130 760 130"/>
+              <path class="sk-line" id="sk-m2" data-step="3" d="M656 227C712 227 704 190 760 190"/>
+              <path class="sk-line" id="sk-m3" data-step="3" d="M656 227C712 227 704 250 760 250"/>
+              <path class="sk-line" id="sk-e1" data-step="4" d="M910 130C945 130 945 122 980 122"/>
+              <path class="sk-line" id="sk-e2" data-step="4" d="M910 190C945 190 945 190 980 190"/>
+              <path class="sk-line" id="sk-e3" data-step="4" d="M910 250C945 250 945 258 980 258"/>
+              <path class="sk-line sk-retry" id="sk-r3" data-step="4" d="M1078 284C1078 360 600 360 560 254"/>
             </g>
-            <text class="sk-note sk-note-bad" x="820" y="370" text-anchor="middle">500 · back on the schedule, 5s → 10h</text>
+            <text class="sk-note sk-note-bad" data-step="4" x="820" y="362" text-anchor="middle">500 · back on the schedule, 5s → 10h</text>
 
-            <g class="sk-node">
+            <g class="sk-node" data-step="1">
               <rect class="sk-box" x="24" y="150" width="196" height="84" rx="12"/>
               <text class="sk-title" x="44" y="185">Your app</text>
               <text class="sk-mono" x="44" y="209">hookgres.send()</text>
             </g>
 
-            <g>
+            <g data-step="2">
               <rect class="sk-frame" x="300" y="56" width="380" height="272" rx="18"/>
+              <rect class="sk-glow sk-glow-frame" data-flash="commit" x="300" y="56" width="380" height="272" rx="18"/>
               <text class="sk-title" x="324" y="90">Postgres</text>
               <text class="sk-mono" x="656" y="90" text-anchor="end">one transaction</text>
               <text class="sk-mono sk-dim" x="324" y="122">BEGIN</text>
               <text class="sk-mono sk-ok" x="324" y="300">COMMIT</text>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="1 2">
               <rect class="sk-box" x="324" y="134" width="332" height="54" rx="10"/>
               <rect class="sk-glow" data-flash="row1" x="324" y="134" width="332" height="54" rx="10"/>
               <text class="sk-label" x="344" y="158">invoices</text>
               <text class="sk-mono" x="344" y="177">in_123 · status = paid</text>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="1 2 3">
               <rect class="sk-box" x="324" y="200" width="332" height="54" rx="10"/>
               <rect class="sk-glow" data-flash="row2" x="324" y="200" width="332" height="54" rx="10"/>
               <text class="sk-label" x="344" y="224">hookgres.messages</text>
               <text class="sk-mono" x="344" y="243">invoice.paid · 3 deliveries</text>
             </g>
 
-            <text class="sk-mono sk-dim" x="835" y="92" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
-            <g class="sk-node">
+            <text class="sk-mono sk-dim" data-step="3" x="835" y="92" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
+            <g class="sk-node" data-step="3 4">
               <rect class="sk-box" x="760" y="110" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w1" x="760" y="110" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="135">worker 1</text>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="3 4">
               <rect class="sk-box" x="760" y="170" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w2" x="760" y="170" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="195">worker 2</text>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="3 4">
               <rect class="sk-box" x="760" y="230" width="150" height="40" rx="10"/>
               <rect class="sk-glow" data-flash="w3" x="760" y="230" width="150" height="40" rx="10"/>
               <text class="sk-label" x="780" y="255">worker 3</text>
             </g>
 
-            <g class="sk-node">
+            <g class="sk-node" data-step="4">
               <rect class="sk-box" x="980" y="96" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-ok" data-flash="e1" x="980" y="96" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="119">acme.com</text>
               <text class="sk-mono sk-ok" x="998" y="137">204 · first attempt</text>
               <circle class="sk-dot sk-dot-ok" cx="1156" cy="122" r="4"/>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="4">
               <rect class="sk-box" x="980" y="164" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-ok" data-flash="e2" x="980" y="164" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="187">shop.example</text>
               <text class="sk-mono sk-warn" x="998" y="205">503 → 204 · attempt 3</text>
               <circle class="sk-dot sk-dot-warn" cx="1156" cy="190" r="4"/>
             </g>
-            <g class="sk-node">
+            <g class="sk-node" data-step="4">
               <rect class="sk-box" x="980" y="232" width="196" height="52" rx="10"/>
               <rect class="sk-glow sk-glow-bad" data-flash="e3" x="980" y="232" width="196" height="52" rx="10"/>
               <text class="sk-label" x="998" y="255">crm.example</text>
@@ -1039,6 +1161,12 @@ hookgres.start();
             <g class="sk-packets"></g>
           </svg>
         </section>
+        <figcaption class="steps">
+          <button type="button" class="step" data-step="1" aria-pressed="false"><span class="step-tag">send()</span><span class="step-text">Writes the webhook as a row in your transaction.</span><span class="step-bar" aria-hidden="true"></span></button>
+          <button type="button" class="step" data-step="2" aria-pressed="false"><span class="step-tag">COMMIT</span><span class="step-text">The row commits with your data. Roll back and it's gone.</span><span class="step-bar" aria-hidden="true"></span></button>
+          <button type="button" class="step" data-step="3" aria-pressed="false"><span class="step-tag">SKIP LOCKED</span><span class="step-text">Workers claim rows without waiting on each other.</span><span class="step-bar" aria-hidden="true"></span></button>
+          <button type="button" class="step" data-step="4" aria-pressed="false"><span class="step-tag">POST</span><span class="step-text">Each endpoint gets a signed request. Failures go back on the schedule.</span><span class="step-bar" aria-hidden="true"></span></button>
+        </figcaption>
       </figure>
     </div>
   </section>
@@ -1113,7 +1241,7 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="band alt">
+  <section class="band night night-in">
     <div class="wrap">
       <div class="head-row">
         <div>
@@ -1159,16 +1287,16 @@ hookgres.start();
         </div>
       </div>
       <div class="numbers">
-        <div class="number"><b>8<span class="unit">attempts</span></b><p>over about 28 hours, from 5 seconds to 10 hours apart.</p></div>
-        <div class="number"><b>5<span class="unit">days</span></b><p>of failures before an endpoint is disabled. One call turns it back on.</p></div>
-        <div class="number"><b>24<span class="unit">hours</span></b><p>when old and new secrets both sign, so receivers rotate without dropping events.</p></div>
-        <div class="number"><b>0<span class="unit">lost</span></b><p>and none duplicated across 20,000 webhooks and 4 competing workers in the load test.</p></div>
+        <div class="number"><svg class="mini mini-retry" viewBox="0 0 120 32" aria-hidden="true"><line x1="4" x2="116" y1="16" y2="16"/><circle cx="4.0" cy="16" r="3.2"/><circle cx="21.4" cy="16" r="3.2"/><circle cx="59.7" cy="16" r="3.2"/><circle cx="78.5" cy="16" r="3.2"/><circle cx="93.0" cy="16" r="3.2"/><circle cx="103.4" cy="16" r="3.2"/><circle cx="111.6" cy="16" r="3.2"/><circle cx="116.0" cy="16" r="3.2"/></svg><b>8<span class="unit">attempts</span></b><p>over about 28 hours, from 5 seconds to 10 hours apart.</p></div>
+        <div class="number"><svg class="mini mini-days" viewBox="0 0 120 32" aria-hidden="true"><rect x="2" y="10" width="20" height="12" rx="3" style="opacity:0.22"/><rect x="26" y="10" width="20" height="12" rx="3" style="opacity:0.34"/><rect x="50" y="10" width="20" height="12" rx="3" style="opacity:0.48"/><rect x="74" y="10" width="20" height="12" rx="3" style="opacity:0.64"/><rect x="98" y="10" width="20" height="12" rx="3" style="opacity:1"/></svg><b>5<span class="unit">days</span></b><p>of failures before an endpoint is disabled. One call turns it back on.</p></div>
+        <div class="number"><svg class="mini mini-rotate" viewBox="0 0 120 32" aria-hidden="true"><rect class="old" x="2" y="7" width="74" height="7" rx="3.5"/><rect class="new" x="44" y="18" width="74" height="7" rx="3.5"/><rect class="overlap" x="44" y="3" width="32" height="26" rx="4"/></svg><b>24<span class="unit">hours</span></b><p>when old and new secrets both sign, so receivers rotate without dropping events.</p></div>
+        <div class="number"><svg class="mini mini-grid" viewBox="0 0 120 32" aria-hidden="true"><rect x="2.0" y="2.0" width="6" height="6" rx="1.5"/><rect x="10.4" y="2.0" width="6" height="6" rx="1.5"/><rect x="18.8" y="2.0" width="6" height="6" rx="1.5"/><rect x="27.2" y="2.0" width="6" height="6" rx="1.5"/><rect x="35.6" y="2.0" width="6" height="6" rx="1.5"/><rect x="44.0" y="2.0" width="6" height="6" rx="1.5"/><rect x="52.4" y="2.0" width="6" height="6" rx="1.5"/><rect x="60.8" y="2.0" width="6" height="6" rx="1.5"/><rect x="69.2" y="2.0" width="6" height="6" rx="1.5"/><rect x="77.6" y="2.0" width="6" height="6" rx="1.5"/><rect x="86.0" y="2.0" width="6" height="6" rx="1.5"/><rect x="94.4" y="2.0" width="6" height="6" rx="1.5"/><rect x="102.8" y="2.0" width="6" height="6" rx="1.5"/><rect x="111.2" y="2.0" width="6" height="6" rx="1.5"/><rect x="2.0" y="9.6" width="6" height="6" rx="1.5"/><rect x="10.4" y="9.6" width="6" height="6" rx="1.5"/><rect x="18.8" y="9.6" width="6" height="6" rx="1.5"/><rect x="27.2" y="9.6" width="6" height="6" rx="1.5"/><rect x="35.6" y="9.6" width="6" height="6" rx="1.5"/><rect x="44.0" y="9.6" width="6" height="6" rx="1.5"/><rect x="52.4" y="9.6" width="6" height="6" rx="1.5"/><rect x="60.8" y="9.6" width="6" height="6" rx="1.5"/><rect x="69.2" y="9.6" width="6" height="6" rx="1.5"/><rect x="77.6" y="9.6" width="6" height="6" rx="1.5"/><rect x="86.0" y="9.6" width="6" height="6" rx="1.5"/><rect x="94.4" y="9.6" width="6" height="6" rx="1.5"/><rect x="102.8" y="9.6" width="6" height="6" rx="1.5"/><rect x="111.2" y="9.6" width="6" height="6" rx="1.5"/><rect x="2.0" y="17.2" width="6" height="6" rx="1.5"/><rect x="10.4" y="17.2" width="6" height="6" rx="1.5"/><rect x="18.8" y="17.2" width="6" height="6" rx="1.5"/><rect x="27.2" y="17.2" width="6" height="6" rx="1.5"/><rect x="35.6" y="17.2" width="6" height="6" rx="1.5"/><rect x="44.0" y="17.2" width="6" height="6" rx="1.5"/><rect x="52.4" y="17.2" width="6" height="6" rx="1.5"/><rect x="60.8" y="17.2" width="6" height="6" rx="1.5"/><rect x="69.2" y="17.2" width="6" height="6" rx="1.5"/><rect x="77.6" y="17.2" width="6" height="6" rx="1.5"/><rect x="86.0" y="17.2" width="6" height="6" rx="1.5"/><rect x="94.4" y="17.2" width="6" height="6" rx="1.5"/><rect x="102.8" y="17.2" width="6" height="6" rx="1.5"/><rect x="111.2" y="17.2" width="6" height="6" rx="1.5"/><rect x="2.0" y="24.8" width="6" height="6" rx="1.5"/><rect x="10.4" y="24.8" width="6" height="6" rx="1.5"/><rect x="18.8" y="24.8" width="6" height="6" rx="1.5"/><rect x="27.2" y="24.8" width="6" height="6" rx="1.5"/><rect x="35.6" y="24.8" width="6" height="6" rx="1.5"/><rect x="44.0" y="24.8" width="6" height="6" rx="1.5"/><rect x="52.4" y="24.8" width="6" height="6" rx="1.5"/><rect x="60.8" y="24.8" width="6" height="6" rx="1.5"/><rect x="69.2" y="24.8" width="6" height="6" rx="1.5"/><rect x="77.6" y="24.8" width="6" height="6" rx="1.5"/><rect x="86.0" y="24.8" width="6" height="6" rx="1.5"/><rect x="94.4" y="24.8" width="6" height="6" rx="1.5"/><rect x="102.8" y="24.8" width="6" height="6" rx="1.5"/><rect x="111.2" y="24.8" width="6" height="6" rx="1.5"/></svg><b>0<span class="unit">lost</span></b><p>and none duplicated across 20,000 webhooks and 4 competing workers in the load test.</p></div>
       </div>
       <p class="note">The same retry shape Svix uses, all configurable. On one laptop: about 13,000 sends and 5,500 deliveries per second. Reproduce it with <code>pnpm bench</code>.</p>
     </div>
   </section>
 
-  <section class="band">
+  <section class="band night">
     <div class="wrap split">
       <div>
         <p class="kicker">webhook-signature</p>
@@ -1197,23 +1325,26 @@ hookgres.start();
     </div>
   </section>
 
-  <section class="band alt">
+  <section class="band night night-out">
     <div class="wrap">
       <p class="kicker">hookgres.deliveries</p>
       <h2>Every attempt is a row you can query.</h2>
       <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
       <div class="log-stage">
-        <div class="window" data-spot role="img" aria-label="Delivery log for one invoice.paid event sent to three endpoints. The first succeeds on its first attempt. The second answers 503 twice and succeeds on the third attempt, five minutes later. The third fails all eight attempts over about 28 hours and is marked failed.">
-          <div class="window-bar" aria-hidden="true">
-            <span class="title">invoice.paid</span>
-            <span class="meta log-id">msg_01m6yb1bw7xncca4sw5028556c</span>
+        <div class="window log-window" data-spot>
+          <p class="sr-only">Example delivery log. Each row is one endpoint's delivery, with the status code of every attempt on the retry schedule and the result: for example, succeeded on the first attempt, succeeded on the third after two 503s, or failed after eight attempts over about 28 hours.</p>
+          <div class="window-bar">
+            <span class="title" aria-hidden="true">hookgres.deliveries</span>
+            <span class="meta log-id" aria-hidden="true">msg_01m6yb1bw7xncca4sw5028556c</span>
+            <button type="button" class="live-toggle" aria-label="Pause live updates" hidden><span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span></button>
           </div>
           <div class="log" aria-hidden="true">
             <div class="log-row head">
               <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>17.6h</span><span>27.6h</span><span>Delivery</span>
             </div>
+            <div class="log-rows">
             <div class="log-row">
-              <div class="endpoint"><b>acme.com/webhooks</b><small>every event</small></div>
+              <div class="endpoint"><b>acme.com/webhooks</b><small>invoice.paid</small></div>
               <div class="slots">
                 <div class="slot"><span class="attempt ok">204</span></div>
                 <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
@@ -1221,7 +1352,7 @@ hookgres.start();
               <div class="status ok">Succeeded<small>1 attempt</small></div>
             </div>
             <div class="log-row">
-              <div class="endpoint"><b>shop.example/hooks</b><small>2 event types</small></div>
+              <div class="endpoint"><b>shop.example/hooks</b><small>invoice.paid</small></div>
               <div class="slots">
                 <div class="slot"><span class="attempt warn">503</span></div>
                 <div class="slot"><span class="attempt warn">503</span></div>
@@ -1243,6 +1374,7 @@ hookgres.start();
                 <div class="slot"><span class="attempt bad">500</span></div>
               </div>
               <div class="status bad">Failed<small>8 attempts</small></div>
+            </div>
             </div>
           </div>
         </div>
@@ -1291,7 +1423,7 @@ hookgres.start();
       <h2>A library, not a service.</h2>
       <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
       <table class="table">
-        <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col">Hookgres</th><th scope="col">Hosted service</th></tr></thead>
+        <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col" class="us">Hookgres</th><th scope="col">Hosted service</th></tr></thead>
         <tbody>
           <tr><th scope="row">Where it runs</th><td class="us">Your app, your Postgres</td><td>Their cloud, via API</td></tr>
           <tr><th scope="row">Part of your transaction</th><td class="us">Yes</td><td>No, a separate API call</td></tr>
@@ -1315,7 +1447,8 @@ hookgres.start();
   </section>
 
   <section class="band cta">
-    <div class="wrap split">
+    <div class="wrap">
+    <div class="cta-panel night split">
       <div>
         <h2>Your next webhook ships in your next&nbsp;commit.</h2>
         <p class="sub">Add the package, run <code>migrate()</code>, start sending. Or try the playground first: Postgres plus three fake customer endpoints (healthy, flaky and down) at <code>localhost:3000</code>.</p>
@@ -1330,6 +1463,7 @@ hookgres.start();
 <span class="c">$ </span>cd hookgres
 <span class="c">$ </span>docker compose up</pre>
       </div>
+    </div>
     </div>
   </section>
 </main>
@@ -1453,7 +1587,12 @@ hookgres.start();
     let timer;
     button.addEventListener("click", async () => {
       let text = button.dataset.copy;
-      if (button.dataset.copyFrom) text = document.getElementById(button.dataset.copyFrom).textContent;
+      if (button.dataset.copyFrom) {
+        const source = document.getElementById(button.dataset.copyFrom);
+        text = source.textContent;
+        // A value still animating copies as its final text.
+        for (const el of source.querySelectorAll("[data-final]")) text = text.replace(el.textContent, el.dataset.final);
+      }
       if ("copyTab" in button.dataset) text = $(".hero-code .tab-panel:not([hidden])").textContent;
       const status = document.getElementById("copy-status");
       clearTimeout(timer);
@@ -1771,6 +1910,27 @@ hookgres.start();
     const msgId = `msg_${[...random].map((x) => "0123456789abcdefghjkmnpqrstvwxyz"[x % 32]).join("")}`;
     const keyPromise = crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const hmac = async (content) => b64(await crypto.subtle.sign("HMAC", await keyPromise, new TextEncoder().encode(content)));
+    // A new signature resolves left to right out of noise, so you can see it change.
+    const NOISE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let decoding = 0;
+    const decode = (el, text) => {
+      cancelAnimationFrame(decoding);
+      el.dataset.final = text;
+      if (reduceMotion || el.textContent === text) {
+        el.textContent = text;
+        return;
+      }
+      const start = performance.now();
+      const frame = (now) => {
+        const p = Math.min(1, (now - start) / 420);
+        const settled = Math.floor((1 - (1 - p) ** 3) * text.length);
+        let out = text.slice(0, settled);
+        for (let i = settled; i < text.length; i++) out += i < 3 ? text[i] : NOISE[Math.floor(Math.random() * 64)];
+        el.textContent = out;
+        if (p < 1) decoding = requestAnimationFrame(frame);
+      };
+      decoding = requestAnimationFrame(frame);
+    };
     let version = 0;
     const update = async () => {
       const mine = ++version;
@@ -1793,12 +1953,17 @@ hookgres.start();
       if (mine !== version) return;
       out.id.textContent = msgId;
       out.ts.textContent = ts;
-      out.sig.textContent = signature;
-      out.sig.classList.remove("fresh");
-      void out.sig.offsetWidth;
-      out.sig.classList.add("fresh");
-      // The exact bytes that were signed, so the copied request verifies.
-      out.body.textContent = received;
+      decode(out.sig, signature);
+      // What arrives. When it was tampered with, the injected bytes are marked.
+      if (tamper.checked) {
+        const cut = body.length - 1;
+        const injected = document.createElement("mark");
+        injected.className = "tampered";
+        injected.textContent = received.slice(cut, -1);
+        out.body.replaceChildren(received.slice(0, cut), injected, received.slice(-1));
+      } else {
+        out.body.textContent = received;
+      }
       const ok = expected === signature;
       verdict.className = `verdict ${ok ? "ok" : "bad"}`;
       verdict.textContent = ok ? "Signature verified" : "Rejected: signature doesn't match";

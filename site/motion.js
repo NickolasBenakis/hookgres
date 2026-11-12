@@ -336,6 +336,7 @@
       headDot.style.fill = tone[color];
       const group = document.createElementNS(NS, "g");
       group.style.opacity = "0";
+      group.setAttribute("data-step", el.dataset.step);
       group.append(streak, halo, headDot);
       layer.append(group);
       return {
@@ -357,6 +358,74 @@
       arrivals[p.flash] ??= [];
       arrivals[p.flash].push(p.start + p.dur);
     }
+    arrivals.commit = [0.72];
+
+    // Steps under the drawing. Untouched, the lit step follows the packets and its bar
+    // fills for the length of that phase. Hover, focus or press a step to hold the
+    // drawing on it; pressing pins it until pressed again.
+    const steps = [...sketch.querySelectorAll(".step")];
+    const phases = [
+      [0, 0.72],
+      [0.72, 1.0],
+      [1.0, 1.75],
+      [1.75, CYCLE],
+    ];
+    let pinned = 0;
+    let hoverStep = 0;
+    const focusOn = (n) => {
+      if (n) svg.dataset.focus = String(n);
+      else delete svg.dataset.focus;
+    };
+    const syncFocus = () => focusOn(hoverStep || pinned);
+    for (const [i, button] of steps.entries()) {
+      const n = i + 1;
+      button.addEventListener("pointerenter", (event) => {
+        if (event.pointerType !== "mouse") return;
+        hoverStep = n;
+        syncFocus();
+      });
+      button.addEventListener("pointerleave", () => {
+        hoverStep = 0;
+        syncFocus();
+      });
+      // Keyboard focus holds the step; a tap's focus doesn't, so unpinning works on touch.
+      button.addEventListener("focus", () => {
+        if (!button.matches(":focus-visible")) return;
+        hoverStep = n;
+        syncFocus();
+      });
+      button.addEventListener("blur", () => {
+        hoverStep = 0;
+        syncFocus();
+      });
+      button.addEventListener("click", () => {
+        pinned = pinned === n ? 0 : n;
+        for (const [j, b] of steps.entries())
+          b.setAttribute("aria-pressed", String(pinned === j + 1));
+        syncFocus();
+        // On narrow screens the drawing scrolls; bring the pressed step's part into view.
+        const scroller = sketch.querySelector(".sketch-scroll");
+        if (pinned && scroller.scrollWidth > scroller.clientWidth) {
+          const ratio = scroller.scrollWidth / 1200;
+          const left = [24, 300, 740, 960][pinned - 1] * ratio - 16;
+          scroller.scrollTo({ left, behavior: reduce ? "auto" : "smooth" });
+        }
+      });
+    }
+    let shown = 0;
+    const followPackets = (t) => {
+      const held = hoverStep || pinned;
+      const n = held ? 0 : phases.findIndex(([a, b]) => t >= a && t < b) + 1;
+      if (n !== shown) {
+        for (const [i, b] of steps.entries())
+          b.toggleAttribute("data-active", i + 1 === n);
+        shown = n;
+      }
+      if (n) {
+        const [a, b] = phases[n - 1];
+        steps[n - 1].style.setProperty("--p", ((t - a) / (b - a)).toFixed(3));
+      }
+    };
 
     const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
     let t0 = 0;
@@ -387,6 +456,7 @@
         }
         flashes[node].style.opacity = (lit ** 1.5).toFixed(3);
       }
+      followPackets(t);
     };
 
     if (reduce) {
@@ -395,6 +465,178 @@
         flashes[node].style.opacity = "0.6";
     } else {
       whileVisible(sketch, frame, "0px");
+    }
+  }
+
+  // Live delivery log: a new delivery arrives at the top every few seconds, its
+  // attempts tick in on the compressed schedule, and older rows slide down and out.
+  // Hovering the window or pressing Pause freezes it where it is.
+  const logWindow = document.querySelector(".log-window");
+  if (logWindow && !reduce) {
+    const list = logWindow.querySelector(".log-rows");
+    const toggle = logWindow.querySelector(".live-toggle");
+    const idLabel = logWindow.querySelector(".log-id");
+    // Five distinct endpoints in a fixed order, so neighbours never repeat.
+    const endpoints = [
+      ["billing.example/in", [204]],
+      ["ops.example/alerts", [502, 204]],
+      ["crm.example/in", [500, 500, 500, 500, 500, 500, 500, 500]],
+      ["acme.com/webhooks", [204]],
+      ["shop.example/hooks", [503, 503, 204]],
+    ];
+    const events = [
+      "invoice.paid",
+      "customer.updated",
+      "subscription.renewed",
+      "invoice.paid",
+      "refund.created",
+    ];
+    const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+    const msgId = () =>
+      `msg_${Array.from({ length: 26 }, () => ALPHABET[Math.floor(Math.random() * 32)]).join("")}`;
+    const ARRIVE_EVERY = 3.4;
+    const TICK = 0.45;
+    const VISIBLE = 3;
+    let clock = 0;
+    let nextArrival = 1.2;
+    let n = 0;
+    let paused = false;
+    let hovered = false;
+    const active = [];
+
+    const chip = (code, tone) => {
+      const el = document.createElement("span");
+      el.className = `attempt ${tone} pop`;
+      el.textContent = code;
+      return el;
+    };
+    const setStatus = (row, cls, text, small) => {
+      const status = row.querySelector(".status");
+      status.className = `status ${cls}`;
+      status.textContent = text;
+      const s = document.createElement("small");
+      s.textContent = small;
+      status.append(s);
+    };
+    const sizeToRows = () => {
+      const rows = [...list.children].slice(0, VISIBLE);
+      list.style.height = `${rows.reduce((sum, r) => sum + r.offsetHeight, 0)}px`;
+    };
+
+    const arrive = () => {
+      const [url, codes] = endpoints[n % endpoints.length];
+      const event = events[n % events.length];
+      n++;
+      const row = document.createElement("div");
+      row.className = "log-row";
+      row.innerHTML = `<div class="endpoint"><b></b><small></small></div><div class="slots">${'<div class="slot"></div>'.repeat(8)}</div><div class="status"></div>`;
+      row.querySelector("b").textContent = url;
+      row.querySelector("small").textContent = event;
+      setStatus(row, "live", "Delivering", "attempt 1");
+      idLabel.textContent = msgId();
+
+      // FLIP: note where the rows are, insert, then slide them from there.
+      const before = new Map(
+        [...list.children].map((r) => [r, r.getBoundingClientRect().top]),
+      );
+      list.prepend(row);
+      while (list.children.length > VISIBLE + 1) list.lastElementChild.remove();
+      for (const [r, top] of before) {
+        if (!r.isConnected) continue;
+        r.style.transition = "none";
+        r.style.transform = `translateY(${top - r.getBoundingClientRect().top}px)`;
+      }
+      row.style.transition = "none";
+      row.style.opacity = "0";
+      row.style.transform = "translateY(-10px)";
+      row.dataset.new = "";
+      list.offsetHeight;
+      for (const r of list.children) {
+        r.style.transition =
+          "transform 560ms cubic-bezier(0.32, 0.72, 0, 1), opacity 320ms ease-out";
+        r.style.transform = "";
+        r.style.opacity = "";
+      }
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => delete row.dataset.new),
+      );
+      active.push({ row, codes, i: 0, at: clock + 0.35 });
+    };
+
+    const step = () => {
+      for (let k = active.length - 1; k >= 0; k--) {
+        const d = active[k];
+        if (clock < d.at) continue;
+        if (!d.row.isConnected) {
+          active.splice(k, 1);
+          continue;
+        }
+        const code = d.codes[d.i];
+        const last = d.i === d.codes.length - 1;
+        const tone = code < 300 ? "ok" : d.codes.at(-1) >= 300 ? "bad" : "warn";
+        d.row.querySelectorAll(".slot")[d.i].append(chip(code, tone));
+        d.i++;
+        if (last) {
+          const ok = code < 300;
+          setStatus(
+            d.row,
+            ok ? "ok" : "bad",
+            ok ? "Succeeded" : "Failed",
+            `${d.i} attempt${d.i > 1 ? "s" : ""}`,
+          );
+          active.splice(k, 1);
+        } else {
+          setStatus(d.row, "live", "Retrying", `attempt ${d.i + 1} of 8`);
+          d.at = clock + TICK;
+        }
+      }
+    };
+
+    let last = 0;
+    whileVisible(
+      logWindow,
+      (now) => {
+        const dt = Math.min(0.1, (now - (last || now)) / 1000);
+        last = now;
+        if (paused || hovered) return;
+        clock += dt;
+        if (clock >= nextArrival) {
+          nextArrival = clock + ARRIVE_EVERY;
+          arrive();
+        }
+        step();
+      },
+      "0px",
+    );
+
+    list.dataset.live = "";
+    sizeToRows();
+    let width = 0;
+    new ResizeObserver(([entry]) => {
+      if (Math.abs(entry.contentRect.width - width) < 1) return;
+      width = entry.contentRect.width;
+      sizeToRows();
+    }).observe(logWindow);
+    toggle.hidden = false;
+    // A way to stop the moving content for everyone (WCAG 2.2.2).
+    toggle.addEventListener("click", () => {
+      paused = !paused;
+      toggle.toggleAttribute("data-paused", paused);
+      toggle.setAttribute(
+        "aria-label",
+        paused ? "Resume live updates" : "Pause live updates",
+      );
+      toggle.querySelector(".live-label").textContent = paused
+        ? "Paused"
+        : "Live";
+    });
+    if (finePointer) {
+      logWindow.addEventListener("pointerenter", (event) => {
+        if (event.pointerType === "mouse") hovered = true;
+      });
+      logWindow.addEventListener("pointerleave", () => {
+        hovered = false;
+      });
     }
   }
 }
