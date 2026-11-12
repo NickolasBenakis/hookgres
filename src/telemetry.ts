@@ -53,6 +53,55 @@ export interface OtelMeter {
  */
 export interface OpenTelemetryApi {
   metrics: { getMeter(name: string, version?: string): OtelMeter };
+  /** For traces: `trace`, `context`, `propagation` and `ROOT_CONTEXT` are all needed, as in the real module. */
+  trace?: {
+    getTracer(name: string, version?: string): OtelTracer;
+    setSpan(context: OtelContext, span: OtelSpan): OtelContext;
+    getSpanContext(context: OtelContext): OtelSpanContext | undefined;
+  };
+  context?: {
+    active(): OtelContext;
+    with<T>(context: OtelContext, fn: () => T): T;
+  };
+  propagation?: {
+    inject(context: OtelContext, carrier: Record<string, string>): void;
+    extract(context: OtelContext, carrier: Record<string, string>): OtelContext;
+  };
+  ROOT_CONTEXT?: OtelContext;
+  /** Makes the key that keeps HTTP instrumentations off webhook requests. */
+  createContextKey?(description: string): symbol;
+}
+
+/** An OpenTelemetry `Context`; opaque to Hookgres. */
+export type OtelContext = object;
+
+/** The parts of an OpenTelemetry `SpanContext` Hookgres reads. */
+export interface OtelSpanContext {
+  traceId: string;
+  spanId: string;
+  traceFlags: number;
+}
+
+/** The parts of an OpenTelemetry `Span` Hookgres calls. */
+export interface OtelSpan {
+  setAttributes(attributes: Attributes): unknown;
+  setStatus(status: { code: number; message?: string }): unknown;
+  recordException(exception: Error | string): void;
+  end(endTime?: number): void;
+}
+
+/** The parts of an OpenTelemetry `Tracer` Hookgres calls. */
+export interface OtelTracer {
+  startSpan(
+    name: string,
+    options?: {
+      kind?: number;
+      attributes?: Attributes;
+      links?: { context: OtelSpanContext }[];
+      root?: boolean;
+    },
+    context?: OtelContext,
+  ): OtelSpan;
 }
 
 /** The `opentelemetry` option. */
@@ -66,6 +115,52 @@ export interface OpenTelemetryOptions {
    * of process. Default `true`.
    */
   queueMetrics?: boolean;
+  /**
+   * Record a span for each `send()` and each delivery attempt, linked to
+   * each other. Needs `api` to include `trace`, `context` and `propagation`,
+   * as the real module does. Default `true`.
+   */
+  traces?: boolean;
+  /**
+   * Let your HTTP instrumentations (undici, `node:http`) trace webhook
+   * requests. Off by default, because their spans record each request's full
+   * URL, which often holds a secret, and they send your customers a
+   * `traceparent` header and your baggage. Turn it on only if your webhook
+   * URLs hold no secrets and you're fine sending those headers. Default
+   * `false`.
+   */
+  httpInstrumentation?: boolean;
+}
+
+// SpanKind and SpanStatusCode values from @opentelemetry/api.
+const SPAN_KIND_CLIENT = 2;
+const SPAN_KIND_PRODUCER = 3;
+const SPAN_STATUS_ERROR = 2;
+/** Trace context bigger than this isn't stored. */
+const MAX_TRACE_CONTEXT_BYTES = 1024;
+
+type TracingApi = Required<
+  Pick<OpenTelemetryApi, "trace" | "context" | "propagation" | "ROOT_CONTEXT">
+>;
+type ContextApi = NonNullable<OpenTelemetryApi["context"]>;
+
+/**
+ * The key `@opentelemetry/core`'s `suppressTracing()` sets, which the SDK's
+ * tracers and propagators honor: no spans and no injected headers. Its
+ * `createContextKey` is `Symbol.for(description)`.
+ */
+const SUPPRESS_TRACING = "OpenTelemetry SDK Context Key SUPPRESS_TRACING";
+
+/** What `traceAttempt` needs to know about the delivery. */
+export interface TracedDelivery {
+  deliveryId: string;
+  messageId: string;
+  endpointId: string;
+  tenantId: string;
+  eventType: string;
+  attemptNumber: number;
+  url: string;
+  traceContext: Record<string, string> | null;
 }
 
 /** Seconds; covers fast receivers up to the longest request timeouts. */
@@ -86,12 +181,37 @@ export class Telemetry {
   private readonly gauges: OtelObservable[] = [];
   private readonly observeQueue: BatchCallback | null = null;
   private closed = false;
+  /** Set when traces are on. */
+  readonly tracing: TracingApi | null = null;
+  private readonly tracer: OtelTracer | null = null;
+  private readonly context: ContextApi | null;
+  private readonly suppressKey: symbol;
+  private readonly allowHttpInstrumentation: boolean;
 
   constructor(
     options: OpenTelemetryOptions,
     readStats: () => Promise<QueueStats>,
     onError: (error: unknown) => void,
   ) {
+    const { trace, context, propagation, ROOT_CONTEXT } = options.api;
+    this.context = context ?? null;
+    this.allowHttpInstrumentation = options.httpInstrumentation === true;
+    let suppressKey = Symbol.for(SUPPRESS_TRACING);
+    guard(() => {
+      suppressKey =
+        options.api.createContextKey?.(SUPPRESS_TRACING) ?? suppressKey;
+    });
+    this.suppressKey = suppressKey;
+    if (
+      options.traces !== false &&
+      trace &&
+      context &&
+      propagation &&
+      ROOT_CONTEXT
+    ) {
+      this.tracing = { trace, context, propagation, ROOT_CONTEXT };
+      this.tracer = trace.getTracer("hookgres");
+    }
     const meter = options.api.metrics.getMeter("hookgres");
     this.meter = meter;
     this.attempts = meter.createCounter("hookgres.delivery.attempts", {
@@ -191,6 +311,167 @@ export class Telemetry {
     });
   }
 
+  /**
+   * Runs `send()` in a producer span and hands it the trace context to store
+   * with the message, so delivery spans can link back to this one.
+   */
+  async traceSend<
+    R extends {
+      message: { id: string };
+      deliveryCount: number;
+      deduplicated: boolean;
+    },
+  >(
+    attributes: { tenantId: string; eventType: string },
+    run: (traceContext: Record<string, string> | null) => Promise<R>,
+  ): Promise<R> {
+    const tracing = this.tracing;
+    const tracer = this.tracer;
+    if (!tracing || !tracer) return run(null);
+    let span: OtelSpan | undefined;
+    let traceContext: Record<string, string> | null = null;
+    guard(() => {
+      span = tracer.startSpan(
+        "send webhook",
+        {
+          kind: SPAN_KIND_PRODUCER,
+          attributes: {
+            "messaging.system": "hookgres",
+            "messaging.operation.type": "send",
+            "hookgres.tenant_id": attributes.tenantId,
+            "hookgres.event_type": attributes.eventType,
+          },
+        },
+        // Explicit, so the parent comes from your API's context manager.
+        tracing.context.active(),
+      );
+      const carrier: Record<string, string> = {};
+      // From a context holding only the span: no propagator can add the
+      // caller's baggage (application data, possibly personal) to what's
+      // stored.
+      tracing.propagation.inject(
+        tracing.trace.setSpan(tracing.ROOT_CONTEXT, span),
+        carrier,
+      );
+      traceContext = storable(carrier);
+    });
+    let result: R;
+    try {
+      result = await run(traceContext);
+    } catch (error) {
+      guard(() => {
+        span?.recordException(error instanceof Error ? error : String(error));
+        span?.setStatus({ code: SPAN_STATUS_ERROR });
+        span?.end();
+      });
+      throw error;
+    }
+    guard(() => {
+      span?.setAttributes({
+        "messaging.message.id": result.message.id,
+        "hookgres.delivery_count": result.deliveryCount,
+        "hookgres.deduplicated": result.deduplicated,
+      });
+      span?.end();
+    });
+    return result;
+  }
+
+  /**
+   * Runs one HTTP attempt in a client span, linked to the `send()` that
+   * queued it. With traces off, just runs it untraced.
+   *
+   * Either way, unless `httpInstrumentation` is on, HTTP instrumentations
+   * are kept off the request: their span would record the full URL (often
+   * holding a secret), and they'd send the receiver a `traceparent` and your
+   * baggage.
+   */
+  async traceAttempt<
+    R extends { ok: boolean; statusCode: number | null; error: string | null },
+  >(delivery: TracedDelivery, run: () => Promise<R>): Promise<R> {
+    const tracing = this.tracing;
+    const tracer = this.tracer;
+    const contextApi = this.context;
+    if (!contextApi) return run();
+    // Suppressed first and on its own, so a broken tracer can't undo it.
+    let active: OtelContext | undefined;
+    guard(() => {
+      active = this.suppress(contextApi.active());
+    });
+    if (!tracing || !tracer) return runIn(contextApi, active, run);
+    let span: OtelSpan | undefined;
+    guard(() => {
+      const attributes: Attributes = {
+        "messaging.system": "hookgres",
+        "messaging.operation.type": "process",
+        "messaging.message.id": delivery.messageId,
+        "hookgres.delivery.id": delivery.deliveryId,
+        "hookgres.endpoint.id": delivery.endpointId,
+        "hookgres.tenant_id": delivery.tenantId,
+        "hookgres.event_type": delivery.eventType,
+        "hookgres.attempt_number": delivery.attemptNumber,
+        "http.request.method": "POST",
+      };
+      // Not url.full: webhook URLs often carry a secret in the path or query.
+      const url = new URL(delivery.url);
+      attributes["url.scheme"] = url.protocol.replace(/:$/, "");
+      attributes["server.address"] = url.hostname;
+      attributes["server.port"] =
+        Number(url.port) || (url.protocol === "https:" ? 443 : 80);
+      span = tracer.startSpan(
+        "deliver webhook",
+        {
+          kind: SPAN_KIND_CLIENT,
+          attributes,
+          links: linkTo(tracing, delivery.traceContext),
+          // Its own trace even when run inside a request, e.g. drain() from
+          // a cron route: retries can come a day later.
+          root: true,
+        },
+        tracing.context.active(),
+      );
+      active = tracing.trace.setSpan(active ?? contextApi.active(), span);
+    });
+    let result: R;
+    try {
+      result = await runIn(contextApi, active, run);
+    } catch (error) {
+      guard(() => {
+        span?.recordException(error instanceof Error ? error : String(error));
+        span?.setStatus({ code: SPAN_STATUS_ERROR });
+        span?.end();
+      });
+      throw error;
+    }
+    guard(() => {
+      const attributes: Attributes = {};
+      if (result.statusCode !== null) {
+        attributes["http.response.status_code"] = result.statusCode;
+      }
+      if (!result.ok) {
+        attributes["error.type"] = errorType(result);
+        span?.setStatus({
+          code: SPAN_STATUS_ERROR,
+          message: result.error ?? `HTTP ${result.statusCode}`,
+        });
+      }
+      span?.setAttributes(attributes);
+      span?.end();
+    });
+    return result;
+  }
+
+  /** `context` with tracing suppressed, or as is if it can't be. */
+  private suppress(context: OtelContext): OtelContext {
+    if (this.allowHttpInstrumentation) return context;
+    const { setValue } = context as {
+      setValue?: (key: symbol, value: unknown) => OtelContext;
+    };
+    return typeof setValue === "function"
+      ? setValue.call(context, this.suppressKey, true)
+      : context;
+  }
+
   /** Stops reading queue stats, so a closed instance doesn't query. */
   close(): void {
     this.closed = true;
@@ -215,8 +496,74 @@ function guard(record: () => void): void {
   }
 }
 
+/** Runs `run` with `context` active, or plainly if there's none. */
+async function runIn<R>(
+  contextApi: ContextApi,
+  context: OtelContext | undefined,
+  run: () => Promise<R>,
+): Promise<R> {
+  if (!context) return run();
+  let running: Promise<R> | undefined;
+  try {
+    await contextApi.with(context, () => {
+      running = run();
+      return running;
+    });
+  } catch {
+    // The context manager failed, or the request did: either way, the
+    // outcome is the request's own, below.
+  }
+  // Never what `with` returned (a broken one may return anything), and never
+  // a second send: run untraced only if it never ran.
+  return running ?? run();
+}
+
+/**
+ * The injected trace context, without baggage (application data, possibly
+ * personal) and only if small. `null` when there's nothing to link to.
+ */
+function storable(
+  carrier: Record<string, string>,
+): Record<string, string> | null {
+  const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(carrier)) {
+    if (key !== "baggage" && typeof value === "string") kept[key] = value;
+  }
+  if (Object.keys(kept).length === 0) return null;
+  if (Buffer.byteLength(JSON.stringify(kept)) > MAX_TRACE_CONTEXT_BYTES) {
+    return null;
+  }
+  return kept;
+}
+
+/** A link to the stored trace context's span, if it holds a valid one. */
+function linkTo(
+  tracing: TracingApi,
+  traceContext: Record<string, string> | null,
+): { context: OtelSpanContext }[] {
+  if (!traceContext) return [];
+  const extracted = tracing.propagation.extract(
+    tracing.ROOT_CONTEXT,
+    traceContext,
+  );
+  const context = tracing.trace.getSpanContext(extracted);
+  if (
+    !context ||
+    !/^[0-9a-f]{32}$/.test(context.traceId) ||
+    /^0+$/.test(context.traceId) ||
+    !/^[0-9a-f]{16}$/.test(context.spanId) ||
+    /^0+$/.test(context.spanId)
+  ) {
+    return [];
+  }
+  return [{ context }];
+}
+
 /** OpenTelemetry's `error.type`: the status code, or the kind of failure. */
-function errorType(event: AttemptEvent): string {
+function errorType(event: {
+  statusCode: number | null;
+  error: string | null;
+}): string {
   if (event.statusCode !== null) return String(event.statusCode);
   const error = event.error ?? "";
   if (error.startsWith("Timed out")) return "timeout";

@@ -206,7 +206,7 @@ mid-attempt, that attempt isn't reported.
 
 For OpenTelemetry metrics, including queue size and lag read from the
 database, pass the `opentelemetry` option instead of writing these hooks by
-hand: see [Metrics and monitoring](/guides/observability). The hooks remain
+hand: see [Metrics and traces](/guides/observability). The hooks remain
 for anything else, such as per-tenant numbers for a few large customers:
 every distinct attribute value is a separate time series.
 

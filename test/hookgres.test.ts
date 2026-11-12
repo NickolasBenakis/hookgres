@@ -80,7 +80,7 @@ describe("migrate", () => {
     try {
       await ctx.create({ schema }).migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3, 4],
+        versions: [1, 2, 3, 4, 5],
         indexes: ["messages_created_idx"],
       });
     } finally {
@@ -117,7 +117,7 @@ describe("migrate", () => {
       );
       await hw.migrate();
       expect(await schemaState(schema)).toEqual({
-        versions: [1, 2, 3, 4],
+        versions: [1, 2, 3, 4, 5],
         indexes: ["messages_created_idx"],
       });
       expect(await hw.getMessage("msg_old")).toMatchObject({
@@ -154,7 +154,7 @@ describe("migrate", () => {
          CREATE INDEX ON "${schema}".messages (created_at);`,
       );
       await hw.migrate();
-      expect((await schemaState(schema)).versions).toEqual([1, 2, 3, 4]);
+      expect((await schemaState(schema)).versions).toEqual([1, 2, 3, 4, 5]);
       expect(await createdAtIndexes(schema)).toEqual([
         "messages_created_at_idx",
       ]);

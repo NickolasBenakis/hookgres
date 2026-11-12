@@ -212,10 +212,13 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /** Called when Hookgres disables an endpoint after failing for `disableEndpointAfterMs`. Errors are handled like `onAttempt`'s. */
   onEndpointDisabled?: (event: EndpointDisabledEvent) => void;
   /**
-   * Report metrics through OpenTelemetry: delivery attempts and their
-   * duration, disabled endpoints, worker errors and, from the database, the
-   * queue's size and lag. Pass your own `@opentelemetry/api` module; Hookgres
-   * doesn't depend on it, and without this option records nothing.
+   * Report metrics and traces through OpenTelemetry. Metrics: delivery
+   * attempts and their duration, disabled endpoints, worker errors and, from
+   * the database, the queue's size and lag. Traces: a span per `send()` and
+   * one per delivery attempt, linked to it; storing the link needs migration
+   * 5, so run `migrate()` first, or set `traces: false`. Pass your own
+   * `@opentelemetry/api` module; Hookgres doesn't depend on it, and without
+   * this option records nothing.
    *
    * @example
    * import * as otel from "@opentelemetry/api";
@@ -253,6 +256,8 @@ interface ClaimedDelivery {
   body?: string;
   /** Why the payload couldn't be loaded; recorded as a failed attempt. */
   loadError?: string;
+  /** The send()'s trace context, loaded with the payload when tracing. */
+  trace_context?: Record<string, string> | null;
   /** Only possible when a replay raced a redaction. */
   redacted: boolean;
   url: string;
@@ -260,6 +265,11 @@ interface ClaimedDelivery {
   /** Only set while the rotation grace period is running. */
   previous_secret: string | null;
   disabled: boolean;
+}
+
+interface LoadedPayload {
+  payload: string | null;
+  traceContext: Record<string, string> | null;
 }
 
 interface HttpResult {
@@ -841,12 +851,16 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   ): Promise<SendResult> {
     const event: SendInput = { ...input };
     if (this.schemas) event.payload = await this.validatePayload(event);
-    return this.insertMessage(event, options);
+    if (!this.telemetry?.tracing) return this.insertMessage(event, options);
+    return this.telemetry.traceSend(event, (traceContext) =>
+      this.insertMessage(event, options, traceContext),
+    );
   }
 
   private async insertMessage(
     input: SendInput,
     options: SendOptions,
+    traceContext: Record<string, string> | null = null,
   ): Promise<SendResult> {
     if (this.redactPayloads && !options.client) {
       // The insert and the redaction of a message with no deliveries must
@@ -854,7 +868,11 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       const client = await this.pool.connect();
       try {
         await client.query("BEGIN");
-        const result = await this.insertMessage(input, { client });
+        const result = await this.insertMessage(
+          input,
+          { client },
+          traceContext,
+        );
         await client.query("COMMIT");
         if (!result.deduplicated) this.wake();
         return result;
@@ -898,14 +916,23 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     let notify = "";
     if (this.channel) {
       values.push(this.channel);
-      notify = `, n AS (SELECT pg_notify($6, '') FROM (SELECT 1 FROM d LIMIT 1) x)`;
+      notify = `, n AS (SELECT pg_notify($${values.length}, '') FROM (SELECT 1 FROM d LIMIT 1) x)`;
+    }
+    // Only named when there is one, so sends without tracing don't need
+    // migration 5.
+    let traceColumn = "";
+    let traceValue = "";
+    if (traceContext) {
+      values.push(JSON.stringify(traceContext));
+      traceColumn = ", trace_context";
+      traceValue = `, $${values.length}::jsonb`;
     }
 
     const { rows } = await withNulHint(
       this.query(
         `WITH m AS (
-         INSERT INTO ${this.t.messages} (id, tenant_id, event_type, payload, idempotency_key)
-         VALUES ($1, $2, $3, $4::jsonb, $5)
+         INSERT INTO ${this.t.messages} (id, tenant_id, event_type, payload, idempotency_key${traceColumn})
+         VALUES ($1, $2, $3, $4::jsonb, $5${traceValue})
          ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL
          DO NOTHING
          RETURNING *
@@ -1981,7 +2008,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     );
     const ids = [...new Set(sendable.map((d) => d.message_id))];
     if (ids.length === 0) return;
-    let payloads: Map<string, string | null>;
+    let payloads: Map<string, LoadedPayload>;
     try {
       payloads = await this.loadPayloads(ids);
     } catch {
@@ -2005,7 +2032,9 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     for (const delivery of sendable) {
       if (delivery.loadError) continue;
       if (!payloads.has(delivery.message_id)) continue; // deleted meanwhile
-      const payload = payloads.get(delivery.message_id);
+      const loaded = payloads.get(delivery.message_id);
+      delivery.trace_context = loaded?.traceContext ?? null;
+      const payload = loaded?.payload;
       if (payload == null) {
         delivery.redacted = true; // redacted after the claim
         continue;
@@ -2022,14 +2051,25 @@ export class Hookgres<E extends EventMap = AnyEvents> {
 
   private async loadPayloads(
     ids: string[],
-  ): Promise<Map<string, string | null>> {
-    const { rows } = await this.query<{ id: string; payload: string | null }>(
-      `SELECT id, payload::text AS payload FROM ${this.t.messages}
+  ): Promise<Map<string, LoadedPayload>> {
+    // Only read when tracing, so workers without it don't need migration 5.
+    const trace = this.telemetry?.tracing ? ", trace_context" : "";
+    const { rows } = await this.query<{
+      id: string;
+      payload: string | null;
+      trace_context?: Record<string, string> | null;
+    }>(
+      `SELECT id, payload::text AS payload${trace} FROM ${this.t.messages}
        WHERE id = ANY ($1::text[])`,
       [ids],
       this.workerDb,
     );
-    return new Map(rows.map((r) => [r.id, r.payload]));
+    return new Map(
+      rows.map((r) => [
+        r.id,
+        { payload: r.payload, traceContext: r.trace_context ?? null },
+      ]),
+    );
   }
 
   /** Whether any pending delivery is due (one index probe). */
@@ -2247,7 +2287,23 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       return;
     }
 
-    const outcome = await this.attempt(delivery);
+    // No span without an HTTP request: a payload that failed to load.
+    const outcome =
+      this.telemetry && !delivery.loadError
+        ? await this.telemetry.traceAttempt(
+            {
+              deliveryId: delivery.id,
+              messageId: delivery.message_id,
+              endpointId: delivery.endpoint_id,
+              tenantId: delivery.tenant_id,
+              eventType: delivery.event_type,
+              attemptNumber: delivery.attempt_count,
+              url: delivery.url,
+              traceContext: delivery.trace_context ?? null,
+            },
+            () => this.attempt(delivery),
+          )
+        : await this.attempt(delivery);
     const attemptNumber = delivery.attempt_count;
     // Postgres text can't hold NUL; binary response bodies would make the
     // write fail and the delivery re-send forever.

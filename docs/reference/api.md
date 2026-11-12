@@ -136,7 +136,7 @@ Newest first. `filter` accepts `messageId`, `endpointId`, `status` and
 
 The queue right now: `pending`, `due`, `delivering`, `oldestDueAt` and
 `lagMs`, how long the oldest due delivery has waited. `filter` accepts
-`tenantId` and `endpointId`. See [Metrics and monitoring](/guides/observability).
+`tenantId` and `endpointId`. See [Metrics and traces](/guides/observability).
 
 ### `listAttempts(deliveryId): Promise<Attempt[]>`
 
