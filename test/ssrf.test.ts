@@ -3,7 +3,7 @@ import type { LookupAddress } from "node:dns";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -396,8 +396,17 @@ describe("blockPrivateAddresses", () => {
     expect(delivery.lastError).toMatch(/ECONNREFUSED/);
   });
 
+  /** An endpoint stored before createEndpoint() refused credentials. */
+  async function legacyEndpointWithCredentials() {
+    const endpoint = await endpointFor(receiver.url);
+    await ctx.pool.query(
+      `UPDATE "${ctx.schema}".endpoints SET url = $2 WHERE id = $1`,
+      [endpoint.id, `http://user:hunter2@${new URL(receiver.url).host}/`],
+    );
+  }
+
   it("refuses URLs with credentials, like fetch", async () => {
-    await endpointFor(`http://user:pass@${new URL(receiver.url).host}/`);
+    await legacyEndpointWithCredentials();
     const hw = ctx.create({
       blockPrivateAddresses: { allow: ["127.0.0.1"] },
       retrySchedule: [],
@@ -407,6 +416,24 @@ describe("blockPrivateAddresses", () => {
     expect(delivery.lastError).toBe(
       "Endpoint URL must not contain credentials",
     );
+  });
+
+  it("keeps URL passwords out of delivery errors with the default fetch", async () => {
+    await legacyEndpointWithCredentials();
+    const attempts: string[] = [];
+    const hw = ctx.create({
+      retrySchedule: [],
+      onAttempt: (event) => {
+        attempts.push(String(event.error));
+      },
+    });
+    const { delivery } = await sendAndDrain(hw);
+    expect(receiver.requests).toHaveLength(0);
+    const [attempt] = await hw.listAttempts(delivery.id);
+    for (const text of [delivery.lastError, attempt?.error, ...attempts]) {
+      expect(text).toBeTruthy();
+      expect(text).not.toContain("hunter2");
+    }
   });
 
   it.each([
@@ -581,6 +608,34 @@ describe("guardedTransport", () => {
       }
     },
   );
+
+  // An unexpected 101 makes node:http emit only "close", never "response"
+  // or "error": the attempt must still settle.
+  it.each([
+    [
+      "a 101 Switching Protocols reply",
+      "HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n",
+    ],
+    ["a connection closed before any response", ""],
+  ])("rejects %s instead of hanging", async (_name, reply) => {
+    const server = createNetServer((socket) => {
+      socket.on("error", () => {});
+      socket.once("data", () => socket.end(reply));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const transport = guardedTransport(guard);
+    try {
+      await expect(
+        transport.send(`http://127.0.0.1:${port}/`, post()),
+      ).rejects.toThrow();
+    } finally {
+      transport.close();
+      server.close();
+    }
+  });
 
   it("reuses a kept-alive connection for the next delivery", async () => {
     let connections = 0;

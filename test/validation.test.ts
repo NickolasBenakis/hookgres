@@ -2,6 +2,7 @@ import pg from "pg";
 import { describe, expect, inject, it } from "vitest";
 import {
   Hookgres,
+  type HookgresOptions,
   HookgresValidationError,
   sign,
   WebhookVerificationError,
@@ -177,6 +178,172 @@ describe("HookgresValidationError", () => {
       () => hw.cleanup({ olderThan: -1 }),
       /^cleanup olderThan must be a Date or a non-negative number/,
     );
+  });
+
+  it("is thrown for numeric options that would break the worker", async () => {
+    const pool = ctx.pool;
+    for (const [options, message] of [
+      [{ concurrency: Number.NaN }, /^concurrency must be a positive integer/],
+      [{ concurrency: 2.5 }, /^concurrency must be a positive integer/],
+      [{ concurrency: 0 }, /^concurrency must be a positive integer/],
+      [{ lockTimeoutMs: Number.NaN }, /^lockTimeoutMs must be a number/],
+      [{ lockTimeoutMs: Number.POSITIVE_INFINITY }, /^lockTimeoutMs must be/],
+      [{ requestTimeoutMs: Number.NaN }, /^requestTimeoutMs must be/],
+      [{ requestTimeoutMs: 0 }, /^requestTimeoutMs must be/],
+      [{ pollIntervalMs: 0 }, /^pollIntervalMs must be/],
+      [{ pollIntervalMs: 2 ** 31 }, /^pollIntervalMs must be/],
+      [
+        { disableEndpointAfterMs: Number.NaN },
+        /^disableEndpointAfterMs must be/,
+      ],
+      [
+        { disableEndpointAfterMs: Number.POSITIVE_INFINITY },
+        /or null to never disable/,
+      ],
+      [
+        { retrySchedule: [1e17] },
+        /^retrySchedule must contain non-negative numbers/,
+      ],
+      [
+        { secretRotationGraceMs: Number.POSITIVE_INFINITY },
+        /^secretRotationGraceMs/,
+      ],
+    ] as Array<[Partial<HookgresOptions>, RegExp]>) {
+      await expectValidation(() => new Hookgres({ pool, ...options }), message);
+    }
+    // Numeric strings (from process.env) keep working, as they did through
+    // implicit coercion, and so do large concurrency values.
+    const fromEnv = new Hookgres({
+      pool,
+      concurrency: "25" as unknown as number,
+      pollIntervalMs: "500" as unknown as number,
+    });
+    expect(() => new Hookgres({ pool, concurrency: 5000 })).not.toThrow();
+    const clamped = new Hookgres({ pool, schema: ctx.schema });
+    expect(
+      (await clamped.listDeliveries({ limit: 0 })).length,
+    ).toBeLessThanOrEqual(1); // clamped to 1, as before
+    void fromEnv;
+    // null still means "never disable".
+    expect(
+      () => new Hookgres({ pool, disableEndpointAfterMs: null }),
+    ).not.toThrow();
+  });
+
+  it("is thrown for arguments that would reach SQL as nonsense", async () => {
+    const hw = ctx.create();
+    const endpoint = await hw.createEndpoint({
+      tenantId: "acme",
+      url: "https://example.com/hook",
+    });
+    await expectValidation(
+      () => hw.listDeliveries({ limit: Number.NaN }),
+      /^listDeliveries limit must be a number/,
+    );
+    await expectValidation(
+      () =>
+        hw.rotateEndpointSecret(endpoint.id, {
+          graceMs: Number.POSITIVE_INFINITY,
+        }),
+      /^graceMs must be a number/,
+    );
+    await expectValidation(
+      () => hw.cleanup({ olderThan: 1e20 }),
+      /^cleanup olderThan must be/,
+    );
+  });
+
+  it("is thrown for endpoint input that could never deliver", async () => {
+    const hw = ctx.create();
+    const base = { tenantId: "acme", url: "https://example.com/webhooks" };
+    const error = await expectValidation(
+      () =>
+        hw.createEndpoint({
+          ...base,
+          url: "https://admin:hunter2@example.com/",
+        }),
+      /^Endpoint URL must not contain credentials/,
+    );
+    expect(error.message).not.toContain("hunter2");
+    await expectValidation(
+      () =>
+        hw.createEndpoint({
+          ...base,
+          eventTypes: "invoice.paid" as unknown as string[],
+        }),
+      /^eventTypes must be an array of strings/,
+    );
+    const endpoint = await hw.createEndpoint(base);
+    await expectValidation(
+      () => hw.updateEndpoint(endpoint.id, { url: "https://u:p@example.com/" }),
+      /^Endpoint URL must not contain credentials/,
+    );
+  });
+
+  it("is thrown for payloads and keys Postgres can't store", async () => {
+    const hw = ctx.create();
+    const send = (payload: unknown, idempotencyKey?: string) =>
+      hw.send({ tenantId: "acme", eventType: "a.b", payload, idempotencyKey });
+    await expectValidation(
+      () => send({ text: "cut emoji \ud83d" }),
+      /unpaired UTF-16 surrogate/,
+    );
+    await expectValidation(() => send({ "\udc00": 1 }), /unpaired UTF-16/);
+    await expectValidation(
+      () => send(() => 1),
+      /must be JSON-serialisable, got a function/,
+    );
+    await expectValidation(
+      () => send(Symbol("x")),
+      /must be JSON-serialisable/,
+    );
+    await expectValidation(
+      () => send({ toJSON: () => undefined }),
+      /must be JSON-serialisable/,
+    );
+    await expectValidation(
+      () => send({}, "k".repeat(2001)),
+      /^idempotencyKey is longer than 2000 bytes/,
+    );
+    // Whole emoji, and keys at the limit, are fine.
+    await expect(
+      send({ text: "ok 😀" }, "k".repeat(2000)),
+    ).resolves.toBeTruthy();
+  });
+
+  it("is thrown by verifyWebhook for a tolerance that would disable the replay check", async () => {
+    const { verifyWebhook } = await import("../src/index.js");
+    const secret = `whsec_${Buffer.from("k".repeat(32)).toString("base64")}`;
+    const timestamp = Math.floor(Date.now() / 1000) - 10 * 365 * 24 * 3600;
+    const body = "{}";
+    const headers = {
+      "webhook-id": "msg_1",
+      "webhook-timestamp": String(timestamp),
+      "webhook-signature": sign(secret, "msg_1", timestamp, body),
+    };
+    expect(() =>
+      verifyWebhook({ secret, headers, body, toleranceSeconds: Number.NaN }),
+    ).toThrow(TypeError);
+    expect(() =>
+      verifyWebhook({ secret, headers, body, toleranceSeconds: -1 }),
+    ).toThrow(TypeError);
+    // Infinity turns the check off on purpose; numeric strings are accepted.
+    expect(
+      verifyWebhook({
+        secret,
+        headers,
+        body,
+        toleranceSeconds: Number.POSITIVE_INFINITY,
+      }),
+    ).toEqual({});
+    expect(() =>
+      verifyWebhook({
+        secret,
+        headers,
+        body,
+        toleranceSeconds: "300" as unknown as number,
+      }),
+    ).toThrow(/outside tolerance/);
   });
 
   it("is thrown by sign() for an empty secret", async () => {

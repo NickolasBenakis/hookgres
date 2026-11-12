@@ -63,6 +63,21 @@ export const DEFAULT_RETRY_SCHEDULE = [
 /** Default and maximum for `responseBodyLimit`. */
 const RESPONSE_BODY_LIMIT = 4096;
 
+/**
+ * Longest duration Hookgres accepts for an option it turns into a Postgres
+ * interval: far past any real schedule, well inside timestamp range.
+ */
+const MAX_DURATION_MS = 100 * 365 * DAY;
+
+/** Longest delay a Node.js timer supports; longer ones fire at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * Longest idempotency key, in bytes. Postgres's btree index entries are
+ * limited to about 2700 bytes, shared with the tenant id; this leaves room.
+ */
+const MAX_IDEMPOTENCY_KEY_BYTES = 2000;
+
 /** Time `drain()` allows on top of `requestTimeoutMs` for a batch's queries. */
 const DRAIN_MARGIN_MS = SECOND;
 
@@ -257,6 +272,8 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private readonly disableEndpointAfterMs: number | null;
   private readonly pollIntervalMs: number;
   private readonly concurrency: number;
+  /** The pool, with a timeout on every query. Used by the worker. */
+  private readonly workerDb: Queryable;
   private readonly lockTimeoutMs: number;
   private readonly secretRotationGraceMs: number;
   private readonly redactPayloads: boolean;
@@ -299,7 +316,14 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       this.pool = options.pool;
       this.ownsPool = false;
     } else if (options.connectionString) {
-      this.pool = new pg.Pool({ connectionString: options.connectionString });
+      this.pool = new pg.Pool({
+        connectionString: options.connectionString,
+        // Probe idle connections after 10s (the OS default is 2 hours), so
+        // ones a network partition killed are found. A query in progress on
+        // a dead connection is bounded by the worker's query timeout.
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10 * SECOND,
+      });
       this.ownsPool = true;
     } else {
       throw new HookgresValidationError(
@@ -323,9 +347,14 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     };
 
     this.retrySchedule = options.retrySchedule ?? DEFAULT_RETRY_SCHEDULE;
-    if (this.retrySchedule.some((ms) => !Number.isFinite(ms) || ms < 0)) {
+    if (
+      !Array.isArray(this.retrySchedule) ||
+      this.retrySchedule.some(
+        (ms) => !Number.isFinite(ms) || ms < 0 || ms > MAX_DURATION_MS,
+      )
+    ) {
       throw new HookgresValidationError(
-        `retrySchedule must contain non-negative numbers (delays in ms), e.g. [5000, 300000, 1800000]. See ${DOCS}/guides/retries`,
+        `retrySchedule must contain non-negative numbers (delays in ms, at most ${MAX_DURATION_MS}, which is 100 years), e.g. [5000, 300000, 1800000]. See ${DOCS}/guides/retries`,
       );
     }
     this.retryJitter = options.retryJitter ?? 0.1;
@@ -338,21 +367,61 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         `retryJitter must be a number between 0 and 1, e.g. 0.1 for +/-10% (0 disables jitter). See ${DOCS}/guides/retries`,
       );
     }
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 15 * SECOND;
+    this.requestTimeoutMs = durationOption(
+      "requestTimeoutMs",
+      options.requestTimeoutMs ?? 15 * SECOND,
+      1,
+      "",
+      MAX_TIMER_MS,
+    );
     this.disableEndpointAfterMs =
       options.disableEndpointAfterMs === undefined
         ? 5 * DAY
-        : options.disableEndpointAfterMs;
-    this.pollIntervalMs = options.pollIntervalMs ?? SECOND;
-    this.concurrency = Math.max(1, options.concurrency ?? 10);
-    this.lockTimeoutMs =
-      options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND;
+        : options.disableEndpointAfterMs === null
+          ? null
+          : durationOption(
+              "disableEndpointAfterMs",
+              options.disableEndpointAfterMs,
+              0,
+              " (or null to never disable)",
+            );
+    this.pollIntervalMs = durationOption(
+      "pollIntervalMs",
+      options.pollIntervalMs ?? SECOND,
+      1,
+      "",
+      MAX_TIMER_MS,
+    );
+    const concurrency = numeric(options.concurrency ?? 10);
+    if (!Number.isInteger(concurrency) || (concurrency as number) < 1) {
+      throw new HookgresValidationError(
+        `concurrency must be a positive integer, e.g. 10 (the default), got ${String(options.concurrency)}. See ${DOCS}/reference/configuration`,
+      );
+    }
+    this.concurrency = concurrency as number;
+    this.lockTimeoutMs = durationOption(
+      "lockTimeoutMs",
+      options.lockTimeoutMs ?? this.requestTimeoutMs + 30 * SECOND,
+      1,
+    );
     if (this.lockTimeoutMs <= this.requestTimeoutMs) {
       throw new HookgresValidationError(
         `lockTimeoutMs (${this.lockTimeoutMs}) must be greater than requestTimeoutMs (${this.requestTimeoutMs}): raise lockTimeoutMs, or omit it to use requestTimeoutMs + 30s. See ${DOCS}/reference/configuration`,
       );
     }
-    this.secretRotationGraceMs = options.secretRotationGraceMs ?? DAY;
+    // The worker's queries get the same bound as a claim's lock: past it,
+    // another worker may take the delivery over anyway, and a query stuck on
+    // a dead connection fails (to onError) instead of stalling the loop.
+    const workerTimeoutMs = Math.min(this.lockTimeoutMs, MAX_TIMER_MS);
+    this.workerDb = {
+      query: <R extends QueryResultRow>(text: string, values?: unknown[]) =>
+        this.timedQuery<R>(text, values, workerTimeoutMs),
+    };
+    this.secretRotationGraceMs = durationOption(
+      "secretRotationGraceMs",
+      options.secretRotationGraceMs ?? DAY,
+      0,
+    );
     this.redactPayloads = options.redactPayloads ?? false;
     this.responseBodyLimit = options.responseBodyLimit ?? RESPONSE_BODY_LIMIT;
     if (
@@ -594,11 +663,35 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * @see https://hookgres.dev/docs/guides/endpoints
    */
   async deleteEndpoint(id: string): Promise<boolean> {
-    const { rowCount } = await this.query(
-      `DELETE FROM ${this.t.endpoints} WHERE id = $1`,
-      [id],
-    );
-    return (rowCount ?? 0) > 0;
+    // Workers lock a delivery, then its endpoint. A plain DELETE cascades in
+    // the opposite order and can deadlock with them, so delete the
+    // deliveries first, then the endpoint (whose cascade only finds the ones
+    // queued meanwhile), and retry the rare deadlock that leaves.
+    for (let attempt = 1; ; attempt++) {
+      const client = await this.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await this.query(
+          `DELETE FROM ${this.t.deliveries} WHERE endpoint_id = $1`,
+          [id],
+          client,
+        );
+        const { rowCount } = await this.query(
+          `DELETE FROM ${this.t.endpoints} WHERE id = $1`,
+          [id],
+          client,
+        );
+        await client.query("COMMIT");
+        return (rowCount ?? 0) > 0;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        if ((error as { code?: string }).code !== "40P01" || attempt >= 3) {
+          throw error;
+        }
+      } finally {
+        client.release();
+      }
+    }
   }
 
   /**
@@ -619,7 +712,11 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     id: string,
     options: { secret?: string; graceMs?: number } = {},
   ): Promise<Endpoint | null> {
-    const graceMs = options.graceMs ?? this.secretRotationGraceMs;
+    const graceMs = durationOption(
+      "graceMs",
+      options.graceMs ?? this.secretRotationGraceMs,
+      0,
+    );
     const { rows } = await this.query(
       `UPDATE ${this.t.endpoints}
        SET previous_secret = secret,
@@ -655,8 +752,10 @@ export class Hookgres<E extends EventMap = AnyEvents> {
    * `idempotencyKey` returns the original message with `deduplicated: true`.
    * Delivery happens later, in a worker (`start()`, `runOnce()` or
    * `drain()`). Throws a `HookgresValidationError` for an event type with
-   * `*`, a missing payload, or a payload containing `\u0000` (through
-   * `fromPrisma`, that last one arrives as Prisma's own error).
+   * `*`, a missing or non-JSON payload (a function or symbol), a payload
+   * string with `\u0000` (through `fromPrisma`, that one arrives as Prisma's
+   * own error) or with half a surrogate pair, or an `idempotencyKey` over
+   * 2000 bytes.
    *
    * @example
    * const client = await pool.connect();
@@ -718,8 +817,16 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         `send() requires a JSON-serialisable payload: pass the event data as \`payload\` (use null or {} for none). See ${DOCS}/guides/sending`,
       );
     }
-    const payload = JSON.stringify(input.payload);
+    const payload = serialisePayload(input.payload);
     const idempotencyKey = input.idempotencyKey ?? null;
+    if (
+      idempotencyKey !== null &&
+      Buffer.byteLength(String(idempotencyKey)) > MAX_IDEMPOTENCY_KEY_BYTES
+    ) {
+      throw new HookgresValidationError(
+        `idempotencyKey is longer than ${MAX_IDEMPOTENCY_KEY_BYTES} bytes: use a short key like "invoice.paid:in_123", or a hash of a longer one. See ${DOCS}/guides/sending`,
+      );
+    }
     const values = [
       newId("msg"),
       input.tenantId,
@@ -743,23 +850,30 @@ export class Hookgres<E extends EventMap = AnyEvents> {
          ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL
          DO NOTHING
          RETURNING *
-       ), d AS (
-         INSERT INTO ${this.t.deliveries} (message_id, endpoint_id)
-         SELECT m.id, e.id
-         FROM m
-         JOIN ${this.t.endpoints} e
-           ON e.tenant_id = m.tenant_id
+       ), ep AS (
+         -- KEY SHARE waits for a concurrent deleteEndpoint() and then skips
+         -- the deleted row, instead of failing the foreign key check below
+         -- (and with it the caller's transaction).
+         SELECT e.id
+         FROM ${this.t.endpoints} e
+         WHERE e.tenant_id = $2
           AND NOT e.disabled
+          -- Nothing to lock when the idempotency key deduplicated the send.
+          AND EXISTS (SELECT 1 FROM m)
           AND (
             e.event_types IS NULL
-            OR m.event_type = ANY (e.event_types)
+            OR $3 = ANY (e.event_types)
             -- "invoice.*" matches any event type starting with "invoice."
             OR EXISTS (
               SELECT 1 FROM unnest(e.event_types) AS p (pattern)
               WHERE right(p.pattern, 2) = '.*'
-                AND starts_with(m.event_type, left(p.pattern, -1))
+                AND starts_with($3, left(p.pattern, -1))
             )
           )
+         FOR KEY SHARE
+       ), d AS (
+         INSERT INTO ${this.t.deliveries} (message_id, endpoint_id)
+         SELECT m.id, ep.id FROM m, ep
          RETURNING 1
        )${notify}
        SELECT m.*, (SELECT count(*) FROM d)::int AS delivery_count
@@ -905,7 +1019,11 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         );
       }
       cutoff = olderThan;
-    } else if (Number.isFinite(olderThan) && olderThan >= 0) {
+    } else if (
+      Number.isFinite(olderThan) &&
+      olderThan >= 0 &&
+      olderThan <= MAX_DURATION_MS
+    ) {
       // Use the database clock, like every other timestamp Hookgres writes.
       const { rows } = await this.query<{ cutoff: Date }>(
         "SELECT now() - make_interval(secs => $1::double precision / 1000) AS cutoff",
@@ -914,7 +1032,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       cutoff = (rows[0] as { cutoff: Date }).cutoff;
     } else {
       throw new HookgresValidationError(
-        `cleanup olderThan must be a Date or a non-negative number of ms, e.g. { olderThan: 30 * 24 * 60 * 60 * 1000 } for 30 days. See ${DOCS}/guides/production#clean-up-old-rows`,
+        `cleanup olderThan must be a Date or a non-negative number of ms (at most ${MAX_DURATION_MS}, which is 100 years), e.g. { olderThan: 30 * 24 * 60 * 60 * 1000 } for 30 days. See ${DOCS}/guides/production#clean-up-old-rows`,
       );
     }
 
@@ -1078,7 +1196,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     if (input.messageId) add("message_id = ?", input.messageId);
     if (input.endpointId) add("endpoint_id = ?", input.endpointId);
     if (input.status) add("status = ?", input.status);
-    values.push(Math.min(Math.max(1, input.limit ?? 50), 500));
+    const limit = numeric(input.limit ?? 50);
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
+      throw new HookgresValidationError(
+        `listDeliveries limit must be a number (1 to 500), got ${String(input.limit)}. See ${DOCS}/reference/api`,
+      );
+    }
+    values.push(Math.min(Math.max(1, Math.trunc(limit)), 500));
     const { rows } = await this.query(
       `SELECT * FROM ${this.t.deliveries}
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -1333,6 +1457,69 @@ export class Hookgres<E extends EventMap = AnyEvents> {
     }
   }
 
+  /**
+   * Runs a worker query that gives up after `timeoutMs`: waiting for a pool
+   * connection, and running. On a timeout it also cancels the statement on
+   * the server, so a query that was only waiting (on a lock, say) doesn't
+   * commit later behind the worker's back, and discards the connection.
+   */
+  private async timedQuery<R extends QueryResultRow>(
+    text: string,
+    values: unknown[] | undefined,
+    timeoutMs: number,
+  ): Promise<QueryResult<R>> {
+    const connecting = this.pool.connect();
+    let timer: NodeJS.Timeout | undefined;
+    const client = await Promise.race([
+      connecting,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Timed out after ${timeoutMs}ms waiting for a database connection`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]).catch((error) => {
+      // Hand back the connection if it arrives after all.
+      connecting.then(
+        (late) => late.release(),
+        () => {},
+      );
+      throw error;
+    });
+    clearTimeout(timer);
+    try {
+      // node-postgres supports a per-query query_timeout; @types/pg only
+      // declares it on the client config.
+      const result = await client.query<R>({
+        text,
+        values,
+        query_timeout: timeoutMs,
+      } as pg.QueryConfig);
+      client.release();
+      return result;
+    } catch (error) {
+      const pid = (client as { processID?: number }).processID;
+      if ((error as Error).message === "Query read timeout" && pid) {
+        // Wait for the cancel, so the caller never sees the timeout while the
+        // statement could still commit. Bounded: the database may be gone.
+        await this.pool
+          .query({
+            text: "SELECT pg_cancel_backend($1)",
+            values: [pid],
+            query_timeout: Math.min(timeoutMs, 5 * SECOND),
+          } as pg.QueryConfig)
+          .catch(() => {});
+      }
+      client.release(error as Error);
+      throw explainMissingTables(error, this.schema);
+    }
+  }
+
   private reportError(error: unknown): void {
     try {
       this.onError(error);
@@ -1505,6 +1692,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
                       THEN e.previous_secret END AS previous_secret,
                  e.disabled`,
       [this.concurrency, this.lockTimeoutMs],
+      this.workerDb,
     );
     return rows;
   }
@@ -1530,6 +1718,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
            FOR UPDATE SKIP LOCKED
          )`,
         [endpointId],
+        this.workerDb,
       );
       if (!rowCount) return;
     }
@@ -1550,6 +1739,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
            last_error = $3, updated_at = now()
        WHERE id = $1 AND lock_token = $2`,
       [delivery.id, delivery.lock_token, reason],
+      this.workerDb,
     );
   }
 
@@ -1617,6 +1807,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
           responseBody,
           outcome.durationMs,
         ],
+        this.workerDb,
       );
       if (rowCount) {
         this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
@@ -1626,7 +1817,8 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         });
         // A separate statement, after the success above committed: of two
         // last deliveries succeeding at once, the later one sees both.
-        if (this.redactPayloads) await this.redact(delivery.message_id);
+        if (this.redactPayloads)
+          await this.redact(delivery.message_id, this.workerDb);
       }
       return;
     }
@@ -1653,10 +1845,13 @@ export class Hookgres<E extends EventMap = AnyEvents> {
        ), prev AS (
          -- Reads whether the endpoint was already disabled, so only the
          -- worker that disables it reports it.
+         -- FOR NO KEY UPDATE, not FOR UPDATE: it doesn't conflict with the
+         -- KEY SHARE locks that open send() transactions hold on the
+         -- endpoint through the deliveries foreign key.
          SELECT ep.id AS endpoint_id, ep.disabled AS was_disabled
          FROM ${this.t.endpoints} ep
          WHERE ep.id IN (SELECT endpoint_id FROM cur)
-         FOR UPDATE
+         FOR NO KEY UPDATE
        ), e AS (
          UPDATE ${this.t.endpoints}
          SET failing_since = COALESCE(failing_since, now()),
@@ -1711,13 +1906,14 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         delayMs,
         this.disableEndpointAfterMs,
       ],
+      this.workerDb,
     );
     const result = rows[0];
     if (!result) return;
     this.callHook<AttemptEvent>("onAttempt", this.onAttempt, {
       ...event,
       outcome: result.failed ? "failed" : "retrying",
-      nextAttemptAt: result.failed ? null : result.next_attempt_at,
+      nextAttemptAt: result.failed ? null : toDate(result.next_attempt_at),
     });
     if (result.disabled_now) {
       this.callHook<EndpointDisabledEvent>(
@@ -1866,6 +2062,13 @@ function assertUrl(url: string, guard: AddressGuard | null): void {
       `Endpoint URL must use http or https: ${url}. See ${DOCS}/guides/endpoints`,
     );
   }
+  // fetch refuses to send these, so the endpoint could never receive anything,
+  // and the password would end up in error messages.
+  if (parsed.username || parsed.password) {
+    throw new HookgresValidationError(
+      `Endpoint URL must not contain credentials (user:password@): ${redactCredentials(url)}. Have the receiver authenticate with the webhook signature instead. See ${DOCS}/guides/endpoints`,
+    );
+  }
   guard?.assertEndpointUrl(parsed);
 }
 
@@ -1900,6 +2103,16 @@ function normaliseEventTypes(
   eventTypes: string[] | null | undefined,
 ): string[] | null {
   if (eventTypes == null) return null;
+  // A string (say, straight from a form) would otherwise be split into
+  // one-character patterns that never match.
+  if (
+    !Array.isArray(eventTypes) ||
+    eventTypes.some((type) => typeof type !== "string")
+  ) {
+    throw new HookgresValidationError(
+      `eventTypes must be an array of strings, like ["invoice.paid"], or null for every event type; got ${JSON.stringify(eventTypes)}. See ${DOCS}/guides/endpoints`,
+    );
+  }
   if (eventTypes.length === 0) {
     throw new HookgresValidationError(
       `eventTypes must not be empty; pass null to receive every event type. See ${DOCS}/guides/endpoints`,
@@ -1956,7 +2169,31 @@ function describeError(error: unknown, timeoutMs: number): string {
   // node:http (blockPrivateAddresses) rejects with the reason itself; when
   // every address fails it's an AggregateError with an empty message.
   if (!error.message) return codeOf(error as ErrorDetail) ?? error.name;
-  return detail ? `${error.message}: ${detail}` : error.message;
+  // Endpoints stored before credentials were refused: keep the password out
+  // of last_error, the attempt log and onAttempt.
+  return redactCredentials(
+    detail ? `${error.message}: ${detail}` : error.message,
+  );
+}
+
+/** Replaces the user:password@ part of any URL in `text` with `***@`. */
+function redactCredentials(text: string): string {
+  return text.replace(/(\w+:\/\/)[^\s/@]+@/g, "$1***@");
+}
+
+/**
+ * Timestamps from the pool are Dates, unless the app's pool parses timestamptz
+ * as strings (a custom type parser). Accept both, so the types hold.
+ */
+function toDate(value: unknown): Date {
+  return value instanceof Date ? value : parseTimestamptz(String(value));
+}
+
+/** node-postgres's own timestamptz parser, which handles Postgres's format. */
+const parseTimestamptz = pg.types.getTypeParser(1184) as (text: string) => Date;
+
+function toDateOrNull(value: unknown): Date | null {
+  return value == null ? null : toDate(value);
 }
 
 type ErrorDetail = {
@@ -1983,9 +2220,9 @@ function toEndpoint(row: Row | undefined): Endpoint {
     metadata: row.metadata as Record<string, unknown>,
     disabled: row.disabled as boolean,
     disabledReason: row.disabled_reason as string | null,
-    failingSince: row.failing_since as Date | null,
-    createdAt: row.created_at as Date,
-    updatedAt: row.updated_at as Date,
+    failingSince: toDateOrNull(row.failing_since),
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
   };
 }
 
@@ -1998,10 +2235,8 @@ function toMessage(row: Row): Message {
     idempotencyKey: row.idempotency_key as string | null,
     // send() may run on a caller's client whose driver returns timestamps as
     // strings (Drizzle does), so parse them instead of trusting the type.
-    createdAt: new Date(row.created_at as Date | string),
-    redactedAt: row.redacted_at
-      ? new Date(row.redacted_at as Date | string)
-      : null,
+    createdAt: toDate(row.created_at),
+    redactedAt: toDateOrNull(row.redacted_at),
   };
 }
 
@@ -2012,10 +2247,10 @@ function toDelivery(row: Row): Delivery {
     endpointId: row.endpoint_id as string,
     status: row.status as DeliveryStatus,
     attemptCount: row.attempt_count as number,
-    nextAttemptAt: row.next_attempt_at as Date,
+    nextAttemptAt: toDate(row.next_attempt_at),
     lastError: row.last_error as string | null,
-    createdAt: row.created_at as Date,
-    updatedAt: row.updated_at as Date,
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
   };
 }
 
@@ -2028,6 +2263,75 @@ function toAttempt(row: Row): Attempt {
     responseBody: row.response_body as string | null,
     error: row.error as string | null,
     durationMs: row.duration_ms as number,
-    createdAt: row.created_at as Date,
+    createdAt: toDate(row.created_at),
   };
+}
+
+/**
+ * Checks a duration option in ms: a finite number from `min` to `max`. NaN
+ * (often `Number(process.env.X)` of an unset variable) would slip past every
+ * comparison and break the worker later, so it's rejected here.
+ */
+function durationOption(
+  name: string,
+  input: number,
+  min: number,
+  hint = "",
+  max = MAX_DURATION_MS,
+): number {
+  const value = numeric(input);
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < min ||
+    value > max
+  ) {
+    throw new HookgresValidationError(
+      `${name} must be a number of milliseconds from ${min} to ${max}${hint}, got ${String(value)}. See ${DOCS}/reference/configuration`,
+    );
+  }
+  return value;
+}
+
+/**
+ * JSON.stringify, refusing payloads Postgres's jsonb can't store or that
+ * would silently turn into null: a function or symbol (JSON.stringify
+ * returns undefined), and strings with an unpaired UTF-16 surrogate (half an
+ * emoji, say), which jsonb rejects with a cryptic error.
+ */
+// In unicode mode a surrogate pair is one code point; only a lone half is \p{Cs}.
+const LONE_SURROGATE = /\p{Cs}/u;
+
+function serialisePayload(payload: unknown): string {
+  let malformed: string | undefined;
+  const json = JSON.stringify(payload, (key, value) => {
+    if (malformed === undefined) {
+      if (LONE_SURROGATE.test(key)) malformed = key;
+      else if (typeof value === "string" && LONE_SURROGATE.test(value)) {
+        malformed = value;
+      }
+    }
+    return value;
+  });
+  if (json === undefined) {
+    throw new HookgresValidationError(
+      `send() payload must be JSON-serialisable, got ${typeof payload === "function" ? "a function" : typeof payload}: pass plain data (use null or {} for none). See ${DOCS}/guides/sending`,
+    );
+  }
+  if (malformed !== undefined) {
+    throw new HookgresValidationError(
+      `send() payload contains a string with an unpaired UTF-16 surrogate, which Postgres can't store (often text cut in the middle of an emoji): ${JSON.stringify(malformed.slice(0, 40))}. See ${DOCS}/guides/sending`,
+    );
+  }
+  return json;
+}
+
+/**
+ * Numbers passed as strings (often straight from process.env) used to work
+ * through implicit coercion, so keep accepting numeric strings.
+ */
+function numeric(value: unknown): unknown {
+  return typeof value === "string" && value.trim() !== ""
+    ? Number(value)
+    : value;
 }

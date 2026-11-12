@@ -20,8 +20,9 @@ const endpoint = await hookgres.createEndpoint({
 });
 ```
 
-The URL must be `http:` or `https:`. `eventTypes` can't be an empty array; use
-`null` for "everything".
+The URL must be `http:` or `https:`, without credentials (`user:password@`),
+which fetch refuses to send. `eventTypes` must be an array of strings, not
+empty; use `null` for "everything".
 
 An event type ending in `.*` is a wildcard. `invoice.*` matches every event
 type that starts with `invoice.`, at any depth: `invoice.paid` and

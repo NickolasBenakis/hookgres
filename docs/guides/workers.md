@@ -58,13 +58,15 @@ with your web requests for CPU and connections.
 
 ```ts
 process.on("SIGTERM", async () => {
-  await hookgres.stop(); // waits for in-flight requests (up to requestTimeoutMs)
+  await hookgres.stop(); // waits for in-flight deliveries
   await pool.end();
   process.exit(0);
 });
 ```
 
-`stop()` stops claiming new work and waits for the requests in flight. If the
+`stop()` stops claiming new work and waits for the deliveries in flight: each
+request takes at most `requestTimeoutMs`, and each query to record it at most
+`lockTimeoutMs`, even if the database stops answering. If the
 process is killed before they finish, those deliveries stay locked until
 `lockTimeoutMs` passes (45 seconds by default), then another worker retries
 them.
@@ -119,7 +121,9 @@ invocation.
 ## Errors
 
 Unexpected errors in the loop, such as a lost database connection, go to
-`onError` (`console.error` by default), and the loop keeps going. Failed
+`onError` (`console.error` by default), and the loop keeps going. A worker
+query that gets no answer within `lockTimeoutMs`, for example after a network
+partition, fails with a timeout error the same way. Failed
 deliveries are not errors. They are recorded as attempts and retried.
 
 ```ts

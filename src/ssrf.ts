@@ -255,7 +255,17 @@ export function guardedTransport(
       );
       const abort = () => request.destroy(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
-      request.once("close", () => signal.removeEventListener("abort", abort));
+      // A 101 (or another upgrade) emits neither "response" nor "error":
+      // reject it, and anything else that closes without settling, so the
+      // attempt can't hang past its timeout.
+      request.once("upgrade", (response, socket) => {
+        socket.destroy();
+        reject(new Error(`Unexpected HTTP ${response.statusCode} upgrade`));
+      });
+      request.once("close", () => {
+        signal.removeEventListener("abort", abort);
+        reject(new Error("Connection closed before a response"));
+      });
       request.on("error", reject);
       request.end(body);
     });
