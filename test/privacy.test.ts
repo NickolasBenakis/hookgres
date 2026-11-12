@@ -182,6 +182,7 @@ describe("redactPayloads", () => {
     expect(delivery).toMatchObject({
       status: "failed",
       lastError: "Payload was redacted",
+      attemptCount: 0,
     });
   });
 
