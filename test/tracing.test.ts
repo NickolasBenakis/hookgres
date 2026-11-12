@@ -383,6 +383,29 @@ describe("OpenTelemetry traces", () => {
     }
   });
 
+  it("lets HTTP instrumentations trace webhook requests when allowed", async () => {
+    const t = tracing();
+    try {
+      const hw = ctx.create({
+        opentelemetry: { api: t.api, httpInstrumentation: true },
+        fetch: t.instrumentedFetch,
+      });
+      await hw.createEndpoint({ tenantId: "acme", url: receiver.url });
+      await hw.send({ tenantId: "acme", eventType: "e", payload: {} });
+      expect(await hw.runOnce()).toBe(1);
+      const [deliver] = t.spans("deliver webhook");
+      const [http] = t.spans("POST");
+      expect(http?.parentSpanContext?.spanId).toBe(
+        deliver?.spanContext().spanId,
+      );
+      expect(receiver.requests[0]?.headers.traceparent).toContain(
+        deliver?.spanContext().traceId,
+      );
+    } finally {
+      t.close();
+    }
+  });
+
   it("keeps HTTP instrumentations off and sends once with a misbehaving API", async () => {
     const t = tracing();
     try {

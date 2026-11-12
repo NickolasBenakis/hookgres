@@ -121,6 +121,15 @@ export interface OpenTelemetryOptions {
    * as the real module does. Default `true`.
    */
   traces?: boolean;
+  /**
+   * Let your HTTP instrumentations (undici, `node:http`) trace webhook
+   * requests. Off by default, because their spans record each request's full
+   * URL, which often holds a secret, and they send your customers a
+   * `traceparent` header and your baggage. Turn it on only if your webhook
+   * URLs hold no secrets and you're fine sending those headers. Default
+   * `false`.
+   */
+  httpInstrumentation?: boolean;
 }
 
 // SpanKind and SpanStatusCode values from @opentelemetry/api.
@@ -177,6 +186,7 @@ export class Telemetry {
   private readonly tracer: OtelTracer | null = null;
   private readonly context: ContextApi | null;
   private readonly suppressKey: symbol;
+  private readonly allowHttpInstrumentation: boolean;
 
   constructor(
     options: OpenTelemetryOptions,
@@ -185,6 +195,7 @@ export class Telemetry {
   ) {
     const { trace, context, propagation, ROOT_CONTEXT } = options.api;
     this.context = context ?? null;
+    this.allowHttpInstrumentation = options.httpInstrumentation === true;
     let suppressKey = Symbol.for(SUPPRESS_TRACING);
     guard(() => {
       suppressKey =
@@ -370,9 +381,10 @@ export class Telemetry {
    * Runs one HTTP attempt in a client span, linked to the `send()` that
    * queued it. With traces off, just runs it untraced.
    *
-   * Either way, HTTP instrumentations are kept off the request: their span
-   * would record the full URL (often holding a secret), and they'd send the
-   * receiver a `traceparent` and your baggage.
+   * Either way, unless `httpInstrumentation` is on, HTTP instrumentations
+   * are kept off the request: their span would record the full URL (often
+   * holding a secret), and they'd send the receiver a `traceparent` and your
+   * baggage.
    */
   async traceAttempt<
     R extends { ok: boolean; statusCode: number | null; error: string | null },
@@ -451,6 +463,7 @@ export class Telemetry {
 
   /** `context` with tracing suppressed, or as is if it can't be. */
   private suppress(context: OtelContext): OtelContext {
+    if (this.allowHttpInstrumentation) return context;
     const { setValue } = context as {
       setValue?: (key: symbol, value: unknown) => OtelContext;
     };

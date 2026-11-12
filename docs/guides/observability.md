@@ -151,6 +151,19 @@ What Hookgres leaves out on purpose:
   It covers a custom `fetch` too, so spans or headers your fetch adds through
   OpenTelemetry are skipped as well. Without the `opentelemetry` option,
   configure your instrumentations to skip webhook requests yourself.
+
+  This works with the OpenTelemetry SDK's tracers and propagators. A vendor
+  agent with its own HTTP tracing, such as Datadog's `dd-trace` or the New
+  Relic agent, doesn't check OpenTelemetry's suppression: configure it to
+  skip webhook requests, or to not propagate headers on them.
+
+  If you want HTTP spans for webhook requests anyway, for example to see
+  connection timing, and your webhook URLs hold no secrets, turn them back
+  on. This also sends `traceparent` and baggage to your customers:
+
+  ```ts
+  new Hookgres({ pool, opentelemetry: { api: otel, httpInstrumentation: true } });
+  ```
 - **Baggage.** It's application data, possibly personal, so it isn't stored
   with the message, whichever propagator you use. Only the trace context is (`traceparent`, `tracestate`,
   or your propagator's equivalent), and only if under 1 KB.
