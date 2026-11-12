@@ -164,6 +164,15 @@ async function typeChecks(hookgres: Hookgres<Events>, untyped: Hookgres) {
     expectTypeOf(event.data).toEqualTypeOf<{ id: string; amount: number }>();
   }
 
+  // Receivers get the JSON form: a Date output arrives as a string.
+  const dated = { "invoice.paid": z.object({ at: z.coerce.date() }) };
+  const datedEvent = verifyWebhook<WebhookEvent<InferEvents<typeof dated>>>({
+    secret: "whsec_x",
+    headers: {},
+    body: "",
+  });
+  expectTypeOf(datedEvent.data.at).toEqualTypeOf<string>();
+
   // Event maps can be interfaces, not only type aliases.
   interface EventsInterface {
     "invoice.paid": { id: string };

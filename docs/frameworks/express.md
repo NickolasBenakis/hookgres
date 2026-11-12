@@ -270,5 +270,7 @@ see [Secret rotation](/guides/secret-rotation).
 ## Receiving webhooks
 
 If your app also receives webhooks, or you want to test your own, verify them
-with `express.raw()` and `verifyWebhook()`. See
+with `express.raw()` and `verifyWebhook()`. Register that route before
+`app.use(express.json())` in `server.ts` above. Once the JSON parser has run,
+`express.raw()` skips the request and verification fails. See
 [Verifying webhooks](/guides/verifying#express).

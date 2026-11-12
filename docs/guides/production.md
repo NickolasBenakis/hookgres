@@ -35,6 +35,24 @@ See [Running workers](/guides/workers). In short: call `start()` in one or more
 long-running processes, call `await hookgres.stop()` on `SIGTERM`, or use
 `drain()` from a cron job on serverless platforms.
 
+A few things to check on the hosts and the database:
+
+- **Clocks.** The `webhook-timestamp` header comes from the worker host's
+  clock, and receivers reject anything more than 5 minutes off. Keep worker
+  hosts synced with NTP (most cloud hosts are by default). A clock that drifts
+  shows up as `401`s from every receiver.
+- **DateStyle.** Keep Postgres's `DateStyle` at its default, `ISO`.
+  node-postgres can't parse timestamps in other styles (`German`, `SQL, DMY`)
+  and returns `null` for date fields like `createdAt`.
+- **Pool size with `notify`.** Each started worker with `notify: true` holds
+  one pool connection for `LISTEN`. If several Hookgres instances share a pool,
+  give it at least one connection per notifying instance, plus what your app
+  and the workers' `concurrency` need.
+- **Rolling upgrades.** Workers of different Hookgres versions can share a
+  schema during a deploy. A delivery is never lost or sent twice because of
+  it, but a behaviour fix only holds everywhere once every worker runs the
+  new version.
+
 ## Block internal addresses (SSRF)
 
 Your customers choose the URLs Hookgres sends requests to. Without a guard,

@@ -293,8 +293,29 @@ export interface EndpointDisabledEvent {
  * if (event.type === "invoice.paid") markPaid(event.data.id);
  */
 export type WebhookEvent<E extends EventMap = AnyEvents> = {
-  [K in keyof E & string]: WebhookEnvelope<E[K]> & { type: K };
+  [K in keyof E & string]: WebhookEnvelope<Jsonified<E[K]>> & { type: K };
 }[keyof E & string];
+
+/**
+ * What a value looks like after a JSON round trip, which is what receivers
+ * get: a `Date` (from `z.coerce.date()`, say) arrives as an ISO string, and
+ * functions and `undefined` properties are dropped. `WebhookEvent` applies
+ * it to each event's data.
+ *
+ * @example
+ * type Out = Jsonified<{ at: Date; n: number }>; // { at: string; n: number }
+ */
+export type Jsonified<T> = unknown extends T
+  ? T
+  : T extends { toJSON(...args: never[]): infer J }
+    ? Jsonified<J>
+    : T extends string | number | boolean | null
+      ? T
+      : T extends bigint | symbol | undefined | ((...args: never[]) => unknown)
+        ? never
+        : T extends ReadonlyArray<infer U>
+          ? Jsonified<U>[]
+          : { [K in keyof T]: Jsonified<T[K]> };
 
 /**
  * The JSON body POSTed to endpoints (Standard Webhooks envelope), and what
