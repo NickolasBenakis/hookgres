@@ -561,6 +561,21 @@
 
   /* Interactive demos */
   .demo { min-width: 0; }
+  .tx-demo { position: relative; }
+  /* Self-playing demos: a cursor works the real controls until the reader reaches
+     for them. Mouse only; on touch the demo still plays, just without a cursor. */
+  .demo-cursor {
+    position: absolute; left: 0; top: 0; z-index: 1; width: 20px; height: 20px;
+    pointer-events: none; user-select: none; opacity: 0;
+    transform: translate(var(--gx, 0), var(--gy, 0));
+    transition: transform 620ms cubic-bezier(0.45, 0, 0.2, 1), opacity 180ms var(--ease-out);
+    filter: drop-shadow(0 1px 1.5px oklch(0% 0 0 / 0.35));
+  }
+  .demo-cursor[data-on] { opacity: 1; }
+  .demo-cursor-arrow { display: block; width: 100%; height: 100%; transform-origin: 4px 3px; transition: scale 120ms var(--ease-out); }
+  .demo-cursor[data-down] .demo-cursor-arrow { scale: 0.86; }
+  [data-cursor-down] { transform: scale(0.96); }
+  @media not ((hover: hover) and (pointer: fine)) { .demo-cursor { display: none; } }
   .tx-demo pre { white-space: pre-wrap; word-break: break-word; }
   .ln { display: block; padding: 0 6px; margin: 0 -6px; border-radius: 6px; transition: background-color 240ms var(--ease), opacity 240ms var(--ease); }
   .tx-demo[data-state="commit"] .tx-end { background: oklch(76% 0.15 152 / 0.16); }
@@ -649,11 +664,11 @@
   .sim-window .live-toggle { margin-left: 4px; }
 
   /* Retry race: one event, three endpoints, attempts evenly spaced along the schedule. */
-  .race { padding: 4px 18px 0; }
+  .race { padding: 4px 18px 0; touch-action: pan-y; }
   .race-row { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) minmax(0, 150px); align-items: center; gap: 16px; }
   .lane { border-top: 1px solid var(--line); }
   .lane:first-child { border-top: 0; }
-  .lane-track { position: relative; height: 64px; }
+  .lane-track { position: relative; height: 64px; cursor: ew-resize; }
   .lane-inner { position: absolute; inset: 0 16px; }
   .lane-rail, .lane-fill { position: absolute; left: 0; right: 0; top: 42px; height: 2px; margin-top: -1px; border-radius: 1px; }
   .lane-rail { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 9px); }
@@ -732,10 +747,7 @@
   }
   .verify[data-auto] .tab[aria-selected="true"] .tab-time { opacity: 1; animation: tab-time 3.6s linear forwards; }
   .verify[data-auto]:not([data-onscreen]) .tab[aria-selected="true"] .tab-time,
-  .verify[data-auto]:focus-within .tab[aria-selected="true"] .tab-time { animation-play-state: paused; }
-  @media (hover: hover) and (pointer: fine) {
-    .verify[data-auto]:hover .tab[aria-selected="true"] .tab-time { animation-play-state: paused; }
-  }
+  .verify[data-auto][data-live] .tab[aria-selected="true"] .tab-time { animation-play-state: paused; }
   @keyframes tab-time { to { transform: scaleX(1); } }
   /* Every panel shares one grid cell, so the card keeps the tallest one's height. */
   .verify-panels { display: grid; }
@@ -1955,6 +1967,123 @@ $wh-&gt;verify($body, $headers);
   })();
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Demos play themselves until the reader reaches for one (hover, press or
+  // keyboard focus), then hand over exactly where they are. Eight seconds after
+  // the reader leaves, they carry on from that state.
+  const QUIET = 8000;
+  function pilot(root, { onTake, onResume } = {}) {
+    let live = false;
+    let hover = false;
+    let focus = false;
+    let timer = 0;
+    const waiting = [];
+    const update = () => {
+      clearTimeout(timer);
+      if (hover || focus) {
+        if (live) return;
+        live = true;
+        root.dataset.live = "";
+        onTake?.();
+        return;
+      }
+      if (!live) return;
+      timer = setTimeout(() => {
+        live = false;
+        delete root.dataset.live;
+        onResume?.();
+        for (const resolve of waiting.splice(0)) resolve();
+      }, QUIET);
+    };
+    // Takes over for a moment (a tap, a screen reader's click, a touch scrub):
+    // live now, back to playing eight seconds later.
+    const poke = () => {
+      if (!live) {
+        live = true;
+        root.dataset.live = "";
+        onTake?.();
+      }
+      update();
+    };
+    root.addEventListener("pointerenter", (event) => {
+      if (event.pointerType === "touch") return;
+      hover = true;
+      update();
+    });
+    root.addEventListener("pointerleave", (event) => {
+      if (event.pointerType === "touch") return;
+      hover = false;
+      update();
+    });
+    // The cursor's own clicks are untrusted. A finger scrolling past fires no click.
+    root.addEventListener("click", (event) => {
+      if (event.isTrusted) poke();
+    }, true);
+    // Only keyboard focus holds a demo: a tapped button keeps focus on Android.
+    root.addEventListener("focusin", (event) => {
+      focus = event.target.matches(":focus-visible");
+      update();
+    });
+    root.addEventListener("focusout", (event) => {
+      if (root.contains(event.relatedTarget)) return;
+      focus = false;
+      update();
+    });
+    return {
+      poke,
+      get live() { return live; },
+      // Resolves once the demo is on screen and nobody is using it.
+      async ready() {
+        for (;;) {
+          await whenVisible(root);
+          if (!live) return;
+          await new Promise((resolve) => waiting.push(resolve));
+        }
+      },
+    };
+  }
+
+  // The cursor that works a demo while it plays itself.
+  function demoCursor(root, demo) {
+    const el = document.createElement("span");
+    el.className = "demo-cursor";
+    el.setAttribute("aria-hidden", "true");
+    el.innerHTML = '<svg class="demo-cursor-arrow" viewBox="0 0 20 20"><path d="M4 3v13.2l3.3-3.1 2.2 4.9 2.3-1-2.2-4.9h4.6z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+    root.append(el);
+    const place = (target) => {
+      const a = root.getBoundingClientRect();
+      const b = target.getBoundingClientRect();
+      el.style.setProperty("--gx", `${Math.round(b.left - a.left + b.width * 0.55 - 4)}px`);
+      el.style.setProperty("--gy", `${Math.round(b.top - a.top + b.height * 0.6 - 3)}px`);
+    };
+    return {
+      hide() { delete el.dataset.on; },
+      // Moves to the control and clicks it. Resolves false, without clicking,
+      // if the reader took over on the way.
+      async click(target, before) {
+        if (!("on" in el.dataset)) {
+          el.style.transition = "none";
+          place(target);
+          el.style.setProperty("--gy", `${parseFloat(el.style.getPropertyValue("--gy")) + 26}px`);
+          el.getBoundingClientRect();
+          el.style.transition = "";
+          el.dataset.on = "";
+        }
+        place(target);
+        await sleep(700);
+        if (demo.live) return false;
+        el.dataset.down = "";
+        target.dataset.cursorDown = "";
+        await sleep(140);
+        delete el.dataset.down;
+        delete target.dataset.cursorDown;
+        if (demo.live) return false;
+        before?.();
+        target.click();
+        return true;
+      },
+    };
+  }
+
   segmented($(".hero-code .tabs"), (button) => {
     for (const panel of document.querySelectorAll(".hero-code .tab-panel")) {
       panel.hidden = panel.id !== button.getAttribute("aria-controls");
@@ -2036,26 +2165,39 @@ $wh-&gt;verify($body, $headers);
         });
       }
     };
-    let auto = !reduceMotion;
-    const live = () => status.setAttribute("aria-live", "polite");
-    $(".tx-pick", demo).addEventListener("pointerdown", live);
-    $(".tx-pick", demo).addEventListener("focusin", live);
     for (const button of buttons) {
-      button.addEventListener("click", () => {
-        auto = false;
-        status.setAttribute("aria-live", "polite");
+      button.addEventListener("click", (event) => {
+        // Only a reader's own clicks are announced, never the self-playing ones.
+        if (event.isTrusted) status.setAttribute("aria-live", "polite");
         run(button.dataset.tx === "commit");
       });
     }
     if (reduceMotion) run(true);
     else {
+      // Plays commit, roll back, next library, commit…
+      const ormTabs = [...demo.querySelectorAll(".tx-orm .tab")];
+      let cursor;
+      const self = pilot(demo, {
+        onTake: () => cursor.hide(),
+        onResume: () => status.setAttribute("aria-live", "off"),
+      });
+      cursor = demoCursor(demo, self);
+      const pressed = () => buttons.find((b) => b.getAttribute("aria-pressed") === "true")?.dataset.tx;
       (async () => {
-        for (let commit = true; ; commit = !commit) {
-          await whenVisible(demo);
-          if (!auto) return;
-          run(commit);
-          await sleep(4600);
-          if (!auto) return;
+        for (;;) {
+          await self.ready();
+          const now = pressed();
+          if (now === "commit") {
+            if (await cursor.click(buttons[1])) await sleep(3400);
+            continue;
+          }
+          if (now === "rollback") {
+            const at = ormTabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
+            if (!(await cursor.click(ormTabs[(at + 1) % ormTabs.length]))) continue;
+            await sleep(900);
+            await self.ready();
+          }
+          if (await cursor.click(buttons[0])) await sleep(4600);
         }
       })();
     }
@@ -2201,13 +2343,51 @@ $wh-&gt;verify($body, $headers);
         } else restart();
         frame = requestAnimationFrame(tick);
       };
+      let self;
       const sync = () => {
         cancelAnimationFrame(frame);
         lastNow = 0;
         // Stopped mid-fade: start the next run now rather than leave the lanes blank.
         if (fading) restart();
-        if (onscreen && !paused && !document.hidden) frame = requestAnimationFrame(tick);
+        if (onscreen && !paused && !self.live && !document.hidden) frame = requestAnimationFrame(tick);
       };
+      // Reaching for the lanes stops the clock where it is; dragging along them
+      // scrubs the schedule. It plays on from there once the reader leaves.
+      self = pilot(race, { onTake: sync, onResume: sync });
+      const scrub = (event) => {
+        self.poke();
+        const box = lanes[0].inner.getBoundingClientRect();
+        const p = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+        if (p < (clockMs - LEAD) / RUN) {
+          for (const lane of lanes) {
+            const reached = Math.min(lane.codes.length - 1, Math.floor(p * last + 1e-6));
+            for (const mark of lane.marks.slice(reached + 1)) {
+              delete mark.dataset.state;
+              delete mark.dataset.skip;
+              $(".mark-chip", mark).replaceChildren();
+            }
+            lane.reached = Math.min(lane.reached, reached);
+            delete lane.el.dataset.result;
+          }
+        }
+        fading = false;
+        holding = p >= 1;
+        delete lanesEl.dataset.fading;
+        clockMs = LEAD + p * RUN;
+        render(p);
+      };
+      race.addEventListener("pointerdown", (event) => {
+        if (!event.target.closest(".lane-track") || event.button !== 0) return;
+        race.setPointerCapture(event.pointerId);
+        // A finger may be starting a scroll: it scrubs only once it moves sideways
+        // (pan-y hands vertical moves to the page, which cancels the pointer).
+        if (event.pointerType === "touch") return;
+        event.preventDefault();
+        scrub(event);
+      });
+      race.addEventListener("pointermove", (event) => {
+        if (race.hasPointerCapture(event.pointerId)) scrub(event);
+      });
       render(-1);
       toggle.hidden = false;
       toggle.addEventListener("click", () => {
@@ -2229,28 +2409,23 @@ $wh-&gt;verify($body, $headers);
     }
   }
 
-  // Verify in any language: the tabs step through every language once while on screen
-  // (paused on hover or focus), then rest on the first. Picking one stops it.
+  // Verify in any language: the tabs step through the languages while on screen. A
+  // reader holds the current one (hover, tap or keyboard); it moves on after they leave.
   {
     const verify = $(".verify");
     const panels = [...verify.querySelectorAll(".verify-panel")];
-    let driving = false;
     const pick = segmented($(".verify-code .tabs"), (_, index) => {
       for (const [i, panel] of panels.entries()) panel.toggleAttribute("data-active", i === index);
-      if (!driving) delete verify.dataset.auto;
     });
     if (!reduceMotion && "IntersectionObserver" in window) {
       verify.dataset.auto = "";
+      pilot(verify);
       new IntersectionObserver(([entry]) => {
         verify.toggleAttribute("data-onscreen", entry.isIntersecting && entry.intersectionRatio >= 0.4);
       }, { threshold: 0.4 }).observe(verify);
       verify.addEventListener("animationend", (event) => {
         if (!event.target.classList.contains("tab-time") || !("auto" in verify.dataset)) return;
-        const next = (panels.findIndex((panel) => panel.hasAttribute("data-active")) + 1) % panels.length;
-        driving = true;
-        pick(next, false);
-        driving = false;
-        if (next === 0) delete verify.dataset.auto;
+        pick((panels.findIndex((panel) => panel.hasAttribute("data-active")) + 1) % panels.length, false);
       });
     }
   }
@@ -2260,6 +2435,7 @@ $wh-&gt;verify($body, $headers);
     const consoleCard = $(".console");
     const panels = [...consoleCard.querySelectorAll(".console-panel")];
     const copy = $(".bar .copy", consoleCard);
+    const consoleTabs = [...consoleCard.querySelectorAll(".bar .tab")];
     segmented($(".tabs", consoleCard), (_, index) => {
       for (const [i, panel] of panels.entries()) panel.toggleAttribute("data-active", i === index);
       copy.dataset.copyFrom = `sql-${index}`;
@@ -2272,7 +2448,8 @@ $wh-&gt;verify($body, $headers);
     const announce = $(".console-announce", consoleCard);
     row.addEventListener("animationend", () => row.removeAttribute("data-flash"));
     const pill = (value, tone) => `<span class="st st-${tone}">${value}</span>`;
-    replay.addEventListener("click", () => {
+    replay.addEventListener("click", (event) => {
+      const byReader = event.isTrusted;
       replay.disabled = true;
       replay.textContent = "Replaying";
       foot.innerHTML = `<code>await hookgres.replayDelivery("${replay.dataset.id}")</code>`;
@@ -2288,9 +2465,38 @@ $wh-&gt;verify($body, $headers);
         row.setAttribute("data-flash", "");
         replay.textContent = "Replayed";
         foot.textContent = "Delivered on the first try, with the original webhook-id so the receiver can deduplicate.";
-        announce.textContent = `Replayed ${replay.dataset.id}: succeeded. ${foot.textContent}`;
+        if (byReader) announce.textContent = `Replayed ${replay.dataset.id}: succeeded. ${foot.textContent}`;
       });
     });
+
+    // Plays itself: replays the failed delivery, then runs the other two queries,
+    // then sets the failed row back while its tab is hidden and starts over.
+    if (!reduceMotion) {
+      const before = { status: status.innerHTML, count: count.textContent, label: replay.textContent, foot: foot.innerHTML };
+      const rewind = () => {
+        replay.disabled = false;
+        replay.textContent = before.label;
+        status.innerHTML = before.status;
+        count.textContent = before.count;
+        foot.innerHTML = before.foot;
+      };
+      let cursor;
+      const self = pilot(consoleCard, { onTake: () => cursor.hide() });
+      cursor = demoCursor(consoleCard, self);
+      const shown = () => consoleTabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
+      (async () => {
+        for (;;) {
+          await self.ready();
+          const at = shown();
+          if (at === 0 && !replay.disabled) {
+            if (await cursor.click(replay)) await sleep(3800);
+            continue;
+          }
+          const next = (at + 1) % consoleTabs.length;
+          if (await cursor.click(consoleTabs[next], next === 0 ? rewind : undefined)) await sleep(next === 0 ? 1200 : 3600);
+        }
+      })();
+    }
   }
 </script>
 <script src="/motion.js" defer></script>
