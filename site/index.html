@@ -367,6 +367,17 @@
   /* Phones: smaller code so the longest line fits without scrolling sideways. */
   @media (max-width: 440px) { .hero-code pre { font-size: 11px; padding: 14px 14px 18px; } }
 
+  /* When you need it: the customer requests that start it. */
+  .cases { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .case { padding: 18px 20px 20px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+  .case .ev { font: 500 12.5px/1.2 var(--mono); color: var(--accent); }
+  .case h3 { margin: 12px 0 0; font-size: 16px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
+  .case p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
+  .case .like { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+  .cases-note { margin: 24px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-3); max-width: 44em; text-wrap: pretty; }
+  @media (max-width: 900px) { .cases { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .cases { grid-template-columns: minmax(0, 1fr); } }
+
   /* What's in the box: six capabilities, one line each. */
   .caps {
     list-style: none; margin: clamp(40px, 5vw, 56px) 0 0; padding: 0;
@@ -493,6 +504,11 @@
   .tx-demo[data-state="rollback"] .tx-end { background: oklch(70% 0.17 27 / 0.18); }
   .tx-demo[data-state="rollback"] .ln:not(.tx-end) { opacity: 0.38; }
   .tx-pick { margin-left: 0; }
+  .tx-orm .tab { font-family: var(--mono); font-size: 12px; }
+  @media (max-width: 400px) { .tx-demo .bar { padding-left: 8px; } .tx-demo .bar .tab { padding: 0 7px; } .tx-orm { margin-left: 0; } }
+  .tx-panels { display: grid; }
+  .tx-panel { grid-area: 1 / 1; min-width: 0; visibility: hidden; }
+  .tx-panel[data-active] { visibility: visible; }
   .tx-pick .tab[aria-pressed="true"] { color: var(--code-ink); background: oklch(100% 0 0 / 0.08); }
 
   /* Transaction diagram: both rows land together, then the worker delivers. */
@@ -752,6 +768,15 @@
 
   /* Terminal recording: loads only near the viewport, plays only while visible. */
   .demo-video-stage { position: relative; margin-top: 36px; }
+  .video-pick { display: inline-flex; gap: 2px; margin-top: 32px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
+  .video-pick button { position: relative; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; font: 500 13.5px/1 var(--sans); color: var(--ink-2); background: none; cursor: pointer; transition: color 150ms var(--ease), background-color 150ms var(--ease), box-shadow 150ms var(--ease); }
+  .video-pick button::before { content: ""; position: absolute; inset: -6px 0; }
+  .video-pick button[aria-selected="true"] { color: var(--ink); background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / 0.12), inset 0 0 0 1px var(--line); }
+  @media (hover: hover) and (pointer: fine) { .video-pick button:hover { color: var(--ink); } }
+  .video-pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .video-pick ~ .demo-video-stage { margin-top: 16px; }
+  .demo-video-stage[hidden] { display: none; }
+  .video-cap { margin: 14px 2px 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); max-width: 52em; text-wrap: pretty; }
   .video-toggle { position: absolute; top: 10px; right: 12px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; color: oklch(92% 0.01 258); background: oklch(100% 0 0 / 0.1); cursor: pointer; transition: background 150ms var(--ease); }
   @media (hover: hover) and (pointer: fine) { .video-toggle:hover { background: oklch(100% 0 0 / 0.18); } }
   .video-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -958,7 +983,7 @@
     .mark-chip .attempt, .mark[data-state] .mark-dot::after { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .ln, .verify-panel, .console-panel, .replay { transition: none; }
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .video-pick button, .disclose .chev, .ln, .verify-panel, .console-panel, .replay { transition: none; }
     .console-panel[data-active] tbody > *, .console-panel[data-active] tbody > [data-flash] { animation: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .live-dot::after, .tx-ep[data-s="ok"] .tx-pulse::after { animation: none; }
@@ -1105,6 +1130,24 @@ hookgres.start();
     </div>
   </section>
 
+  <section class="band">
+    <div class="wrap">
+      <p class="kicker">when you need it</p>
+      <h2>It starts when a customer asks for webhooks.</h2>
+      <p class="sub">“Can you tell our system when this happens, instead of us polling your API?” Six requests SaaS teams get, each answered with one <code>send()</code> in the transaction that saves the change.</p>
+      <ul class="cases">
+        <li class="case"><code class="ev">booking.created</code><h3>Bookings to their CRM</h3><p>A demo gets booked and lands in the customer’s sales pipeline.</p><p class="like">Like Cal.com</p></li>
+        <li class="case"><code class="ev">invoice.paid</code><h3>Invoices to their ERP</h3><p>Their accounting system marks it paid only if your payment committed.</p><p class="like">Like Stripe</p></li>
+        <li class="case"><code class="ev">job.completed</code><h3>Long jobs, no polling</h3><p>One request when the job finishes, instead of one every few seconds.</p><p class="like">Like Replicate</p></li>
+        <li class="case"><code class="ev">form.submitted</code><h3>Zapier, Make and n8n</h3><p>One webhook URL setting connects your product to thousands of apps.</p><p class="like">Like Tally</p></li>
+        <li class="case"><code class="ev">order.paid</code><h3>Orders to their warehouse</h3><p>Each merchant adds its own endpoints and picks the events it needs.</p><p class="like">Like Shopify</p></li>
+        <li class="case"><code class="ev">email.bounced</code><h3>Email events to their app</h3><p>High-volume events, where a per-message bill grows fastest.</p><p class="like">Like Resend</p></li>
+      </ul>
+      <p class="cases-note">Only receiving webhooks from Stripe, GitHub or Clerk? You don’t need Hookgres: use their verification library.</p>
+      <p class="more"><a href="/docs/use-cases">The six cases, with code</a></p>
+    </div>
+  </section>
+
   <section class="band sketch-band">
     <div class="wrap">
       <p class="kicker">hookgres.send()</p>
@@ -1218,13 +1261,14 @@ hookgres.start();
         <p class="kicker">BEGIN … COMMIT</p>
         <h2>Queued in your transaction. Sent only if it commits.</h2>
         <p class="sub">A webhook service is a second system. Call it after your commit, and a crash in between loses the event. Call it before, and a rollback leaves your customer with a webhook for an invoice that was never paid. Hookgres writes the webhook in the same transaction as your data, so you get the outbox and the delivery in one library.</p>
-        <p class="sub">Workers claim deliveries with <code>FOR UPDATE SKIP LOCKED</code>, so you can run as many as you like.</p>
-        <p class="more"><a href="/docs/guides/sending">Sending webhooks</a></p>
+        <p class="sub">On an ORM, pass its transaction instead. Adapters for Prisma and Kysely ship with Hookgres; Drizzle, postgres.js, Knex, Sequelize, TypeORM and MikroORM each take a tested wrapper of a few lines.</p>
+        <p class="more"><a href="/docs/guides/orms">Using your ORM’s transaction</a></p>
       </div>
       <div class="demo tx-demo" data-state="idle">
         <div class="code" data-spot>
-          <div class="bar"><span>billing.ts</span><div class="tabs tx-pick"><button type="button" class="tab" data-tx="commit" aria-pressed="false">Commit</button><button type="button" class="tab" data-tx="rollback" aria-pressed="false">Roll back</button></div></div>
-<pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(
+          <div class="bar"><div class="tabs tx-orm" role="tablist" aria-label="Database library"><button type="button" class="tab" role="tab" id="txt-pg" aria-controls="txp-pg" aria-selected="true">pg</button><button type="button" class="tab" role="tab" id="txt-prisma" aria-controls="txp-prisma" aria-selected="false" tabindex="-1">Prisma</button><button type="button" class="tab" role="tab" id="txt-drizzle" aria-controls="txp-drizzle" aria-selected="false" tabindex="-1">Drizzle</button></div><div class="tabs tx-pick"><button type="button" class="tab" data-tx="commit" aria-pressed="false">Commit</button><button type="button" class="tab" data-tx="rollback" aria-pressed="false">Roll back</button></div></div>
+          <div class="tx-panels">
+<pre class="tx-panel" role="tabpanel" id="txp-pg" aria-labelledby="txt-pg" data-active><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(
   <span class="s">`UPDATE invoices SET status = 'paid'
    WHERE id = $1`</span>,
   [id],
@@ -1232,7 +1276,25 @@ hookgres.start();
   tenantId,
   eventType: <span class="s">"invoice.paid"</span>,
   payload: { id },
-}, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word">"COMMIT"</span>);</span></pre>
+}, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word" data-commit="&quot;COMMIT&quot;" data-rollback="&quot;ROLLBACK&quot;">"COMMIT"</span>);</span></pre>
+<pre class="tx-panel" role="tabpanel" id="txp-prisma" aria-labelledby="txt-prisma"><span class="ln"><span class="k">import</span> { fromPrisma } <span class="k">from</span> <span class="s">"hookgres/prisma"</span>;</span>
+<span class="ln"><span class="k">await</span> prisma.$transaction(<span class="k">async</span> (tx) =&gt; {</span><span class="ln">  <span class="k">await</span> tx.invoice.update({
+    where: { id },
+    data: { status: <span class="s">"paid"</span> },
+  });</span><span class="ln tx-send">  <span class="k">await</span> hookgres.send({
+    tenantId,
+    eventType: <span class="s">"invoice.paid"</span>,
+    payload: { id },
+  }, { client: fromPrisma(tx) });</span><span class="ln tx-end">}); <span class="c tx-word" data-commit="// returns, so Prisma commits" data-rollback="// throws, so Prisma rolls back">// returns, so Prisma commits</span></span></pre>
+<pre class="tx-panel" role="tabpanel" id="txp-drizzle" aria-labelledby="txt-drizzle"><span class="ln"><span class="k">import</span> { fromDrizzle } <span class="k">from</span> <span class="s">"./db.js"</span>;</span>
+<span class="ln"><span class="k">await</span> db.transaction(<span class="k">async</span> (tx) =&gt; {</span><span class="ln">  <span class="k">await</span> tx.update(invoices)
+    .set({ status: <span class="s">"paid"</span> })
+    .where(eq(invoices.id, id));</span><span class="ln tx-send">  <span class="k">await</span> hookgres.send({
+    tenantId,
+    eventType: <span class="s">"invoice.paid"</span>,
+    payload: { id },
+  }, { client: fromDrizzle(tx) });</span><span class="ln tx-end">}); <span class="c tx-word" data-commit="// returns, so Drizzle commits" data-rollback="// throws, so Drizzle rolls back">// returns, so Drizzle commits</span></span></pre>
+          </div>
         </div>
         <div class="window tx-card" aria-hidden="true">
           <div class="tx-stage">
@@ -1259,15 +1321,24 @@ hookgres.start();
         <div>
           <p class="kicker">ROLLBACK</p>
           <h2>A job queue can't roll back with your data.</h2>
-          <p class="sub">The same payment code, run twice. First it queues the webhook with BullMQ inside the transaction: the payment rolls back, but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. Any queue outside Postgres does the same. Then the queue is swapped for <code>hookgres.send()</code>, and the webhook rolls back with the payment. Real BullMQ, Redis and Postgres.</p>
+          <p class="sub">A queue outside Postgres keeps a job your transaction rolled back, so your customer hears about a payment that never happened. Two terminal recordings with real Postgres and the published package.</p>
         </div>
         <a class="pill ghost" href="/docs/guides/sending#inside-your-transaction">How it works</a>
       </div>
-      <div class="demo-video-stage">
+      <div class="video-pick" role="tablist" aria-label="Terminal recordings"><button type="button" role="tab" id="vt-queue" aria-controls="vs-queue" aria-selected="true">BullMQ vs. Hookgres</button><button type="button" role="tab" id="vt-install" aria-controls="vs-install" aria-selected="false" tabindex="-1">Install to first retry</button></div>
+      <div class="demo-video-stage" role="tabpanel" id="vs-queue" aria-labelledby="vt-queue">
         <video id="rollback-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/rollback-demo-poster.jpg" aria-label="Terminal recording: an app pays two invoices and queues each webhook with BullMQ inside the transaction. The second payment rolls back, yet the customer's server still receives invoice.paid for in_124, while the invoices table shows in_124 open. The same code with hookgres.send in place of the queue sends only in_123's webhook.">
           <source data-src="/media/rollback-demo-2x.mp4" type="video/mp4">
         </video>
         <button type="button" class="video-toggle" aria-controls="rollback-video" hidden>Pause</button>
+        <p class="video-cap">The same payment code, run twice. With BullMQ inside the transaction, the payment rolls back but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. With <code>hookgres.send()</code> in its place, the webhook rolls back with the payment.</p>
+      </div>
+      <div class="demo-video-stage" role="tabpanel" id="vs-install" aria-labelledby="vt-install" hidden>
+        <video id="demo-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/terminal-demo-poster.jpg" aria-label="Terminal recording: npm install hookgres pg, an app that pays one invoice in a committed transaction and one in a rolled-back transaction, a receiver that answers 503 twice and then 204, and a psql query of the three logged attempts.">
+          <source data-src="/media/terminal-demo-2x.mp4" type="video/mp4">
+        </video>
+        <button type="button" class="video-toggle" aria-controls="demo-video" hidden>Pause</button>
+        <p class="video-cap">From <code>npm install hookgres pg</code> to a logged retry, against a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged.</p>
       </div>
       <div class="seen">
         <h3>Not a contrived example. Other teams hit these bugs in 2026:</h3>
@@ -1442,25 +1513,6 @@ $wh-&gt;verify($body, $headers);
     </div>
   </section>
 
-  <section class="band">
-    <div class="wrap">
-      <div class="head-row">
-        <div>
-          <p class="kicker">npm install hookgres pg</p>
-          <h2>Install it, send inside a transaction, watch it retry.</h2>
-          <p class="sub">The published package, a real Postgres and a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged.</p>
-        </div>
-        <a class="pill ghost" href="/docs/getting-started">Get started</a>
-      </div>
-      <div class="demo-video-stage">
-        <video id="demo-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/terminal-demo-poster.jpg" aria-label="Terminal recording: npm install hookgres pg, an app that pays one invoice in a committed transaction and one in a rolled-back transaction, a receiver that answers 503 twice and then 204, and a psql query of the three logged attempts.">
-          <source data-src="/media/terminal-demo-2x.mp4" type="video/mp4">
-        </video>
-        <button type="button" class="video-toggle" aria-controls="demo-video" hidden>Pause</button>
-      </div>
-    </div>
-  </section>
-
   <section class="band alt">
     <div class="wrap">
       <p class="kicker">library vs. hosted service</p>
@@ -1473,13 +1525,13 @@ $wh-&gt;verify($body, $headers);
           <tr><th scope="row">Part of your transaction</th><td class="us">Yes</td><td>No, a separate API call</td></tr>
           <tr><th scope="row">1M webhooks a month</th><td class="us">Free library, about $0.15 of storage</td><td>$9.50 on Hookdeck Outpost, $115 on Svix Basic (<a href="/docs/compare">compare</a>)</td></tr>
           <tr><th scope="row">Where payloads go</th><td class="us">Only to your customers</td><td>Also to the provider</td></tr>
-          <tr><th scope="row">Customer portal</th><td class="us">Build on the delivery log, or <a href="#portal">join the waitlist</a></td><td>Often included</td></tr>
+          <tr><th scope="row">Customer portal</th><td class="us">Your own settings page today (<a href="/docs/guides/endpoints#exposing-endpoints-to-customers">example</a>), Pro portal <a href="#portal">on the waitlist</a></td><td>Often included</td></tr>
         </tbody>
       </table>
 
       <div class="waitlist" id="portal">
         <h3>Customer portal, coming to Hookgres Pro</h3>
-        <p>Let your customers add endpoints, see every delivery and replay failures, styled to match your app. Join the waitlist for early access.</p>
+        <p>Today, customers add endpoints through your own settings page: a few routes around <code>createEndpoint()</code>, scoped to their tenant (<a href="/docs/guides/endpoints#exposing-endpoints-to-customers">example</a>). Pro adds a portal where they add endpoints, see every delivery and replay failures, styled to match your app. Join the waitlist for early access.</p>
         <form class="waitlist-form" id="waitlist-form" data-form-url="https://tally.so/r/q5axXY" novalidate>
           <label class="sr-only" for="waitlist-email">Email</label>
           <input id="waitlist-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@company.com" required>
@@ -1535,6 +1587,16 @@ $wh-&gt;verify($body, $headers);
   // Terminal recordings: fetch each only when it's about to scroll into view, and play
   // it only while it's on screen. Reduced motion or Save-Data: no autoplay, show controls.
   const manual = reduceMotion || navigator.connection?.saveData === true;
+  {
+    const pick = $(".video-pick");
+    const stages = [...document.querySelectorAll(".video-pick ~ .demo-video-stage")];
+    if (pick) segmented(pick, (_, index) => {
+      stages.forEach((stage, i) => {
+        stage.hidden = i !== index;
+        if (stage.hidden) $("video", stage)?.pause();
+      });
+    });
+  }
   for (const stage of document.querySelectorAll(".demo-video-stage")) {
     const video = $("video", stage);
     const toggle = $(".video-toggle", stage);
@@ -1788,7 +1850,11 @@ $wh-&gt;verify($body, $headers);
   // Transaction demo
   {
     const demo = $(".tx-demo");
-    const word = $(".tx-word", demo);
+    const words = [...demo.querySelectorAll(".tx-word")];
+    const panels = [...demo.querySelectorAll(".tx-panel")];
+    segmented($(".tx-orm", demo), (_, index) => {
+      panels.forEach((panel, i) => { panel.toggleAttribute("data-active", i === index); });
+    });
     const rows = [...demo.querySelectorAll(".tx-row")];
     const badge = $(".tx-badge", demo);
     const wire = $(".tx-wire", demo);
@@ -1805,7 +1871,7 @@ $wh-&gt;verify($body, $headers);
       timers = [];
       for (const b of buttons) b.setAttribute("aria-pressed", String((b.dataset.tx === "commit") === commit));
       demo.dataset.state = "idle";
-      word.textContent = commit ? '"COMMIT"' : '"ROLLBACK"';
+      for (const word of words) word.textContent = commit ? word.dataset.commit : word.dataset.rollback;
       badge.textContent = "BEGIN";
       set(badge);
       for (const row of rows) set(row);
