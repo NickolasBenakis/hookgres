@@ -55,11 +55,11 @@ It exits with 1 if a MUST check fails.
 | Advertises `io.modelcontextprotocol/events`; `events/list` offers webhook                         | MUST          | Capability Negotiation, Listing         |
 | Rejects a malformed `whsec_` secret, a non-https URL, an unknown event, an unauthenticated caller | MUST          | Subscribing, Subscription identity      |
 | Refuses an endpoint that doesn't echo the challenge; sends it nothing                             | MUST          | Endpoint verification                   |
-| Signs the challenge; `msg_verification_` id                                                       | MUST / SHOULD | Endpoint verification, Non-event bodies |
+| Signs the challenge; `msg_verification_` id                                                       | MUST          | Endpoint verification, Non-event bodies |
 | Signature verifies with the `standardwebhooks` library                                            | MUST          | Signature scheme                        |
 | `webhook-*` headers and `X-MCP-Subscription-Id` equal to the subscribe id                         | MUST          | Webhook event delivery                  |
 | Body is an `EventOccurrence`                                                                      | MUST          | Event Occurrences                       |
-| `webhook-id` charset, and not derived from `eventId`                                              | MUST          | Signature scheme                        |
+| `webhook-id` charset, and not derived from `eventId` (8+ characters of it inside the id)          | MUST          | Signature scheme                        |
 | Retries a 5xx with the same `webhook-id` and a fresh timestamp and signature                      | SHOULD / MUST | Delivery model                          |
 | Doesn't retry `410` or `413`; a `410` doesn't end the subscription                                | MUST          | Delivery model, Delivery profile        |
 | Doesn't follow redirects                                                                          | MUST          | SSRF prevention                         |

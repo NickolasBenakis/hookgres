@@ -229,21 +229,25 @@ const newSecret = () => `whsec_${randomBytes(32).toString("base64")}`;
 // ---------------------------------------------------------------- helpers
 
 let triggers = 0;
+/**
+ * Runs the trigger command without blocking: the receiver lives in this
+ * process, and a server may deliver before the trigger returns.
+ */
 function trigger() {
   triggers++;
-  execSync(config.trigger, {
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      MCP_CHECK_EVENT: config.event,
-      MCP_CHECK_SEQ: String(triggers),
-    },
+  return runCommand(config.trigger, {
+    MCP_CHECK_EVENT: config.event,
+    MCP_CHECK_SEQ: String(triggers),
   });
 }
 
-function runCommand(command) {
+function runCommand(command, env = {}) {
   return new Promise((resolveRun, reject) => {
-    const child = spawn(command, { shell: true, stdio: "ignore" });
+    const child = spawn(command, {
+      shell: true,
+      stdio: "ignore",
+      env: { ...process.env, ...env },
+    });
     child.on("exit", (code) =>
       code === 0 ? resolveRun() : reject(new Error(`exit ${code}`)),
     );
@@ -435,7 +439,7 @@ async function verification() {
     JSON.stringify(failed.error ?? failed.result),
   );
   if (failed.result) {
-    trigger();
+    await trigger();
     await sleep(config.deliveryWaitMs / 2);
     check(
       "verify.no-delivery",
@@ -494,7 +498,7 @@ async function delivery() {
     );
     check(
       "verify.id-format",
-      "SHOULD",
+      "MUST",
       "verification webhook-id has the form msg_verification_<random>",
       /^msg_verification_[A-Za-z0-9_-]+$/.test(
         verificationRecord.headers["webhook-id"] ?? "",
@@ -503,7 +507,7 @@ async function delivery() {
     );
   }
 
-  trigger();
+  await trigger();
   const arrived = await waitFor(
     () => at(r.path).length > 0,
     config.deliveryWaitMs,
@@ -591,7 +595,11 @@ async function delivery() {
     "deliver.id-not-event",
     "MUST",
     "webhook-id is not derived from eventId",
-    typeof body.eventId !== "string" || !id.includes(body.eventId),
+    // A short eventId can appear in a random id by chance, so only a long
+    // one counts as "derived".
+    typeof body.eventId !== "string" ||
+      (id !== body.eventId &&
+        (body.eventId.length < 8 || !id.includes(body.eventId))),
     `${id} contains ${body.eventId}`,
   );
   return { sub, secret, route: r };
@@ -609,7 +617,7 @@ async function retries() {
       "skip",
       "subscribe failed",
     );
-  trigger();
+  await trigger();
   const retried = await waitFor(
     () => at(r.path).length >= 2,
     config.deliveryWaitMs + config.retryWaitMs,
@@ -674,7 +682,7 @@ async function finalStatuses() {
       );
       continue;
     }
-    trigger();
+    await trigger();
     const arrived = await waitFor(
       () => at(r.path).length > 0,
       config.deliveryWaitMs,
@@ -701,7 +709,7 @@ async function finalStatuses() {
     );
     if (status === 410) {
       const before = at(r.path).length;
-      trigger();
+      await trigger();
       const next = await waitFor(
         () => at(r.path).length > before,
         config.deliveryWaitMs,
@@ -734,7 +742,7 @@ async function redirects() {
       "skip",
       "subscribe failed",
     );
-  trigger();
+  await trigger();
   await waitFor(() => at(r.path).length > 0, config.deliveryWaitMs);
   await sleep(3000);
   if (at(r.path).length === 0)
@@ -811,7 +819,7 @@ async function rotation(state) {
     );
   }
   const before = at(state.route.path).length;
-  trigger();
+  await trigger();
   if (
     !(await waitFor(
       () => at(state.route.path).length > before,
@@ -866,7 +874,7 @@ async function unsubscribe(state) {
     JSON.stringify(done.error ?? done.httpStatus),
   );
   const before = at(state.route.path).length;
-  trigger();
+  await trigger();
   await sleep(config.deliveryWaitMs / 2);
   check(
     "unsubscribe.stops",
@@ -909,7 +917,7 @@ async function restart() {
       "skip",
       "subscribe failed",
     );
-  trigger();
+  await trigger();
   await waitFor(() => at(r.path).length > 0, config.deliveryWaitMs);
   await runCommand(config.restart);
   up = true;
