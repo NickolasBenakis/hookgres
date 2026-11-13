@@ -1967,19 +1967,18 @@ $wh-&gt;verify($body, $headers);
   })();
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Demos play themselves until the reader reaches for one (hover, press or
-  // keyboard focus), then hand over exactly where they are. Eight seconds after
-  // the reader leaves, they carry on from that state.
+  // Demos play themselves, hover or not. A reader's own click (or keyboard
+  // focus) hands over exactly where they are; eight seconds later they carry
+  // on from that state.
   const QUIET = 8000;
   function pilot(root, { onTake, onResume } = {}) {
     let live = false;
-    let hover = false;
     let focus = false;
     let timer = 0;
     const waiting = [];
     const update = () => {
       clearTimeout(timer);
-      if (hover || focus) {
+      if (focus) {
         if (live) return;
         live = true;
         root.dataset.live = "";
@@ -2004,16 +2003,6 @@ $wh-&gt;verify($body, $headers);
       }
       update();
     };
-    root.addEventListener("pointerenter", (event) => {
-      if (event.pointerType === "touch") return;
-      hover = true;
-      update();
-    });
-    root.addEventListener("pointerleave", (event) => {
-      if (event.pointerType === "touch") return;
-      hover = false;
-      update();
-    });
     // The cursor's own clicks are untrusted. A finger scrolling past fires no click.
     root.addEventListener("click", (event) => {
       if (event.isTrusted) poke();
@@ -2410,7 +2399,7 @@ $wh-&gt;verify($body, $headers);
   }
 
   // Verify in any language: the tabs step through the languages while on screen. A
-  // reader holds the current one (hover, tap or keyboard); it moves on after they leave.
+  // reader holds the current one (a click or keyboard focus); it moves on eight seconds later.
   {
     const verify = $(".verify");
     const panels = [...verify.querySelectorAll(".verify-panel")];
