@@ -104,6 +104,26 @@ const DOCS = "https://hookgres.dev/docs";
  *
  * @see https://hookgres.dev/docs/reference/configuration
  */
+/** What `deliveryHeaders` gets for each attempt. */
+export interface DeliveryHeadersInput {
+  deliveryId: string;
+  messageId: string;
+  endpointId: string;
+  tenantId: string;
+  eventType: string;
+  /** 1 for the first attempt. */
+  attemptNumber: number;
+}
+
+/** Headers `deliveryHeaders` can't set: Hookgres owns them. */
+const RESERVED_HEADERS = new Set([
+  "content-type",
+  "user-agent",
+  "webhook-id",
+  "webhook-timestamp",
+  "webhook-signature",
+]);
+
 export interface HookgresOptions<E extends EventMap = AnyEvents> {
   /**
    * An existing `pg.Pool`, usually the one your app already uses, so
@@ -198,6 +218,31 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
    * endpoint URLs are still checked, but delivery uses this fetch as is.
    */
   fetch?: typeof fetch;
+  /**
+   * `true` (the default) wraps each payload in the Standard Webhooks body
+   * `{"type", "timestamp", "data"}`. `false` sends the payload itself as the
+   * request body, for receivers that define their own body, like MCP Events.
+   * The body is built at delivery time, so the workers' setting is what counts.
+   * @see https://hookgres.dev/docs/reference/configuration
+   */
+  envelope?: boolean;
+  /**
+   * Extra request headers for each attempt, e.g. a routing id the receiver
+   * reads before it parses the body. Called once per attempt. It can't set
+   * `content-type`, `user-agent` or the `webhook-*` headers. If it throws, the
+   * attempt fails with that error and is retried.
+   *
+   * @example
+   * deliveryHeaders: ({ tenantId }) => ({ "x-account-id": tenantId })
+   */
+  deliveryHeaders?: (delivery: DeliveryHeadersInput) => Record<string, string>;
+  /**
+   * Response statuses that fail a delivery at once, with no more retries, e.g.
+   * `[410, 413]` for receivers that use them to reject one delivery. They
+   * don't count against the endpoint's health. Defaults to `[]`: every
+   * non-2xx response is retried.
+   */
+  nonRetryableStatuses?: number[];
   /** `User-Agent` header sent with every webhook. Defaults to `Hookgres/0.1`. */
   userAgent?: string;
   /** Called for unexpected worker errors, and for idle-connection errors on a pool Hookgres created from `connectionString`. Defaults to `console.error`. */
@@ -327,6 +372,9 @@ export class Hookgres<E extends EventMap = AnyEvents> {
   private readonly transport: Transport;
   private readonly closeTransport: () => void;
   private readonly userAgent: string;
+  private readonly envelope: boolean;
+  private readonly deliveryHeaders: HookgresOptions["deliveryHeaders"];
+  private readonly nonRetryableStatuses: Set<number>;
   private readonly onError: (error: unknown) => void;
   private readonly onAttempt: HookgresOptions["onAttempt"];
   private readonly onEndpointDisabled: HookgresOptions["onEndpointDisabled"];
@@ -509,6 +557,33 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       }
     }
     this.userAgent = options.userAgent ?? "Hookgres/0.1";
+    this.envelope = options.envelope ?? true;
+    if (typeof this.envelope !== "boolean") {
+      throw new HookgresValidationError(
+        `envelope must be true (Standard Webhooks body, the default) or false (the payload is the body). See ${DOCS}/reference/configuration`,
+      );
+    }
+    if (
+      options.deliveryHeaders !== undefined &&
+      typeof options.deliveryHeaders !== "function"
+    ) {
+      throw new HookgresValidationError(
+        `deliveryHeaders must be a function that returns extra headers, e.g. ({ tenantId }) => ({ "x-account-id": tenantId }). See ${DOCS}/reference/configuration`,
+      );
+    }
+    this.deliveryHeaders = options.deliveryHeaders;
+    const statuses = options.nonRetryableStatuses ?? [];
+    if (
+      !Array.isArray(statuses) ||
+      statuses.some(
+        (status) => !Number.isInteger(status) || status < 300 || status > 599,
+      )
+    ) {
+      throw new HookgresValidationError(
+        `nonRetryableStatuses must be HTTP status codes from 300 to 599, e.g. [410, 413]. See ${DOCS}/reference/configuration`,
+      );
+    }
+    this.nonRetryableStatuses = new Set(statuses);
     const onError =
       options.onError ??
       ((error) => console.error("[hookgres] worker error:", error));
@@ -2042,7 +2117,9 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       let body = bodies.get(delivery.message_id);
       if (body === undefined) {
         const timestamp = new Date(delivery.message_created_ms).toISOString();
-        body = `{"type":${JSON.stringify(delivery.event_type)},"timestamp":"${timestamp}","data":${payload}}`;
+        body = this.envelope
+          ? `{"type":${JSON.stringify(delivery.event_type)},"timestamp":"${timestamp}","data":${payload}}`
+          : payload;
         bodies.set(delivery.message_id, body);
       }
       delivery.body = body;
@@ -2365,7 +2442,12 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       return;
     }
 
-    const isFinal = attemptNumber > this.retrySchedule.length;
+    // A status the receiver uses to reject this one delivery: fail it now,
+    // and leave the endpoint's health alone, since the receiver answered.
+    const rejected =
+      outcome.statusCode !== null &&
+      this.nonRetryableStatuses.has(outcome.statusCode);
+    const isFinal = rejected || attemptNumber > this.retrySchedule.length;
     const baseDelayMs = isFinal
       ? 0
       : (this.retrySchedule[attemptNumber - 1] ?? 0);
@@ -2417,7 +2499,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
                ELSE disabled_xid
              END,
              updated_at = now()
-         WHERE id IN (SELECT endpoint_id FROM cur)
+         WHERE id IN (SELECT endpoint_id FROM cur) AND NOT $11::boolean
          RETURNING id, disabled AND disabled_xid = pg_current_xact_id() AS disabled_now,
                    -- Disabled automatically, now or earlier: no more retries.
                    -- A manual disable is a pause, so retries continue.
@@ -2454,6 +2536,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
         isFinal,
         delayMs,
         this.disableEndpointAfterMs,
+        rejected,
       ],
       this.workerDb,
     );
@@ -2477,6 +2560,33 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       );
       await this.failQueuedDeliveries(delivery.endpoint_id);
     }
+  }
+
+  /** `deliveryHeaders`' result, lowercased and checked. Throws on misuse. */
+  private extraHeaders(delivery: ClaimedDelivery): Record<string, string> {
+    if (!this.deliveryHeaders) return {};
+    const headers = this.deliveryHeaders({
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      endpointId: delivery.endpoint_id,
+      tenantId: delivery.tenant_id,
+      eventType: delivery.event_type,
+      attemptNumber: delivery.attempt_count,
+    });
+    const result: Record<string, string> = {};
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      const key = name.toLowerCase();
+      if (RESERVED_HEADERS.has(key)) {
+        throw new Error(`deliveryHeaders can't set "${key}"`);
+      }
+      if (typeof value !== "string") {
+        throw new Error(
+          `deliveryHeaders returned a non-string value for "${key}"`,
+        );
+      }
+      result[key] = value;
+    }
+    return result;
   }
 
   private async attempt(delivery: ClaimedDelivery): Promise<HttpResult> {
@@ -2503,6 +2613,7 @@ export class Hookgres<E extends EventMap = AnyEvents> {
       const init: TransportRequest = {
         method: "POST",
         headers: {
+          ...this.extraHeaders(delivery),
           "content-type": "application/json",
           "user-agent": this.userAgent,
           "webhook-id": delivery.message_id,

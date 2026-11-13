@@ -1,6 +1,7 @@
 export { HookgresValidationError } from "./errors.js";
 export {
   DEFAULT_RETRY_SCHEDULE,
+  type DeliveryHeadersInput,
   Hookgres,
   type HookgresOptions,
 } from "./hookgres.js";
