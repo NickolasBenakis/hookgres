@@ -364,6 +364,8 @@
   .tab-panel[hidden] { display: none; }
   /* Both files keep the taller one's height, so switching tabs doesn't shift the page. */
   .hero-code pre { font-size: 12.5px; line-height: 1.65; padding: 16px 20px 20px; min-height: calc(22lh + 36px); }
+  /* Phones: smaller code so the longest line fits without scrolling sideways. */
+  @media (max-width: 440px) { .hero-code pre { font-size: 11px; padding: 14px 14px 18px; } }
 
   /* What's in the box: six capabilities, one line each. */
   .caps {
@@ -453,22 +455,8 @@
   .window { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; text-align: left; }
   .window-bar { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
   .window-bar .title { font-weight: 500; color: var(--ink); }
+  @media (max-width: 560px) { .window-bar { padding: 12px 14px; } }
   .window-bar .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; letter-spacing: 0; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .log { padding: 6px 18px 12px; }
-  @media (max-width: 560px) { .window-bar .meta.log-id { display: none; } .log { padding: 4px 14px 10px; } .window-bar { padding: 12px 14px; } }
-  .log-row {
-    display: grid;
-    grid-template-columns: minmax(0, 190px) repeat(8, minmax(0, 1fr)) minmax(0, 110px);
-    align-items: center; gap: 8px;
-    padding: 11px 0; border-top: 1px solid var(--line);
-  }
-  .log-row.head { border-top: 0; padding: 6px 0 8px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .log-row.head span { text-align: center; }
-  .log-row.head span:first-child, .log-row.head span:last-child { text-align: left; }
-  .endpoint { min-width: 0; }
-  .endpoint b { display: block; font-weight: 500; font-size: 14px; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .endpoint small { display: block; font-size: 12px; color: var(--ink-3); }
-  .slot { display: flex; justify-content: center; }
   .attempt {
     display: inline-flex; align-items: center; gap: 5px;
     height: 24px; padding: 0 8px; border-radius: 7px;
@@ -480,33 +468,6 @@
   .attempt.ok { color: var(--ok); }
   .attempt.warn { color: var(--warn); }
   .attempt.bad { color: var(--bad); }
-  .status { font-size: 13px; font-weight: 500; }
-  .status.ok { color: var(--ok); }
-  .status.bad { color: var(--bad); }
-  .status small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
-  @media (max-width: 760px) {
-    .log-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
-    .log-row.head { display: none; }
-    .log-row .slots { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 6px; }
-    .log-row .status { grid-column: 2; grid-row: 1; text-align: right; }
-    .slot:empty { display: none; }
-  }
-  @media (min-width: 761px) { .log-row .slots { display: contents; } }
-  /* Live log: new deliveries arrive at the top and older rows slide down out of a fixed window. */
-  .log-window .title { margin-right: auto; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
-  .log-window .meta { margin-left: 0; }
-  .log-rows { position: relative; overflow: hidden; }
-  .log-rows[data-live] { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
-  .log-rows .log-row { position: relative; background: var(--surface); }
-  .log-rows .log-row::before {
-    content: ""; position: absolute; inset: 1px 0 0; pointer-events: none;
-    background: linear-gradient(90deg, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%);
-    opacity: 0; transition: opacity 1200ms var(--ease);
-  }
-  .log-rows .log-row[data-new]::before { opacity: 1; transition-duration: 0ms; }
-  .log-row .attempt.pop { animation: chip-in 260ms var(--ease-out) both; }
-  .status.live { color: var(--warn); }
-  .status { transition: color 200ms var(--ease); }
   .live-toggle {
     position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 9px;
     border: 0; border-radius: 999px; cursor: pointer; font: 500 12px/1 var(--sans); letter-spacing: 0;
@@ -646,6 +607,14 @@
   .mark-chip { position: absolute; left: 0; bottom: 12px; transform: translateX(-50%); }
   .mark-chip .attempt { animation: chip-in 260ms var(--ease-out) both; box-shadow: 0 1px 2px oklch(25% 0.05 var(--h) / 0.08); }
   @keyframes chip-in { from { opacity: 0; transform: translateY(4px) scale(0.95); } }
+  .endpoint { min-width: 0; }
+  .endpoint b { display: block; font-weight: 500; font-size: 14px; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .endpoint small { display: block; font-size: 12px; color: var(--ink-3); }
+  .status { font-size: 13px; font-weight: 500; transition: color 200ms var(--ease); }
+  .status.ok { color: var(--ok); }
+  .status.bad { color: var(--bad); }
+  .status.live { color: var(--warn); }
+  .status small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
   .lane .status { font-variant-numeric: tabular-nums; }
   .lane .status small { white-space: nowrap; }
   .race-axis { padding: 2px 0 12px; }
@@ -733,9 +702,53 @@
   .note code { color: var(--ink-2); }
 
   .log-stage { margin-top: 36px; }
-  .log-foot { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 64px); margin-top: 40px; align-items: start; }
-  @media (max-width: 900px) { .log-foot { grid-template-columns: minmax(0, 1fr); } }
-  .log-foot .points { margin-top: 0; }
+  /* SQL console: real queries against Hookgres's tables, run by picking a tab. */
+  .console .bar { padding-left: 8px; }
+  .console .tabs { margin-left: 0; min-width: 0; }
+  .console .tab { white-space: nowrap; }
+  .console-panels { display: grid; }
+  .console-panel { grid-area: 1 / 1; min-width: 0; visibility: hidden; opacity: 0; transition: opacity 160ms var(--ease), visibility 0s linear 160ms; }
+  .console-panel[data-active] { visibility: visible; opacity: 1; transition: opacity 200ms var(--ease-out), visibility 0s; }
+  .console .console-sql { padding: 18px 20px 16px; border-bottom: 1px solid var(--code-line); white-space: pre; font-size: 12.5px; }
+  .console-result { overflow-x: auto; padding: 4px 20px 0; }
+  .console table { width: 100%; border-collapse: collapse; font: 12.5px/1.2 var(--mono); letter-spacing: 0; color: var(--code-ink); font-variant-numeric: tabular-nums; }
+  .console th, .console td { height: 44px; padding: 0 20px 0 0; text-align: left; white-space: nowrap; border-bottom: 1px solid color-mix(in oklch, var(--code-line) 70%, transparent); }
+  .console th { height: 38px; font-weight: 500; color: var(--code-dim); }
+  .console th:last-child, .console td:last-child { padding-right: 0; }
+  .console .num { text-align: right; }
+  .console td.err { color: var(--bad); }
+  .console td.act { width: 1%; text-align: right; }
+  .console-panel[data-active] tbody > * { animation: row-in 300ms var(--ease-out) both; animation-delay: calc(var(--r) * 45ms); }
+  @keyframes row-in { from { opacity: 0; transform: translateY(4px); } }
+  .console-panel[data-active] tbody > [data-flash] { animation: row-flash 1400ms var(--ease) both; }
+  @keyframes row-flash { from { background: color-mix(in oklch, var(--ok) 16%, transparent); } }
+  .st { display: inline-flex; align-items: center; gap: 6px; }
+  .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .st-ok { color: var(--ok); }
+  .st-bad { color: var(--bad); }
+  .st-wait { color: var(--warn); }
+  .replay {
+    position: relative; min-width: 86px; height: 28px; padding: 0 11px; border: 0; border-radius: 7px; cursor: pointer;
+    font: 500 12.5px/1 var(--sans); letter-spacing: 0; color: var(--code-ink); background: oklch(100% 0 0 / 0.1);
+    transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+  }
+  .replay::before { content: ""; position: absolute; inset: -8px -4px; }
+  .replay:active { transform: scale(0.96); }
+  .replay:focus-visible { outline-color: var(--code-key); }
+  .replay:disabled { cursor: default; color: var(--code-dim); background: oklch(100% 0 0 / 0.05); }
+  @media (hover: hover) and (pointer: fine) { .replay:not(:disabled):hover { background: oklch(100% 0 0 / 0.16); } }
+  .console-foot { margin: 0; padding: 12px 20px 14px; font: 12px/1.5 var(--mono); letter-spacing: 0; color: var(--code-dim); }
+  .console-foot code { color: var(--code-key); font-size: 1em; }
+  @media (max-width: 640px) {
+    .console .console-sql { white-space: pre-wrap; word-break: break-word; padding: 16px 16px 14px; font-size: 12px; }
+    .console-result { padding: 2px 16px 0; }
+    .console table { font-size: 12px; }
+    .console th, .console td { padding-right: 12px; }
+    .console .opt { display: none; }
+    .console-foot { padding: 12px 16px 14px; }
+  }
+  .log-points { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(32px, 5vw, 64px); row-gap: 16px; margin-top: 40px; }
+  @media (max-width: 760px) { .log-points { grid-template-columns: minmax(0, 1fr); } }
 
   /* Terminal recording: loads only near the viewport, plays only while visible. */
   .demo-video-stage { position: relative; margin-top: 36px; }
@@ -945,7 +958,8 @@
     .mark-chip .attempt, .mark[data-state] .mark-dot::after { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .ln, .verify-panel { transition: none; }
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .ln, .verify-panel, .console-panel, .replay { transition: none; }
+    .console-panel[data-active] tbody > *, .console-panel[data-active] tbody > [data-flash] { animation: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .live-dot::after, .tx-ep[data-s="ok"] .tx-pulse::after { animation: none; }
     .tx-row, .tx-row .tx-tick, .tx-badge, .tx-wire-x, .tx-wire-head::after, .tx-wire[data-s] .tx-wire-fill, .tx-wire[data-s] .tx-wire-head { transition: none; }
@@ -1335,22 +1349,27 @@ hookgres.start();
 <pre class="verify-panel" role="tabpanel" id="vp-node" aria-labelledby="vt-node" data-active><span class="k">import</span> { Webhook } <span class="k">from</span> <span class="s">"standardwebhooks"</span>;
 
 <span class="k">const</span> wh = <span class="k">new</span> Webhook(secret); <span class="c">// "whsec_..."</span>
-<span class="k">const</span> event = wh.verify(rawBody, headers);</pre>
+<span class="k">const</span> event = wh.verify(rawBody, headers);
+<span class="c">// throws if the signature fails or the timestamp is too old</span></pre>
 <pre class="verify-panel" role="tabpanel" id="vp-python" aria-labelledby="vt-python"><span class="k">from</span> standardwebhooks.webhooks <span class="k">import</span> Webhook
 
 wh = Webhook(secret)  <span class="c"># "whsec_..."</span>
-event = wh.verify(raw_body, headers)</pre>
+event = wh.verify(raw_body, headers)
+<span class="c"># raises if the signature fails or the timestamp is too old</span></pre>
 <pre class="verify-panel" role="tabpanel" id="vp-go" aria-labelledby="vt-go"><span class="k">import</span> standardwebhooks <span class="s">"github.com/standard-webhooks/standard-webhooks/libraries/go"</span>
 
 wh, err := standardwebhooks.NewWebhook(secret)
-err = wh.Verify(body, r.Header)</pre>
+err = wh.Verify(body, r.Header)
+<span class="c">// err is set if the signature fails or the timestamp is too old</span></pre>
 <pre class="verify-panel" role="tabpanel" id="vp-ruby" aria-labelledby="vt-ruby"><span class="k">require</span> <span class="s">"standardwebhooks"</span>
 
 wh = StandardWebhooks::Webhook.new(secret)
-event = wh.verify(raw_body, headers)</pre>
+event = wh.verify(raw_body, headers)
+<span class="c"># raises if the signature fails or the timestamp is too old</span></pre>
 <pre class="verify-panel" role="tabpanel" id="vp-php" aria-labelledby="vt-php">$wh = <span class="k">new</span> \StandardWebhooks\Webhook($secret);
 
-$wh-&gt;verify($body, $headers);</pre>
+$wh-&gt;verify($body, $headers);
+<span class="c">// throws if the signature fails or the timestamp is too old</span></pre>
           </div>
         </div>
       </div>
@@ -1363,70 +1382,63 @@ $wh-&gt;verify($body, $headers);</pre>
       <h2>Every attempt is a row you can query.</h2>
       <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
       <div class="log-stage">
-        <div class="window log-window" data-spot>
-          <p class="sr-only">Example delivery log. Each row is one endpoint's delivery, with the status code of every attempt on the retry schedule and the result: for example, succeeded on the first attempt, succeeded on the third after two 503s, or failed after eight attempts over about 28 hours.</p>
-          <div class="window-bar">
-            <span class="title" aria-hidden="true">hookgres.deliveries</span>
-            <span class="meta log-id" aria-hidden="true">msg_01m6yb1bw7xncca4sw5028556c</span>
-            <button type="button" class="live-toggle" aria-label="Pause live updates" hidden><span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span></button>
+        <div class="code console" data-spot>
+          <div class="bar">
+            <div class="tabs" role="tablist" aria-label="Example queries">
+              <button type="button" class="tab" role="tab" id="ct-0" aria-controls="cp-0" aria-selected="true">Customer log</button>
+              <button type="button" class="tab" role="tab" id="ct-1" aria-controls="cp-1" aria-selected="false" tabindex="-1">Failed today</button>
+              <button type="button" class="tab" role="tab" id="ct-2" aria-controls="cp-2" aria-selected="false" tabindex="-1">Slowest</button>
+            </div>
+            <button class="copy" type="button" data-copy-from="sql-0" aria-label="Copy the SQL query">Copy</button>
           </div>
-          <div class="log" aria-hidden="true">
-            <div class="log-row head">
-              <span>Endpoint</span><span>0s</span><span>5s</span><span>5m</span><span>35m</span><span>2.6h</span><span>7.6h</span><span>17.6h</span><span>27.6h</span><span>Delivery</span>
+          <p class="sr-only console-announce" role="status"></p>
+          <div class="console-panels">
+          <div class="console-panel" role="tabpanel" id="cp-0" aria-labelledby="ct-0" data-active>
+<pre class="console-sql" id="sql-0"><span class="k">select</span> d.id, m.event_type, d.status, d.attempt_count,
+       m.created_at::time(0) <span class="k">as</span> sent_at
+<span class="k">from</span> hookgres.deliveries d
+<span class="k">join</span> hookgres.messages m <span class="k">on</span> m.id = d.message_id
+<span class="k">where</span> m.tenant_id = <span class="s">'acme'</span>
+<span class="k">order by</span> m.created_at <span class="k">desc</span> <span class="k">limit</span> 4;</pre>
+            <div class="console-result">
+              <table><thead><tr><th class="opt">id</th><th>event_type</th><th>status</th><th class="num opt">attempt_count</th><th class="opt num">sent_at</th><th><span class="sr-only">Action</span></th></tr></thead><tbody><tr style="--r:0"><td class="opt">dlv_8c41e2…</td><td>invoice.paid</td><td class="c-status"><span class="st st-ok">succeeded</span></td><td class="num c-count opt">1</td><td class="opt num">14:02:11</td><td class="act"></td></tr><tr style="--r:1"><td class="opt">dlv_5b07d9…</td><td>customer.updated</td><td class="c-status"><span class="st st-ok">succeeded</span></td><td class="num c-count opt">3</td><td class="opt num">13:58:40</td><td class="act"></td></tr><tr style="--r:2" data-replay><td class="opt">dlv_9a1f63…</td><td>refund.created</td><td class="c-status"><span class="st st-bad">failed</span></td><td class="num c-count opt">8</td><td class="opt num">13:41:07</td><td class="act"><button type="button" class="replay" data-id="dlv_9a1f63…">Replay</button></td></tr><tr style="--r:3"><td class="opt">dlv_2e6c80…</td><td>invoice.paid</td><td class="c-status"><span class="st st-ok">succeeded</span></td><td class="num c-count opt">1</td><td class="opt num">13:30:52</td><td class="act"></td></tr></tbody></table>
             </div>
-            <div class="log-rows">
-            <div class="log-row">
-              <div class="endpoint"><b>acme.com/webhooks</b><small>invoice.paid</small></div>
-              <div class="slots">
-                <div class="slot"><span class="attempt ok">204</span></div>
-                <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
-              </div>
-              <div class="status ok">Succeeded<small>1 attempt</small></div>
-            </div>
-            <div class="log-row">
-              <div class="endpoint"><b>shop.example/hooks</b><small>invoice.paid</small></div>
-              <div class="slots">
-                <div class="slot"><span class="attempt warn">503</span></div>
-                <div class="slot"><span class="attempt warn">503</span></div>
-                <div class="slot"><span class="attempt ok">204</span></div>
-                <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
-              </div>
-              <div class="status ok">Succeeded<small>3 attempts</small></div>
-            </div>
-            <div class="log-row">
-              <div class="endpoint"><b>crm.example/in</b><small>invoice.paid</small></div>
-              <div class="slots">
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-                <div class="slot"><span class="attempt bad">500</span></div>
-              </div>
-              <div class="status bad">Failed<small>8 attempts</small></div>
-            </div>
-            </div>
+            <p class="console-foot">(4 rows) · Try Replay on the failed delivery.</p>
           </div>
-        </div>
-      </div>
-      <div class="log-foot">
-        <ul class="points">
-          <li><b>Replay.</b> <code>replayDelivery()</code> re-sends a finished delivery with the same <code>webhook-id</code>, so receivers can deduplicate.</li>
-          <li><b>Idempotency keys.</b> Pass the same key twice and get the original message back, not a duplicate.</li>
-          <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant's endpoints, filtered by event type.</li>
-          <li><b>Crash recovery.</b> If a worker dies mid-request, its claim expires and another worker picks it up.</li>
-        </ul>
-        <div class="code" data-spot>
-          <div class="bar"><span>Failed in the last 24 hours</span><button class="copy" type="button" data-copy-from="sql-code" aria-label="Copy the SQL query">Copy</button></div>
-<pre id="sql-code"><span class="k">select</span> e.tenant_id, e.url, d.last_error
+          <div class="console-panel" role="tabpanel" id="cp-1" aria-labelledby="ct-1">
+<pre class="console-sql" id="sql-1"><span class="k">select</span> e.tenant_id, e.url, d.attempt_count, d.last_error
 <span class="k">from</span> hookgres.deliveries d
 <span class="k">join</span> hookgres.endpoints e <span class="k">on</span> e.id = d.endpoint_id
 <span class="k">where</span> d.status = <span class="s">'failed'</span>
   <span class="k">and</span> d.updated_at &gt; now() - <span class="k">interval</span> <span class="s">'1 day'</span>;</pre>
+            <div class="console-result">
+              <table><thead><tr><th>tenant_id</th><th class="opt">url</th><th class="opt num">attempt_count</th><th>last_error</th></tr></thead><tbody><tr style="--r:0"><td>acme</td><td class="opt">https://crm.example/in</td><td class="opt num">8</td><td class="err">HTTP 500</td></tr><tr style="--r:1"><td>globex</td><td class="opt">https://hooks.globex.dev/hg</td><td class="opt num">8</td><td class="err">Timed out after 15000ms</td></tr><tr style="--r:2"><td>initech</td><td class="opt">https://initech.example/webhooks</td><td class="opt num">8</td><td class="err">fetch failed: ECONNREFUSED</td></tr></tbody></table>
+            </div>
+            <p class="console-foot">(3 rows)</p>
+          </div>
+          <div class="console-panel" role="tabpanel" id="cp-2" aria-labelledby="ct-2">
+<pre class="console-sql" id="sql-2"><span class="k">select</span> e.url,
+  percentile_cont(0.95) <span class="k">within group</span> (<span class="k">order by</span> a.duration_ms) <span class="k">as</span> p95_ms,
+  count(*) <span class="k">filter</span> (<span class="k">where</span> a.error <span class="k">is not null</span>) <span class="k">as</span> errors
+<span class="k">from</span> hookgres.attempts a
+<span class="k">join</span> hookgres.deliveries d <span class="k">on</span> d.id = a.delivery_id
+<span class="k">join</span> hookgres.endpoints e <span class="k">on</span> e.id = d.endpoint_id
+<span class="k">where</span> a.created_at &gt; now() - <span class="k">interval</span> <span class="s">'1 hour'</span>
+<span class="k">group by</span> e.url <span class="k">order by</span> p95_ms <span class="k">desc</span> <span class="k">limit</span> 3;</pre>
+            <div class="console-result">
+              <table><thead><tr><th>url</th><th class="num">p95_ms</th><th class="num">errors</th></tr></thead><tbody><tr style="--r:0"><td>https://hooks.globex.dev/hg</td><td class="num">15000</td><td class="num">12</td></tr><tr style="--r:1"><td>https://shop.example/hooks</td><td class="num">2380</td><td class="num">41</td></tr><tr style="--r:2"><td>https://acme.com/webhooks</td><td class="num">84</td><td class="num">0</td></tr></tbody></table>
+            </div>
+            <p class="console-foot">(3 rows)</p>
+          </div>
+          </div>
         </div>
       </div>
+      <ul class="points log-points">
+          <li><b>Replay.</b> <code>replayDelivery()</code> re-sends a finished delivery with the same <code>webhook-id</code>, so receivers can deduplicate.</li>
+          <li><b>Idempotency keys.</b> Pass the same key twice and get the original message back, not a duplicate.</li>
+          <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant's endpoints, filtered by event type.</li>
+          <li><b>Crash recovery.</b> If a worker dies mid-request, its claim expires and another worker picks it up.</li>
+      </ul>
     </div>
   </section>
 
@@ -2024,8 +2036,8 @@ $wh-&gt;verify($body, $headers);</pre>
     }
   }
 
-  // Verify in any language: the tabs advance on their own while on screen (paused on
-  // hover or focus) until someone picks one.
+  // Verify in any language: the tabs step through every language once while on screen
+  // (paused on hover or focus), then rest on the first. Picking one stops it.
   {
     const verify = $(".verify");
     const panels = [...verify.querySelectorAll(".verify-panel")];
@@ -2041,11 +2053,51 @@ $wh-&gt;verify($body, $headers);</pre>
       }, { threshold: 0.4 }).observe(verify);
       verify.addEventListener("animationend", (event) => {
         if (!event.target.classList.contains("tab-time") || !("auto" in verify.dataset)) return;
+        const next = (panels.findIndex((panel) => panel.hasAttribute("data-active")) + 1) % panels.length;
         driving = true;
-        pick((panels.findIndex((panel) => panel.hasAttribute("data-active")) + 1) % panels.length, false);
+        pick(next, false);
         driving = false;
+        if (next === 0) delete verify.dataset.auto;
       });
     }
+  }
+
+  // SQL console: picking a tab runs that query; Replay walks one delivery through a replay.
+  {
+    const consoleCard = $(".console");
+    const panels = [...consoleCard.querySelectorAll(".console-panel")];
+    const copy = $(".bar .copy", consoleCard);
+    segmented($(".tabs", consoleCard), (_, index) => {
+      for (const [i, panel] of panels.entries()) panel.toggleAttribute("data-active", i === index);
+      copy.dataset.copyFrom = `sql-${index}`;
+    });
+    const replay = $(".replay", consoleCard);
+    const row = replay.closest("tr");
+    const foot = $(".console-foot", panels[0]);
+    const status = $(".c-status", row);
+    const count = $(".c-count", row);
+    const announce = $(".console-announce", consoleCard);
+    row.addEventListener("animationend", () => row.removeAttribute("data-flash"));
+    const pill = (value, tone) => `<span class="st st-${tone}">${value}</span>`;
+    replay.addEventListener("click", () => {
+      replay.disabled = true;
+      replay.textContent = "Replaying";
+      foot.innerHTML = `<code>await hookgres.replayDelivery("${replay.dataset.id}")</code>`;
+      status.innerHTML = pill("pending", "wait");
+      count.textContent = "0";
+      const later = (ms, fn) => setTimeout(fn, reduceMotion ? 0 : ms);
+      later(650, () => {
+        status.innerHTML = pill("delivering", "wait");
+        count.textContent = "1";
+      });
+      later(1400, () => {
+        status.innerHTML = pill("succeeded", "ok");
+        row.setAttribute("data-flash", "");
+        replay.textContent = "Replayed";
+        foot.textContent = "Delivered on the first try, with the original webhook-id so the receiver can deduplicate.";
+        announce.textContent = `Replayed ${replay.dataset.id}: succeeded. ${foot.textContent}`;
+      });
+    });
   }
 </script>
 <script src="/motion.js" defer></script>
