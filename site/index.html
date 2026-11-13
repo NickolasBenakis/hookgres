@@ -153,7 +153,7 @@
   }
   a { color: var(--accent); text-decoration: none; }
   @media (hover: hover) and (pointer: fine) { a:hover { text-decoration: underline; text-decoration-thickness: from-font; text-underline-offset: 3px; } }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
   ::selection { background: color-mix(in oklch, var(--accent) 22%, transparent); }
   code { font-family: var(--mono); font-size: 0.88em; letter-spacing: 0; }
   button { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
@@ -190,7 +190,7 @@
     font: 500 11px/1 var(--sans); letter-spacing: 0.02em; color: var(--ink-3);
     padding: 4px 6px; border-radius: 6px; background: var(--material); box-shadow: var(--raised);
   }
-  .search-trigger:active { transform: scale(0.98); }
+  .search-trigger:active { transform: scale(0.96); }
   .theme-toggle {
     position: relative; display: grid; place-items: center;
     width: 32px; height: 32px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
@@ -199,7 +199,7 @@
   }
   .theme-toggle::before { content: ""; position: absolute; inset: -6px; }
   .theme-toggle svg { width: 17px; height: 17px; }
-  .theme-toggle:active { transform: scale(0.94); }
+  .theme-toggle:active { transform: scale(0.96); }
   @media (hover: hover) and (pointer: fine) { .theme-toggle:hover { color: var(--ink); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
   :root[data-theme="dark"] .theme-toggle .sun, :root:not([data-theme="dark"]) .theme-toggle .moon { display: none; }
   @media (hover: hover) and (pointer: fine) { .search-trigger:hover { color: var(--ink-2); background: color-mix(in oklch, var(--ink) 7%, transparent); } }
@@ -258,7 +258,7 @@
     min-width: 62px; position: relative;
   }
   .copy::before { content: ""; position: absolute; inset: -8px -2px; }
-  .copy:active { transform: scale(0.97); }
+  .copy:active { transform: scale(0.96); }
   .copy[data-copied] { color: var(--ok); }
   @media (hover: hover) and (pointer: fine) { .copy:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); color: var(--ink); } }
   /* Copy-paste starts: an agent prompt and the npm command. */
@@ -282,7 +282,7 @@
     transition: background-color 150ms var(--ease), transform 150ms var(--ease-out);
   }
   .agent-link::before { content: ""; position: absolute; inset: -4px -1px; }
-  .agent-link:active { transform: scale(0.9); }
+  .agent-link:active { transform: scale(0.96); }
   @media (hover: hover) and (pointer: fine) { .agent-link:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); } }
   /* Confirms the click: the prompt is also on the clipboard in case the app doesn't open. */
   .toast {
@@ -324,7 +324,7 @@
   .copy-btn .check { opacity: 0; transform: scale(0.6); color: var(--ok); }
   .copy-btn[data-copied] .glyph { opacity: 0; transform: scale(0.6); }
   .copy-btn[data-copied] .check { opacity: 1; transform: scale(1); }
-  .copy-btn:active { transform: scale(0.94); }
+  .copy-btn:active { transform: scale(0.96); }
   .copy-btn[data-failed] { color: var(--bad); }
   @media (hover: hover) and (pointer: fine) { .copy-btn:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); color: var(--ink); } }
 
@@ -342,7 +342,7 @@
   }
   .code .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 8px 0 18px; border-bottom: 1px solid var(--code-line); font-size: 12.5px; color: var(--code-dim); }
   .code .copy { color: var(--code-dim); }
-  .code .copy:focus-visible, .code .copy-btn:focus-visible, .code .tab:focus-visible { outline-color: var(--code-key); }
+  .code .copy:focus-visible, .code .copy-btn:focus-visible, .code .tab:focus-visible { outline-color: var(--code-ink); }
   .code .copy-btn { color: var(--code-dim); }
   @media (hover: hover) and (pointer: fine) {
     .code .copy:hover, .code .copy-btn:hover { background: oklch(100% 0 0 / 0.08); color: var(--code-ink); }
@@ -355,9 +355,10 @@
   .tab {
     border: 0; background: none; cursor: pointer; height: 30px; padding: 0 10px; border-radius: 7px;
     font: 500 12.5px/1 var(--sans); letter-spacing: 0; color: var(--code-dim);
-    transition: color 150ms var(--ease), background-color 150ms var(--ease);
+    transition: color 150ms var(--ease), background-color 150ms var(--ease), transform 150ms var(--ease-out);
   }
   .tab { position: relative; }
+  .tab:active, .video-pick button:active { transform: scale(0.96); }
   .tab::before { content: ""; position: absolute; inset: -7px 0; }
   .tab[aria-selected="true"] { color: var(--code-ink); background: oklch(100% 0 0 / 0.08); }
   @media (hover: hover) and (pointer: fine) { .tab:hover { color: var(--code-ink); } }
@@ -750,7 +751,7 @@
   }
   .replay::before { content: ""; position: absolute; inset: -8px -4px; }
   .replay:active { transform: scale(0.96); }
-  .replay:focus-visible { outline-color: var(--code-key); }
+  .replay:focus-visible { outline-color: var(--code-ink); }
   .replay:disabled { cursor: default; color: var(--code-dim); background: oklch(100% 0 0 / 0.05); }
   @media (hover: hover) and (pointer: fine) { .replay:not(:disabled):hover { background: oklch(100% 0 0 / 0.16); } }
   .console-foot { margin: 0; padding: 12px 20px 14px; font: 12px/1.5 var(--mono); letter-spacing: 0; color: var(--code-dim); }
@@ -769,17 +770,18 @@
   /* Terminal recording: loads only near the viewport, plays only while visible. */
   .demo-video-stage { position: relative; margin-top: 36px; }
   .video-pick { display: inline-flex; gap: 2px; margin-top: 32px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
-  .video-pick button { position: relative; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; font: 500 13.5px/1 var(--sans); color: var(--ink-2); background: none; cursor: pointer; transition: color 150ms var(--ease), background-color 150ms var(--ease), box-shadow 150ms var(--ease); }
+  .video-pick button { position: relative; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; font: 500 13.5px/1 var(--sans); color: var(--ink-2); background: none; cursor: pointer; transition: color 150ms var(--ease), background-color 150ms var(--ease), box-shadow 150ms var(--ease), transform 150ms var(--ease-out); }
   .video-pick button::before { content: ""; position: absolute; inset: -6px 0; }
   .video-pick button[aria-selected="true"] { color: var(--ink); background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / 0.12), inset 0 0 0 1px var(--line); }
   @media (hover: hover) and (pointer: fine) { .video-pick button:hover { color: var(--ink); } }
-  .video-pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .video-pick button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .video-pick ~ .demo-video-stage { margin-top: 16px; }
   .demo-video-stage[hidden] { display: none; }
-  .video-cap { margin: 14px 2px 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); max-width: 52em; text-wrap: pretty; }
+  .video-cap { min-height: 3lh; margin: 14px 2px 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); max-width: 52em; text-wrap: pretty; }
+  @media (max-width: 560px) { .video-cap { min-height: 5lh; } }
   .video-toggle { position: absolute; top: 10px; right: 12px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; color: oklch(92% 0.01 258); background: oklch(100% 0 0 / 0.1); cursor: pointer; transition: background 150ms var(--ease); }
   @media (hover: hover) and (pointer: fine) { .video-toggle:hover { background: oklch(100% 0 0 / 0.18); } }
-  .video-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .video-toggle:focus-visible { outline: 2px solid oklch(96% 0 0); outline-offset: 2px; }
   .video-toggle[hidden] { display: none; }
   .demo-video-stage video { display: block; width: 100%; height: auto; aspect-ratio: 1240 / 860; border-radius: 14px; background: oklch(17% 0.01 258); box-shadow: var(--shadow); }
 
@@ -806,7 +808,7 @@
     transition: border-color 150ms var(--ease);
   }
   .waitlist-form input::placeholder { color: var(--ink-3); }
-  .waitlist-form input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
+  .waitlist-form input:focus-visible { outline: none; border-color: var(--ink-2); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ink) 12%, transparent); }
   .waitlist-form input[aria-invalid="true"] { border-color: var(--bad); }
   .waitlist .waitlist-note[data-error] { color: var(--bad); }
   .waitlist .waitlist-note { margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
@@ -1247,7 +1249,7 @@ hookgres.start();
         </section>
         <figcaption class="steps">
           <button type="button" class="step" data-step="1" aria-pressed="false"><span class="step-tag">send()</span><span class="step-text">Writes the webhook as a row in your transaction.</span><span class="step-bar" aria-hidden="true"></span></button>
-          <button type="button" class="step" data-step="2" aria-pressed="false"><span class="step-tag">COMMIT</span><span class="step-text">The row commits with your data. Roll back and it's gone.</span><span class="step-bar" aria-hidden="true"></span></button>
+          <button type="button" class="step" data-step="2" aria-pressed="false"><span class="step-tag">COMMIT</span><span class="step-text">The row commits with your data. Roll back and it’s gone.</span><span class="step-bar" aria-hidden="true"></span></button>
           <button type="button" class="step" data-step="3" aria-pressed="false"><span class="step-tag">SKIP LOCKED</span><span class="step-text">Workers claim rows without waiting on each other.</span><span class="step-bar" aria-hidden="true"></span></button>
           <button type="button" class="step" data-step="4" aria-pressed="false"><span class="step-tag">POST</span><span class="step-text">Each endpoint gets a signed request. Failures go back on the schedule.</span><span class="step-bar" aria-hidden="true"></span></button>
         </figcaption>
@@ -1320,7 +1322,7 @@ hookgres.start();
       <div class="head-row">
         <div>
           <p class="kicker">ROLLBACK</p>
-          <h2>A job queue can't roll back with your data.</h2>
+          <h2>A job queue can’t roll back with your data.</h2>
           <p class="sub">A queue outside Postgres keeps a job your transaction rolled back, so your customer hears about a payment that never happened. Two terminal recordings with real Postgres and the published package.</p>
         </div>
         <a class="pill ghost" href="/docs/guides/sending#inside-your-transaction">How it works</a>
@@ -1331,7 +1333,7 @@ hookgres.start();
           <source data-src="/media/rollback-demo-2x.mp4" type="video/mp4">
         </video>
         <button type="button" class="video-toggle" aria-controls="rollback-video" hidden>Pause</button>
-        <p class="video-cap">The same payment code, run twice. With BullMQ inside the transaction, the payment rolls back but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. With <code>hookgres.send()</code> in its place, the webhook rolls back with the payment.</p>
+        <p class="video-cap">The same payment code, run twice. With BullMQ, the payment rolls back but the job is already in Redis, so acme.com marks <code>in_124</code> paid. With <code>hookgres.send()</code>, the webhook rolls back with the payment.</p>
       </div>
       <div class="demo-video-stage" role="tabpanel" id="vs-install" aria-labelledby="vt-install" hidden>
         <video id="demo-video" muted loop playsinline preload="none" width="1240" height="860" data-poster="/media/terminal-demo-poster.jpg" aria-label="Terminal recording: npm install hookgres pg, an app that pays one invoice in a committed transaction and one in a rolled-back transaction, a receiver that answers 503 twice and then 204, and a psql query of the three logged attempts.">
@@ -1375,7 +1377,7 @@ hookgres.start();
           </div>
           <p class="sr-only">Animation of one event sent to three endpoints. The healthy one answers 204 on the first attempt. The flaky one answers 503 twice, then 204 on the third attempt, 5 minutes in. The one that is down answers 500 to all eight attempts over 27.6 hours and the delivery fails.</p>
           <div class="race" aria-hidden="true"></div>
-          <p class="sim-note">A server that's down never holds up the others: every endpoint gets its own delivery, retries and log rows.</p>
+          <p class="sim-note">A server that’s down never holds up the others: every endpoint gets its own delivery, retries and log rows.</p>
         </div>
       </div>
       <div class="numbers">
@@ -1394,7 +1396,7 @@ hookgres.start();
         <p class="kicker">standard webhooks</p>
         <h2>Your customers verify it with code they already have.</h2>
         <p class="sub">Every request is signed to the open Standard Webhooks spec. Your customers check it with an official library in their own language, so you never design, document or support a signing scheme of your own.</p>
-        <p class="langs"><b>Official libraries</b> for JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir. Hookgres's tests check its signatures against the JavaScript one.</p>
+        <p class="langs"><b>Official libraries</b> for JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir. Hookgres’s tests check its signatures against the JavaScript one.</p>
         <p class="more"><a href="/docs/guides/verifying">Verifying webhooks</a></p>
       </div>
       <div class="demo verify">
@@ -1507,7 +1509,7 @@ $wh-&gt;verify($body, $headers);
       <ul class="points log-points">
           <li><b>Replay.</b> <code>replayDelivery()</code> re-sends a finished delivery with the same <code>webhook-id</code>, so receivers can deduplicate.</li>
           <li><b>Idempotency keys.</b> Pass the same key twice and get the original message back, not a duplicate.</li>
-          <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant's endpoints, filtered by event type.</li>
+          <li><b>Built for multi-tenant apps.</b> Every event goes only to one tenant’s endpoints, filtered by event type.</li>
           <li><b>Crash recovery.</b> If a worker dies mid-request, its claim expires and another worker picks it up.</li>
       </ul>
     </div>
@@ -1517,7 +1519,7 @@ $wh-&gt;verify($body, $headers);
     <div class="wrap">
       <p class="kicker">library vs. hosted service</p>
       <h2>A library, not a service.</h2>
-      <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you'd rather keep webhooks next to your data.</p>
+      <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you’d rather keep webhooks next to your data.</p>
       <table class="table">
         <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col" class="us">Hookgres</th><th scope="col">Hosted service</th></tr></thead>
         <tbody>
