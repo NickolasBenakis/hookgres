@@ -222,7 +222,7 @@ export interface HookgresOptions<E extends EventMap = AnyEvents> {
    * `true` (the default) wraps each payload in the Standard Webhooks body
    * `{"type", "timestamp", "data"}`. `false` sends the payload itself as the
    * request body, for receivers that define their own body, like MCP Events.
-   * Workers and senders sharing a schema must use the same setting.
+   * The body is built at delivery time, so the workers' setting is what counts.
    * @see https://hookgres.dev/docs/reference/configuration
    */
   envelope?: boolean;
