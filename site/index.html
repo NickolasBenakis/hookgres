@@ -652,30 +652,36 @@
     .sim-status { padding: 14px 16px; }
   }
 
-  .sig-label { display: block; font-size: 14px; color: var(--ink-2); margin: 0 0 8px; }
-  .sig textarea {
-    width: 100%; min-height: 64px; resize: vertical; margin: 0 0 14px;
-    font: 16px/1.5 var(--mono); letter-spacing: 0; color: var(--ink);
-    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
-    transition: border-color 150ms var(--ease);
+  .verify { display: grid; gap: 14px; }
+  .verify-req pre { white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: var(--code-dim); }
+  .verify-req .k { color: var(--code-key); }
+  .verify-code .tabs { flex-wrap: wrap; }
+  .tab-time {
+    position: absolute; left: 10px; right: 10px; bottom: -7px; height: 2px; border-radius: 1px;
+    background: var(--code-key); transform: scaleX(0); transform-origin: left; opacity: 0;
   }
-  .sig textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
-  .sig pre { white-space: pre-wrap; word-break: break-all; }
-  .sig-value { font-variant-numeric: tabular-nums; }
-  .sig mark.tampered { color: var(--bad); background: color-mix(in oklch, var(--bad) 18%, transparent); border-radius: 3px; padding: 0 2px; }
-  .sig-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
-  .switch { display: inline-flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); cursor: pointer; -webkit-user-select: none; user-select: none; }
-  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-  .switch-ui { position: relative; width: 40px; height: 24px; border-radius: 999px; background: var(--line); transition: background-color 200ms var(--ease); flex: none; }
-  .switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: oklch(100% 0 0); box-shadow: 0 1px 3px oklch(25% 0.05 var(--h) / 0.2); transition: transform 240ms var(--ease-out); }
-  .switch input:checked + .switch-ui { background: var(--bad); }
-  .switch input:checked + .switch-ui::after { transform: translateX(16px); }
-  .switch input:focus-visible + .switch-ui { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .verdict { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; background: color-mix(in oklch, currentColor 11%, transparent); color: var(--ink-2); transition: color 200ms var(--ease), background-color 200ms var(--ease); }
-  .verdict::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .verdict.ok { color: var(--ok); }
-  .verdict.bad { color: var(--bad); }
-  .sig-secret { margin: 14px 0 0; font-size: 13px; color: var(--ink-3); word-break: break-all; }
+  .verify[data-auto] .tab[aria-selected="true"] .tab-time { opacity: 1; animation: tab-time 3.6s linear forwards; }
+  .verify[data-auto]:not([data-onscreen]) .tab[aria-selected="true"] .tab-time,
+  .verify[data-auto]:focus-within .tab[aria-selected="true"] .tab-time { animation-play-state: paused; }
+  @media (hover: hover) and (pointer: fine) {
+    .verify[data-auto]:hover .tab[aria-selected="true"] .tab-time { animation-play-state: paused; }
+  }
+  @keyframes tab-time { to { transform: scaleX(1); } }
+  /* Every panel shares one grid cell, so the card keeps the tallest one's height. */
+  .verify-panels { display: grid; }
+  .verify-panel {
+    grid-area: 1 / 1; white-space: pre-wrap; word-break: break-word;
+    opacity: 0; visibility: hidden; transform: translateY(4px);
+    transition: opacity 180ms var(--ease), transform 180ms var(--ease), visibility 0s linear 180ms;
+  }
+  .verify-panel[data-active] {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity 260ms var(--ease-out) 60ms, transform 260ms var(--ease-out) 60ms, visibility 0s;
+  }
+  /* Phones: code keeps its lines and scrolls sideways instead of breaking mid-token. */
+  @media (max-width: 640px) {
+    .verify-req pre, .verify-panel { white-space: pre; word-break: normal; }
+  }
   .langs { margin: 20px 0 0; color: var(--ink-3); font-size: 14.5px; }
   .langs b { color: var(--ink-2); font-weight: 500; }
 
@@ -918,7 +924,7 @@
     .mark-chip .attempt { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .seg-thumb, .switch-ui::after, .ln, .verdict { transition: none; }
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .seg-thumb, .ln, .verify-panel { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .packet.go, .packet.drop, .live-dot::after { animation: none; }
     .packet.go { opacity: 0; }
@@ -1201,7 +1207,7 @@ hookgres.start();
         <div class="demo-controls">
           <button type="button" class="pill action" data-tx="commit">Commit</button>
           <button type="button" class="pill action quiet" data-tx="rollback">Roll back</button>
-          <p class="demo-status" role="status" aria-live="polite">Nothing is sent until the transaction commits.</p>
+          <p class="demo-status" role="status" aria-live="off">Nothing is sent until the transaction commits.</p>
         </div>
       </div>
     </div>
@@ -1210,7 +1216,7 @@ hookgres.start();
         <div>
           <p class="kicker">ROLLBACK</p>
           <h2>A job queue can't roll back with your data.</h2>
-          <p class="sub">The same payment code, run twice. First it queues the webhook with BullMQ inside the transaction: the payment rolls back, but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. Any queue outside Postgres does the same. Then the queue is swapped for <code>hookgres.send()</code>, and the webhook rolls back with the payment. Real BullMQ, Redis and Postgres, played at 2× speed.</p>
+          <p class="sub">The same payment code, run twice. First it queues the webhook with BullMQ inside the transaction: the payment rolls back, but the job is already in Redis, so acme.com marks <code>in_124</code> paid while your database says open. Any queue outside Postgres does the same. Then the queue is swapped for <code>hookgres.send()</code>, and the webhook rolls back with the payment. Real BullMQ, Redis and Postgres.</p>
         </div>
         <a class="pill ghost" href="/docs/guides/sending#inside-your-transaction">How it works</a>
       </div>
@@ -1247,7 +1253,7 @@ hookgres.start();
         <div>
           <p class="kicker">retry schedule · 0s → 27.6h</p>
           <h2>Watch it retry.</h2>
-          <p class="sub">Pick how your customer's server behaves and send an event. This runs the default schedule, with 28 hours squeezed into a few seconds.</p>
+          <p class="sub">When your customer's server is down, Hookgres keeps trying for 28 hours, here squeezed into a few seconds. Pick a server to replay it.</p>
         </div>
         <div class="sim-controls">
           <fieldset class="seg">
@@ -1257,7 +1263,6 @@ hookgres.start();
             <button type="button" aria-pressed="false" data-mode="flaky">Flaky</button>
             <button type="button" aria-pressed="false" data-mode="down">Down</button>
           </fieldset>
-          <button type="button" class="pill action" id="sim-send">Send event</button>
         </div>
       </div>
       <div class="demo sim">
@@ -1283,7 +1288,7 @@ hookgres.start();
               <div class="chart-x"></div>
             </div>
           </div>
-          <p class="sim-status" role="status" aria-live="polite">Pick how the receiver behaves, then press Send event.</p>
+          <p class="sim-status" role="status" aria-live="off">Healthy, flaky and down play in turn. Pick one to replay it.</p>
         </div>
       </div>
       <div class="numbers">
@@ -1299,28 +1304,53 @@ hookgres.start();
   <section class="band night">
     <div class="wrap split">
       <div>
-        <p class="kicker">webhook-signature</p>
-        <h2>What your customers receive.</h2>
-        <p class="sub">A JSON envelope and three signed headers. The <code>webhook-id</code> stays the same across retries. Delivery is at least once, so receivers deduplicate on it.</p>
-        <p class="langs"><b>Verify in any language</b> with the official Standard Webhooks libraries: JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir.</p>
+        <p class="kicker">standard webhooks</p>
+        <h2>Your customers verify it with code they already have.</h2>
+        <p class="sub">Every request is signed to the open Standard Webhooks spec. Your customers check it with an official library in their own language, so you never design, document or support a signing scheme of your own.</p>
+        <p class="langs"><b>Official libraries</b> for JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir. Hookgres's tests check its signatures against the JavaScript one.</p>
         <p class="more"><a href="/docs/guides/verifying">Verifying webhooks</a></p>
       </div>
-      <div class="demo sig">
-        <label class="sig-label" for="sig-payload">Edit the payload. The signature is computed in your browser.</label>
-        <textarea id="sig-payload" spellcheck="false" autocomplete="off">{ "invoiceId": "in_123", "amount": 4200 }</textarea>
-        <div class="code" data-spot>
-          <div class="bar"><span>POST https://acme.com/webhooks</span><button class="copy" type="button" data-copy-from="sig-out" data-label="Copy" aria-label="Copy the signed request">Copy</button></div>
-<pre id="sig-out"><span class="k">webhook-id:</span> <span id="sig-id">msg_…</span>
-<span class="k">webhook-timestamp:</span> <span id="sig-ts">…</span>
-<span class="k">webhook-signature:</span> <span id="sig-sig" class="sig-value">v1,…</span>
+      <div class="demo verify">
+        <div class="code verify-req">
+          <div class="bar"><span>POST https://acme.com/webhooks</span></div>
+<pre><span class="k">webhook-id:</span> msg_2KWPBgLlAfxdpx2AI54pPJ85f4W
+<span class="k">webhook-timestamp:</span> 1794554750
+<span class="k">webhook-signature:</span> v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 
-<span id="sig-body">…</span></pre>
+{"type":"invoice.paid","data":{"invoiceId":"in_123","amount":4200}}</pre>
         </div>
-        <div class="sig-foot">
-          <label class="switch"><input type="checkbox" id="sig-tamper"><span class="switch-ui" aria-hidden="true"></span>Tamper with the body in transit</label>
-          <span class="verdict" id="sig-verdict" role="status" aria-live="polite">Checking…</span>
+        <div class="code verify-code" data-spot>
+          <div class="bar">
+            <div class="tabs" role="tablist" aria-label="Verify the request">
+              <button type="button" class="tab" role="tab" id="vt-node" aria-controls="vp-node" aria-selected="true">Node<span class="tab-time" aria-hidden="true"></span></button>
+              <button type="button" class="tab" role="tab" id="vt-python" aria-controls="vp-python" aria-selected="false" tabindex="-1">Python<span class="tab-time" aria-hidden="true"></span></button>
+              <button type="button" class="tab" role="tab" id="vt-go" aria-controls="vp-go" aria-selected="false" tabindex="-1">Go<span class="tab-time" aria-hidden="true"></span></button>
+              <button type="button" class="tab" role="tab" id="vt-ruby" aria-controls="vp-ruby" aria-selected="false" tabindex="-1">Ruby<span class="tab-time" aria-hidden="true"></span></button>
+              <button type="button" class="tab" role="tab" id="vt-php" aria-controls="vp-php" aria-selected="false" tabindex="-1">PHP<span class="tab-time" aria-hidden="true"></span></button>
+            </div>
+          </div>
+          <div class="verify-panels">
+<pre class="verify-panel" role="tabpanel" id="vp-node" aria-labelledby="vt-node" data-active><span class="k">import</span> { Webhook } <span class="k">from</span> <span class="s">"standardwebhooks"</span>;
+
+<span class="k">const</span> wh = <span class="k">new</span> Webhook(secret); <span class="c">// "whsec_..."</span>
+<span class="k">const</span> event = wh.verify(rawBody, headers);</pre>
+<pre class="verify-panel" role="tabpanel" id="vp-python" aria-labelledby="vt-python"><span class="k">from</span> standardwebhooks.webhooks <span class="k">import</span> Webhook
+
+wh = Webhook(secret)  <span class="c"># "whsec_..."</span>
+event = wh.verify(raw_body, headers)</pre>
+<pre class="verify-panel" role="tabpanel" id="vp-go" aria-labelledby="vt-go"><span class="k">import</span> standardwebhooks <span class="s">"github.com/standard-webhooks/standard-webhooks/libraries/go"</span>
+
+wh, err := standardwebhooks.NewWebhook(secret)
+err = wh.Verify(body, r.Header)</pre>
+<pre class="verify-panel" role="tabpanel" id="vp-ruby" aria-labelledby="vt-ruby"><span class="k">require</span> <span class="s">"standardwebhooks"</span>
+
+wh = StandardWebhooks::Webhook.new(secret)
+event = wh.verify(raw_body, headers)</pre>
+<pre class="verify-panel" role="tabpanel" id="vp-php" aria-labelledby="vt-php">$wh = <span class="k">new</span> \StandardWebhooks\Webhook($secret);
+
+$wh-&gt;verify($body, $headers);</pre>
+          </div>
         </div>
-        <p class="sig-secret">Demo secret <code id="sig-secret">whsec_…</code>, generated for this page.</p>
       </div>
     </div>
   </section>
@@ -1404,7 +1434,7 @@ hookgres.start();
         <div>
           <p class="kicker">npm install hookgres pg</p>
           <h2>Install it, send inside a transaction, watch it retry.</h2>
-          <p class="sub">The published package, a real Postgres and a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged. Played at 2× speed.</p>
+          <p class="sub">The published package, a real Postgres and a receiver that is down for two attempts. The rolled-back invoice sends nothing; the committed one is signed, retried and logged.</p>
         </div>
         <a class="pill ghost" href="/docs/getting-started">Get started</a>
       </div>
@@ -1590,8 +1620,6 @@ hookgres.start();
       if (button.dataset.copyFrom) {
         const source = document.getElementById(button.dataset.copyFrom);
         text = source.textContent;
-        // A value still animating copies as its final text.
-        for (const el of source.querySelectorAll("[data-final]")) text = text.replace(el.textContent, el.dataset.final);
       }
       if ("copyTab" in button.dataset) text = $(".hero-code .tab-panel:not([hidden])").textContent;
       const status = document.getElementById("copy-status");
@@ -1708,7 +1736,34 @@ hookgres.start();
         select((i + step + buttons.length) % buttons.length, true);
       });
     });
+    return select;
   }
+
+  // Demos play on their own while on screen, until someone picks a control.
+  // Returns a promise for the next time el is at least 40% visible.
+  const whenVisible = (() => {
+    const waiting = new Map();
+    const shown = new Set();
+    const io = "IntersectionObserver" in window && new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+          shown.add(entry.target);
+          for (const resolve of waiting.get(entry.target) ?? []) resolve();
+          waiting.delete(entry.target);
+        } else shown.delete(entry.target);
+      }
+    }, { threshold: 0.4 });
+    const tabShown = () => document.hidden
+      ? new Promise((resolve) => document.addEventListener("visibilitychange", resolve, { once: true })).then(tabShown)
+      : Promise.resolve();
+    return async (el) => {
+      await tabShown();
+      if (!io || shown.has(el)) return;
+      io.observe(el);
+      return new Promise((resolve) => waiting.set(el, [...(waiting.get(el) ?? []), resolve]));
+    };
+  })();
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   segmented($(".hero-code .tabs"), (button) => {
     for (const panel of document.querySelectorAll(".hero-code .tab-panel")) {
@@ -1725,35 +1780,55 @@ hookgres.start();
     const rx = $(".tx-rx", demo);
     const status = $(".demo-status", demo);
     let timer;
+    const run = (commit) => {
+      clearTimeout(timer);
+      demo.dataset.state = commit ? "commit" : "rollback";
+      word.textContent = commit ? '"COMMIT"' : '"ROLLBACK"';
+      packet.className = "packet";
+      void packet.offsetWidth; // restart the animation
+      rx.className = "tx-rx";
+      db.className = "tx-db";
+      if (commit) {
+        const track = $(".track", demo);
+        packet.style.setProperty("--dist", `${Math.max(0, track.clientWidth - packet.offsetWidth)}px`);
+        db.textContent = "committed";
+        rx.textContent = "…";
+        status.textContent = "Committed: the webhook was queued with your change, and the worker sends it.";
+        packet.classList.add("go");
+        timer = setTimeout(() => {
+          rx.textContent = "204 · invoice.paid";
+          rx.classList.add("ok");
+        }, reduceMotion ? 0 : 780);
+      } else {
+        db.textContent = "rolled back";
+        db.classList.add("bad");
+        rx.textContent = "nothing sent";
+        status.textContent = "Rolled back: the invoice update and the webhook were discarded together.";
+        packet.classList.add("drop");
+      }
+    };
+    let auto = !reduceMotion;
+    const live = () => status.setAttribute("aria-live", "polite");
+    $(".demo-controls", demo).addEventListener("pointerdown", live);
+    $(".demo-controls", demo).addEventListener("focusin", live);
     for (const button of demo.querySelectorAll("[data-tx]")) {
       button.addEventListener("click", () => {
-        const commit = button.dataset.tx === "commit";
-        clearTimeout(timer);
-        demo.dataset.state = commit ? "commit" : "rollback";
-        word.textContent = commit ? '"COMMIT"' : '"ROLLBACK"';
-        packet.className = "packet";
-        void packet.offsetWidth; // restart the animation
-        rx.className = "tx-rx";
-        db.className = "tx-db";
-        if (commit) {
-          const track = $(".track", demo);
-          packet.style.setProperty("--dist", `${Math.max(0, track.clientWidth - packet.offsetWidth)}px`);
-          db.textContent = "committed";
-          rx.textContent = "…";
-          status.textContent = "Committed: the webhook was queued with your change, and the worker sends it.";
-          packet.classList.add("go");
-          timer = setTimeout(() => {
-            rx.textContent = "204 · invoice.paid";
-            rx.classList.add("ok");
-          }, reduceMotion ? 0 : 780);
-        } else {
-          db.textContent = "rolled back";
-          db.classList.add("bad");
-          rx.textContent = "nothing sent";
-          status.textContent = "Rolled back: the invoice update and the webhook were discarded together.";
-          packet.classList.add("drop");
-        }
+        auto = false;
+        status.setAttribute("aria-live", "polite");
+        run(button.dataset.tx === "commit");
       });
+    }
+    if (reduceMotion) run(true);
+    else {
+      (async () => {
+        for (let commit = true; ; commit = !commit) {
+          await whenVisible(demo);
+          if (!auto) return;
+          run(commit);
+          await sleep(3400);
+          if (!auto) return;
+        }
+      })();
     }
   }
 
@@ -1774,8 +1849,6 @@ hookgres.start();
     const reveal = $(".chart-reveal", chart);
     const clock = $(".sim-clock");
     const status = $(".sim-status");
-    const sendButton = $("#sim-send");
-    let mode = "healthy";
     let run = 0;
 
     // Monotone cubic through the attempts (Fritsch–Carlson), in a 1000×200 box.
@@ -1854,21 +1927,17 @@ hookgres.start();
       if (cls) b.className = cls;
       return b;
     };
-    segmented($(".sim-controls .seg"), (button) => {
-      mode = button.dataset.mode;
-    });
-    sendButton.addEventListener("click", async () => {
+    const play = async (runMode) => {
       const id = ++run;
-      const runMode = mode;
       const codes = outcomes[runMode];
       for (const w of wraps) w.replaceChildren();
       for (const mark of markEls) delete mark.dataset.state;
       setProgress(0, false);
       clock.textContent = "t = 0s";
       say(["Sending…"]);
-      const step = reduceMotion ? 0 : 520;
+      const step = reduceMotion ? 0 : 560;
       for (let i = 0; i < codes.length; i++) {
-        if (i > 0) await new Promise((resolve) => setTimeout(resolve, step));
+        if (i > 0) await sleep(step);
         if (id !== run) return;
         const code = codes[i];
         const tone = code < 300 ? "ok" : code >= 500 && runMode === "down" ? "bad" : "warn";
@@ -1881,7 +1950,7 @@ hookgres.start();
         clock.textContent = `t = ${labels[i]}`;
         say([`Attempt ${i + 1}: HTTP ${code}`]);
       }
-      await new Promise((resolve) => setTimeout(resolve, reduceMotion ? 0 : 300));
+      await sleep(reduceMotion ? 0 : 300);
       if (id !== run) return;
       head.removeAttribute("data-on");
       const n = codes.length;
@@ -1890,87 +1959,65 @@ hookgres.start();
       } else {
         say([strong("Failed", "bad"), " after 8 attempts over about 28 hours. If an endpoint keeps failing for 5 days, Hookgres disables it."]);
       }
+    };
+    // Plays healthy, flaky and down in turn while on screen. Picking one stops the
+    // tour and replays that one.
+    const order = ["healthy", "flaky", "down"];
+    let auto = !reduceMotion;
+    let driving = false;
+    const seg = $(".sim-controls .seg");
+    const live = () => status.setAttribute("aria-live", "polite");
+    seg.addEventListener("pointerdown", live);
+    seg.addEventListener("focusin", live);
+    const pick = segmented(seg, (button) => {
+      if (driving) return;
+      auto = false;
+      status.setAttribute("aria-live", "polite");
+      play(button.dataset.mode);
     });
+    const show = (i) => {
+      driving = true;
+      pick(i, false);
+      driving = false;
+      return play(order[i]);
+    };
+    if (reduceMotion) {
+      show(1);
+    } else {
+      (async () => {
+        for (let i = 0; ; i = (i + 1) % order.length) {
+          await whenVisible(chart);
+          if (!auto) return;
+          await show(i);
+          await sleep(2400);
+          if (!auto) return;
+        }
+      })();
+    }
   }
 
-  // Live signature demo: Standard Webhooks HMAC-SHA256 with WebCrypto
-  // (only available on HTTPS and localhost).
-  if (!globalThis.crypto?.subtle) {
-    $("#sig-verdict").textContent = "This demo needs HTTPS";
-  } else {
-    const payload = $("#sig-payload");
-    const tamper = $("#sig-tamper");
-    const verdict = $("#sig-verdict");
-    const out = { id: $("#sig-id"), ts: $("#sig-ts"), sig: $("#sig-sig"), body: $("#sig-body") };
-    const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
-    const keyBytes = crypto.getRandomValues(new Uint8Array(24));
-    const secret = `whsec_${b64(keyBytes)}`;
-    $("#sig-secret").textContent = secret;
-    const random = crypto.getRandomValues(new Uint8Array(13));
-    const msgId = `msg_${[...random].map((x) => "0123456789abcdefghjkmnpqrstvwxyz"[x % 32]).join("")}`;
-    const keyPromise = crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const hmac = async (content) => b64(await crypto.subtle.sign("HMAC", await keyPromise, new TextEncoder().encode(content)));
-    // A new signature resolves left to right out of noise, so you can see it change.
-    const NOISE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let decoding = 0;
-    const decode = (el, text) => {
-      cancelAnimationFrame(decoding);
-      el.dataset.final = text;
-      if (reduceMotion || el.textContent === text) {
-        el.textContent = text;
-        return;
-      }
-      const start = performance.now();
-      const frame = (now) => {
-        const p = Math.min(1, (now - start) / 420);
-        const settled = Math.floor((1 - (1 - p) ** 3) * text.length);
-        let out = text.slice(0, settled);
-        for (let i = settled; i < text.length; i++) out += i < 3 ? text[i] : NOISE[Math.floor(Math.random() * 64)];
-        el.textContent = out;
-        if (p < 1) decoding = requestAnimationFrame(frame);
-      };
-      decoding = requestAnimationFrame(frame);
-    };
-    let version = 0;
-    const update = async () => {
-      const mine = ++version;
-      let data;
-      try {
-        data = JSON.parse(payload.value);
-        payload.removeAttribute("aria-invalid");
-      } catch {
-        payload.setAttribute("aria-invalid", "true");
-        verdict.className = "verdict";
-        verdict.textContent = "Payload must be valid JSON";
-        return;
-      }
-      const ts = Math.floor(Date.now() / 1000);
-      const body = JSON.stringify({ type: "invoice.paid", timestamp: new Date().toISOString(), data });
-      const signature = `v1,${await hmac(`${msgId}.${ts}.${body}`)}`;
-      // What arrives: optionally altered on the way.
-      const received = tamper.checked ? body.replace(/}$/, ',"tampered":true}') : body;
-      const expected = `v1,${await hmac(`${msgId}.${ts}.${received}`)}`;
-      if (mine !== version) return;
-      out.id.textContent = msgId;
-      out.ts.textContent = ts;
-      decode(out.sig, signature);
-      // What arrives. When it was tampered with, the injected bytes are marked.
-      if (tamper.checked) {
-        const cut = body.length - 1;
-        const injected = document.createElement("mark");
-        injected.className = "tampered";
-        injected.textContent = received.slice(cut, -1);
-        out.body.replaceChildren(received.slice(0, cut), injected, received.slice(-1));
-      } else {
-        out.body.textContent = received;
-      }
-      const ok = expected === signature;
-      verdict.className = `verdict ${ok ? "ok" : "bad"}`;
-      verdict.textContent = ok ? "Signature verified" : "Rejected: signature doesn't match";
-    };
-    payload.addEventListener("input", update);
-    tamper.addEventListener("change", update);
-    update();
+  // Verify in any language: the tabs advance on their own while on screen (paused on
+  // hover or focus) until someone picks one.
+  {
+    const verify = $(".verify");
+    const panels = [...verify.querySelectorAll(".verify-panel")];
+    let driving = false;
+    const pick = segmented($(".verify-code .tabs"), (_, index) => {
+      for (const [i, panel] of panels.entries()) panel.toggleAttribute("data-active", i === index);
+      if (!driving) delete verify.dataset.auto;
+    });
+    if (!reduceMotion && "IntersectionObserver" in window) {
+      verify.dataset.auto = "";
+      new IntersectionObserver(([entry]) => {
+        verify.toggleAttribute("data-onscreen", entry.isIntersecting && entry.intersectionRatio >= 0.4);
+      }, { threshold: 0.4 }).observe(verify);
+      verify.addEventListener("animationend", (event) => {
+        if (!event.target.classList.contains("tab-time") || !("auto" in verify.dataset)) return;
+        driving = true;
+        pick((panels.findIndex((panel) => panel.hasAttribute("data-active")) + 1) % panels.length, false);
+        driving = false;
+      });
+    }
   }
 </script>
 <script src="/motion.js" defer></script>
