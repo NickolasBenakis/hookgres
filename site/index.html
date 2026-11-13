@@ -282,18 +282,24 @@
     transition: background-color 150ms var(--ease), transform 150ms var(--ease-out);
   }
   .agent-link::before { content: ""; position: absolute; inset: -4px -1px; }
+  /* Tooltips: the agent's name on hover, then what the click did. */
+  [data-tip]::after {
+    content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 5;
+    padding: 6px 9px; border-radius: 8px; background: var(--ink); color: var(--bg);
+    font: 500 12px/1.2 var(--sans); letter-spacing: 0; white-space: nowrap;
+    box-shadow: 0 0 0 1px oklch(100% 0 0 / 0.1), 0 8px 20px -8px oklch(20% 0.05 var(--h) / 0.35);
+    opacity: 0; transform: translate(-50%, 4px); pointer-events: none;
+    transition: opacity 150ms var(--ease), transform 200ms var(--ease-out);
+  }
+  .copy-btn[data-tip]::after { left: auto; right: 0; transform: translateY(4px); }
+  .code .copy-btn[data-tip]::after { bottom: auto; top: calc(100% + 6px); transform: translateY(-4px); }
+  @media (hover: hover) and (pointer: fine) { [data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 200ms; } }
+  [data-tip]:focus-visible::after, [data-tip][data-tip-on]::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 0ms; }
+  @media (hover: hover) and (pointer: fine) { .copy-btn[data-tip]:hover::after { transform: none; } }
+  .copy-btn[data-tip]:focus-visible::after, .copy-btn[data-tip][data-tip-on]::after { transform: none; }
+  .start-pitch { color: var(--ink-2); }
   .agent-link:active { transform: scale(0.96); }
   @media (hover: hover) and (pointer: fine) { .agent-link:hover { background: color-mix(in oklch, var(--ink) 7%, transparent); } }
-  /* Confirms the click: the prompt is also on the clipboard in case the app doesn't open. */
-  .toast {
-    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 50;
-    max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 12px;
-    background: var(--material); box-shadow: var(--raised), 0 12px 32px -12px oklch(25% 0.05 var(--h) / 0.25);
-    font-size: 13.5px; line-height: 1.45; color: var(--ink); text-align: center;
-    opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
-    transition: opacity 200ms var(--ease-out), transform 300ms var(--ease-out);
-  }
-  .toast[data-show] { opacity: 1; transform: translate(-50%, 0); }
   .disclose {
     font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer;
     display: inline-flex; align-items: center; gap: 3px; position: relative;
@@ -369,12 +375,39 @@
   @media (max-width: 440px) { .hero-code pre { font-size: 11px; padding: 14px 14px 18px; } }
 
   /* When you need it: the customer requests that start it. */
-  .cases { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .case { padding: 18px 20px 20px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-  .case .ev { font: 500 12.5px/1.2 var(--mono); color: var(--accent); }
-  .case h3 { margin: 12px 0 0; font-size: 16px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
-  .case p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
-  .case .like { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+  .cases { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .case {
+    position: relative; display: flex; flex-direction: column; padding: 20px; border-radius: 14px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+    transition: box-shadow 150ms var(--ease);
+  }
+  .case-top { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3); }
+  .case-top .brand { width: 18px; height: 18px; color: var(--ink); }
+  .case-top .brand-wide { width: 60px; height: 12px; margin-left: 2px; }
+  .case-top .go { width: 16px; height: 16px; margin-left: auto; transition: transform 200ms var(--ease-out), color 150ms var(--ease); }
+  .case h3 { margin: 16px 0 0; font-size: 16.5px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+  .case h3 a { color: var(--ink); }
+  .case h3 a:focus-visible { outline: none; }
+  .case:has(h3 a:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .case p { margin: 6px 0 18px; font-size: 14px; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+  /* A one-line request: the event goes out once the card is on screen, then the endpoint answers. */
+  .case-req {
+    position: relative; overflow: hidden; margin-top: auto; display: flex; align-items: center; gap: 8px;
+    padding: 8px 8px 8px 10px; border-radius: 9px; font: 500 12px/1 var(--mono);
+    background: color-mix(in srgb, var(--ink) 3.5%, var(--surface)); box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .case-req .m { color: var(--ink-3); }
+  .case-req .ev { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .case-req .code { margin-left: auto; padding: 4px 6px; border-radius: 5px; color: var(--ok); background: color-mix(in oklch, var(--ok) 13%, transparent); font-variant-numeric: tabular-nums; }
+  .case-req::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ok); transform-origin: left; transform: scaleX(0); opacity: 0; }
+  .cases[data-arm] .case-req .code { opacity: 0; transform: scale(0.7); }
+  .cases[data-arm][data-live] .case-req::after { animation: req-run 760ms var(--ease) both; animation-delay: calc(var(--i) * 110ms); }
+  .cases[data-arm][data-live] .case-req .code { opacity: 1; transform: none; transition: opacity 200ms var(--ease), transform 300ms var(--ease-out); transition-delay: calc(var(--i) * 110ms + 640ms); }
+  @keyframes req-run { 0% { transform: scaleX(0); opacity: 1; } 75% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+  @media (hover: hover) and (pointer: fine) {
+    .case:hover { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 22%, transparent), 0 12px 28px -18px oklch(25% 0.05 var(--h) / 0.35); }
+    .case:hover .go { color: var(--ink); transform: translate(2px, -2px); }
+  }
   .cases-note { margin: 24px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-3); max-width: 44em; text-wrap: pretty; }
   @media (max-width: 900px) { .cases { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .cases { grid-template-columns: minmax(0, 1fr); } }
@@ -426,20 +459,21 @@
 
   /* Sections */
   section.band { padding: clamp(64px, 8vw, 104px) 0; }
-  section.alt { background: var(--bg-alt); }
+  section.alt { background: linear-gradient(var(--bg-alt) calc(100% - 200px), color-mix(in oklab, var(--bg-alt) 50%, var(--bg)) calc(100% - 100px), var(--bg)); }
   h2 {
     font-family: var(--display);
     font-size: clamp(30px, 1rem + 2vw, 42px);
     line-height: 1.1; letter-spacing: -0.03em; font-weight: 700;
-    margin: 0; text-wrap: balance;
+    margin: 0; max-width: 18em; text-wrap: balance;
   }
   /* Section labels name the real thing in mono, led by the same packet mark the sketch uses. */
   .kicker {
-    display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
-    font: 500 12.5px/1.2 var(--mono); letter-spacing: 0; color: var(--ink-2);
+    display: flex; align-items: center; gap: 10px; margin: 0 0 18px;
+    font: 500 13.5px/1.2 var(--mono); letter-spacing: 0; color: var(--accent);
   }
   .kicker::before { content: ""; flex: none; width: 14px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent); }
-  .sub { font-size: 17px; line-height: 1.55; letter-spacing: -0.01em; color: var(--ink-2); margin: 16px 0 0; max-width: 34em; text-wrap: pretty; }
+  .sub { font-size: 18px; line-height: 1.55; letter-spacing: -0.012em; color: var(--ink-2); margin: 18px 0 0; max-width: 36em; text-wrap: pretty; }
+  @media (max-width: 640px) { .sub { font-size: 17px; } }
   .sub code { color: var(--ink); }
   .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(36px, 6vw, 80px); align-items: center; }
   .split.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
@@ -449,14 +483,41 @@
   .seen { margin-top: clamp(32px, 4vw, 48px); }
   .seen h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-wrap: balance; }
   .seen ul { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .seen-card { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 18px 20px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-  .seen blockquote { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
-  .seen-src { font-size: 13.5px; color: var(--ink-3); }
-  .seen-src:hover { color: var(--ink); }
+  .seen-card {
+    position: relative; display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 14px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+    transition: box-shadow 150ms var(--ease);
+  }
+  .seen-top { display: flex; align-items: center; gap: 12px; }
+  .seen-logo { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--ink); background: color-mix(in srgb, var(--ink) 4%, var(--surface)); box-shadow: inset 0 0 0 1px var(--line); }
+  .seen-logo .brand { width: 18px; height: 18px; }
+  .seen-who { display: grid; gap: 2px; min-width: 0; }
+  .seen-who b { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .seen-who span { font: 12px/1.3 var(--mono); color: var(--ink-3); }
+  .seen-date { margin-left: auto; align-self: start; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .seen blockquote { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--ink); text-wrap: pretty; }
+  /* The damning part of each quote, underlined like a reviewer's highlighter. */
+  .seen mark {
+    color: inherit; padding: 0 1px; border-radius: 2px;
+    background: linear-gradient(color-mix(in oklch, var(--bad) 24%, transparent), color-mix(in oklch, var(--bad) 24%, transparent)) no-repeat 0 88% / 100% 0.42em;
+  }
+  .seen ul[data-arm] mark { background-size: 0% 0.42em; }
+  .seen ul[data-arm][data-live] mark { background-size: 100% 0.42em; transition: background-size 700ms var(--ease-out); transition-delay: calc(var(--i) * 160ms + 250ms); }
+  .seen-src { margin-top: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-3); }
+  .seen-src::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  .seen-src .go { width: 14px; height: 14px; transition: transform 200ms var(--ease-out); }
+  .seen-src:focus-visible { outline: none; }
+  .seen-card:has(.seen-src:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (hover: hover) and (pointer: fine) {
+    .seen-card:hover { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 22%, transparent), 0 12px 28px -18px oklch(25% 0.05 var(--h) / 0.35); }
+    .seen-card:hover .seen-src { color: var(--ink); }
+    .seen-card:hover .go { transform: translate(2px, -2px); }
+  }
   @media (max-width: 760px) { .seen ul { grid-template-columns: minmax(0, 1fr); } }
   .head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 20px 40px; }
   .more { margin: 20px 0 0; font-size: 15.5px; font-weight: 500; }
   .more a::after { content: " ›"; }
+  .case h3 a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
   .points { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 14px; }
   ul.points li { padding-left: 18px; position: relative; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
   ul.points li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: var(--line); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ink) 18%, transparent); }
@@ -865,8 +926,19 @@
     mask-image: linear-gradient(transparent, #000 220px, #000 calc(100% - 220px), transparent);
   }
   /* Seams: the page eases into the band and back out instead of switching at a hard edge. */
-  .night-in { background: linear-gradient(var(--page-bg), var(--night) 200px); padding-top: clamp(120px, 12vw, 168px); }
-  .night-out { background: linear-gradient(var(--night) calc(100% - 200px), var(--page-bg)); padding-bottom: clamp(120px, 12vw, 168px); }
+  /* Eased stops (no visible start or end line), and each band fades into the colour of the section it meets. */
+  :root { --page-bg-alt: var(--bg-alt); }
+  .night-in {
+    --from: var(--page-bg);
+    background: linear-gradient(var(--from), color-mix(in oklab, var(--night) 3%, var(--from)) 30px, color-mix(in oklab, var(--night) 12%, var(--from)) 64px, color-mix(in oklab, var(--night) 32%, var(--from)) 100px, color-mix(in oklab, var(--night) 68%, var(--from)) 140px, color-mix(in oklab, var(--night) 88%, var(--from)) 176px, color-mix(in oklab, var(--night) 97%, var(--from)) 210px, var(--night) 240px);
+    padding-top: clamp(128px, 13vw, 184px);
+  }
+  .night-out {
+    --to: var(--page-bg);
+    background: linear-gradient(var(--night) calc(100% - 240px), color-mix(in oklab, var(--night) 97%, var(--to)) calc(100% - 210px), color-mix(in oklab, var(--night) 88%, var(--to)) calc(100% - 176px), color-mix(in oklab, var(--night) 68%, var(--to)) calc(100% - 140px), color-mix(in oklab, var(--night) 32%, var(--to)) calc(100% - 100px), color-mix(in oklab, var(--night) 12%, var(--to)) calc(100% - 64px), color-mix(in oklab, var(--night) 3%, var(--to)) calc(100% - 30px), var(--to));
+    padding-bottom: clamp(128px, 13vw, 184px);
+  }
+  .night-out.to-alt { --to: var(--page-bg-alt); }
   .night .kicker::before { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent), 0 0 14px color-mix(in oklch, var(--accent) 60%, transparent); }
 
   /* Hero field: a dot grid that leans away from the cursor, with webhooks crossing it.
@@ -985,7 +1057,7 @@
     .mark-chip .attempt, .mark[data-state] .mark-dot::after { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .video-pick button, .disclose .chev, .ln, .verify-panel, .console-panel, .replay { transition: none; }
+    .pill, .copy, .copy-btn, [data-tip]::after, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .tab, .video-pick button, .disclose .chev, .ln, .verify-panel, .console-panel, .replay { transition: none; }
     .console-panel[data-active] tbody > *, .console-panel[data-active] tbody > [data-flash] { animation: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .live-dot::after, .tx-ep[data-s="ok"] .tx-pulse::after { animation: none; }
@@ -1038,11 +1110,11 @@
             <div class="start-row">
               <span class="start-tag" id="tag-agent">Agent</span>
               <p class="start-cmd" id="agent-prompt">Add Hookgres webhooks to this app: hookgres.dev/llms.txt</p>
-              <button type="button" class="copy-btn" data-copy-from="agent-prompt" aria-label="Copy the prompt for your AI agent">
+              <button type="button" class="copy-btn" data-copy-from="agent-prompt" data-tip="Copy prompt" aria-label="Copy the prompt for your AI agent">
                 <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
                 <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
               </button>
-              <p class="start-note"><span class="agents"><span class="agents-label">Open in</span><a class="agent-link" href="#full-prompt" data-agent="claude" title="Open in Claude Code"><span class="sr-only">Open in Claude Code</span><svg class="agent agent-claude" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg></a><a class="agent-link" href="#full-prompt" data-agent="codex" title="Open in Codex"><span class="sr-only">Open in Codex</span><svg class="agent agent-openai" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"></path></svg></a><button type="button" class="agent-link" data-agent="gemini" aria-label="Copy the prompt for Gemini CLI" title="Copy the prompt for Gemini CLI"><svg class="agent" viewBox="0 0 24 24" fill="url(#gemini-fill)" aria-hidden="true"><defs><linearGradient id="gemini-fill" x1="0%" x2="68.73%" y1="100%" y2="30.4%"><stop offset="0%" stop-color="#1c7dff"/><stop offset="52%" stop-color="#1c69ff"/><stop offset="100%" stop-color="#f0dcd6"/></linearGradient></defs><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg></button><a class="agent-link" href="#full-prompt" data-agent="cursor" title="Open in Cursor"><span class="sr-only">Open in Cursor</span><svg class="agent" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg></a></span><button type="button" class="disclose" aria-expanded="false" aria-controls="full-prompt">Full prompt<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg></button></p>
+              <p class="start-note"><span class="start-pitch">One line, and your agent wires it in.</span><span class="agents"><span class="agents-label">Open in</span><a class="agent-link" href="#full-prompt" data-agent="claude" data-tip="Claude Code"><span class="sr-only">Open in Claude Code</span><svg class="agent agent-claude" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg></a><a class="agent-link" href="#full-prompt" data-agent="codex" data-tip="Codex"><span class="sr-only">Open in Codex</span><svg class="agent agent-openai" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"></path></svg></a><button type="button" class="agent-link" data-agent="gemini" aria-label="Copy the prompt for Gemini CLI" data-tip="Gemini CLI"><svg class="agent" viewBox="0 0 24 24" fill="url(#gemini-fill)" aria-hidden="true"><defs><linearGradient id="gemini-fill" x1="0%" x2="68.73%" y1="100%" y2="30.4%"><stop offset="0%" stop-color="#1c7dff"/><stop offset="52%" stop-color="#1c69ff"/><stop offset="100%" stop-color="#f0dcd6"/></linearGradient></defs><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg></button><a class="agent-link" href="#full-prompt" data-agent="cursor" data-tip="Cursor"><span class="sr-only">Open in Cursor</span><svg class="agent" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg></a></span><button type="button" class="disclose" aria-expanded="false" aria-controls="full-prompt">Full prompt<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg></button></p>
             </div>
             <div class="full-prompt" id="full-prompt" inert>
               <div class="full-prompt-clip"><div class="full-prompt-body">
@@ -1053,7 +1125,7 @@
             <div class="start-row">
               <span class="start-tag">npm</span>
               <p class="start-cmd"><span class="dim" aria-hidden="true">$ </span>npm install hookgres pg</p>
-              <button type="button" class="copy-btn" data-copy="npm install hookgres pg" aria-label="Copy the install command">
+              <button type="button" class="copy-btn" data-copy="npm install hookgres pg" data-tip="Copy" aria-label="Copy the install command">
                 <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
                 <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
               </button>
@@ -1074,7 +1146,7 @@
               <button type="button" class="tab" role="tab" id="tab-send" aria-controls="code-send" aria-selected="true">app.ts</button>
               <button type="button" class="tab" role="tab" id="tab-verify" aria-controls="code-verify" aria-selected="false" tabindex="-1">receiver.ts</button>
             </div>
-            <button type="button" class="copy-btn" data-copy-tab aria-label="Copy this file">
+            <button type="button" class="copy-btn" data-copy-tab data-tip="Copy file" aria-label="Copy this file">
               <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="2"/><path d="M10.75 5.25V4.5a1.75 1.75 0 0 0-1.75-1.75H4.5A1.75 1.75 0 0 0 2.75 4.5V9a1.75 1.75 0 0 0 1.75 1.75h.75"/></svg>
               <svg class="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>
             </button>
@@ -1135,15 +1207,45 @@ hookgres.start();
   <section class="band">
     <div class="wrap">
       <p class="kicker">when you need it</p>
-      <h2>It starts when a customer asks for webhooks.</h2>
-      <p class="sub">“Can you tell our system when this happens, instead of us polling your API?” Six requests SaaS teams get, each answered with one <code>send()</code> in the transaction that saves the change.</p>
+      <h2>“Can you tell our system when this happens?”</h2>
+      <p class="sub">When a customer asks that, you need webhooks. Six requests SaaS teams get most, each answered with one <code>send()</code> inside the transaction that saves the change.</p>
       <ul class="cases">
-        <li class="case"><code class="ev">booking.created</code><h3>Bookings to their CRM</h3><p>A demo gets booked and lands in the customer’s sales pipeline.</p><p class="like">Like Cal.com</p></li>
-        <li class="case"><code class="ev">invoice.paid</code><h3>Invoices to their ERP</h3><p>Their accounting system marks it paid only if your payment committed.</p><p class="like">Like Stripe</p></li>
-        <li class="case"><code class="ev">job.completed</code><h3>Long jobs, no polling</h3><p>One request when the job finishes, instead of one every few seconds.</p><p class="like">Like Replicate</p></li>
-        <li class="case"><code class="ev">form.submitted</code><h3>Zapier, Make and n8n</h3><p>One webhook URL setting connects your product to thousands of apps.</p><p class="like">Like Tally</p></li>
-        <li class="case"><code class="ev">order.paid</code><h3>Orders to their warehouse</h3><p>Each merchant adds its own endpoints and picks the events it needs.</p><p class="like">Like Shopify</p></li>
-        <li class="case"><code class="ev">email.bounced</code><h3>Email events to their app</h3><p>High-volume events, where a per-message bill grows fastest.</p><p class="like">Like Resend</p></li>
+        <li class="case" style="--i:0">
+          <div class="case-top"><span>Like</span><svg class="brand brand-wide" viewBox="0 9.6 24 4.8" fill="currentColor" aria-hidden="true"><path d="M2.408 14.488C1.035 14.488 0 13.4 0 12.058c0-1.346.982-2.443 2.408-2.443.758 0 1.282.233 1.691.765l-.66.55a1.343 1.343 0 0 0-1.03-.442c-.93 0-1.44.711-1.44 1.57 0 .86.559 1.557 1.44 1.557.413 0 .765-.147 1.043-.443l.651.573c-.391.51-.929.743-1.695.743zM6.948 10.913h.89v3.49h-.89v-.51c-.185.362-.493.604-1.083.604-.943 0-1.695-.82-1.695-1.826 0-1.007.752-1.825 1.695-1.825.585 0 .898.241 1.083.604zm.026 1.758c0-.546-.374-.998-.964-.998-.568 0-.938.457-.938.998 0 .528.37.998.938.998.586 0 .964-.456.964-.998zM8.467 9.503h.89v4.895h-.89zM9.752 13.937a.53.53 0 0 1 .542-.528c.313 0 .533.242.533.528a.527.527 0 0 1-.533.537.534.534 0 0 1-.542-.537zM14.23 13.839c-.33.403-.832.658-1.426.658a1.806 1.806 0 0 1-1.84-1.826c0-1.007.778-1.825 1.84-1.825.572 0 1.07.241 1.4.622l-.687.577c-.172-.215-.396-.376-.713-.376-.568 0-.938.456-.938.998 0 .541.37.997.938.997.343 0 .58-.179.757-.42zM14.305 12.671c0-1.007.78-1.825 1.84-1.825 1.061 0 1.84.818 1.84 1.825 0 1.007-.779 1.826-1.84 1.826-1.06-.005-1.84-.82-1.84-1.826zm2.778 0c0-.546-.37-.998-.938-.998-.568-.004-.937.452-.937.998 0 .542.37.998.937.998.568 0 .938-.456.938-.998zM24 12.269v2.13h-.89v-1.911c0-.604-.281-.864-.704-.864-.396 0-.678.197-.678.864v1.91h-.89v-1.91c0-.604-.285-.864-.704-.864-.396 0-.744.197-.744.864v1.91h-.89v-3.49h.89v.484c.185-.376.52-.564 1.035-.564.489 0 .898.241 1.123.649.224-.417.554-.65 1.153-.65.731.005 1.299.56 1.299 1.442z"/></svg><span class="sr-only">Cal.com</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#bookings-%E2%86%92-your-customer-s-crm">Bookings to their CRM</a></h3>
+          <p>A demo gets booked and lands in the customer’s sales pipeline.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">booking.created</span><span class="code">204</span></div>
+        </li>
+        <li class="case" style="--i:1">
+          <div class="case-top"><span>Like</span><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z"/></svg><span>Stripe</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#invoices-%E2%86%92-your-customer-s-accounting-system">Invoices to their ERP</a></h3>
+          <p>Their accounting system marks it paid only if your payment committed.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">invoice.paid</span><span class="code">204</span></div>
+        </li>
+        <li class="case" style="--i:2">
+          <div class="case-top"><span>Like</span><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 10.262v2.712h-9.518V24h-3.034V10.262zm0-5.131v2.717H8.755V24H5.722V5.131zM24 0v2.717H3.034V24H0V0z"/></svg><span>Replicate</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#long-jobs-%E2%86%92-no-more-polling">Long jobs, no polling</a></h3>
+          <p>One request when the job finishes, instead of one every few seconds.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">job.completed</span><span class="code">204</span></div>
+        </li>
+        <li class="case" style="--i:3">
+          <div class="case-top"><span>Like</span><svg class="brand" viewBox="-2 -4 132 132" fill="currentColor" aria-hidden="true"><path d="M79.9335 17.1445C79.9335 24.2262 77.3191 33.969 73.4647 47.0615L70.7069 57.1173L79.4337 51.4172C96.022 39.7688 106.04 35.397 112.67 35.397C120.212 35.397 128 40.7864 128 51.5052C128 65.1402 113.443 69.0136 85.3379 69.4912L74.8298 69.9849L83.1169 76.5821C102.791 91.747 109.612 99.1764 109.612 108.59C109.612 115.999 102.727 123.715 94.1897 123.715C81.3632 123.715 75.5655 110.387 67.7502 87.7575L63.7662 77.922L60.0183 87.7575C51.2591 113.46 44.5174 123.479 33.343 123.479C24.334 123.479 17.9208 115.289 17.9208 108.354C17.9208 97.9942 27.3369 89.3825 44.6517 76.5821L52.9388 69.9849L42.6666 69.4912C12.8171 69.2501 0 64.957 0 51.2688C0 40.55 8.02804 35.1605 15.4268 35.1605C24.3617 35.1605 34.1064 41.1875 48.5708 51.4172L57.2976 57.1173L54.5398 47.0615C50.3616 33.2597 48.3996 23.1344 48.3996 17.1445C48.3996 7.76783 53.6838 0 64.0023 0C74.5567 1.03096e-07 79.9335 7.76783 79.9335 17.1445Z"/></svg><span>Tally</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#form-answers-%E2%86%92-zapier-make-and-n8n">Zapier, Make and n8n</a></h3>
+          <p>One webhook URL setting connects your product to thousands of apps.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">form.submitted</span><span class="code">204</span></div>
+        </li>
+        <li class="case" style="--i:4">
+          <div class="case-top"><span>Like</span><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15.337 23.979l7.216-1.561s-2.604-17.613-2.625-17.73c-.018-.116-.114-.192-.211-.192s-1.929-.136-1.929-.136-1.275-1.274-1.439-1.411c-.045-.037-.075-.057-.121-.074l-.914 21.104h.023zM11.71 11.305s-.81-.424-1.774-.424c-1.447 0-1.504.906-1.504 1.141 0 1.232 3.24 1.715 3.24 4.629 0 2.295-1.44 3.76-3.406 3.76-2.354 0-3.54-1.465-3.54-1.465l.646-2.086s1.245 1.066 2.28 1.066c.675 0 .975-.545.975-.932 0-1.619-2.654-1.694-2.654-4.359-.034-2.237 1.571-4.416 4.827-4.416 1.257 0 1.875.361 1.875.361l-.945 2.715-.02.01zM11.17.83c.136 0 .271.038.405.135-.984.465-2.064 1.639-2.508 3.992-.656.213-1.293.405-1.889.578C7.697 3.75 8.951.84 11.17.84V.83zm1.235 2.949v.135c-.754.232-1.583.484-2.394.736.466-1.777 1.333-2.645 2.085-2.971.193.501.309 1.176.309 2.1zm.539-2.234c.694.074 1.141.867 1.429 1.755-.349.114-.735.231-1.158.366v-.252c0-.752-.096-1.371-.271-1.871v.002zm2.992 1.289c-.02 0-.06.021-.078.021s-.289.075-.714.21c-.423-1.233-1.176-2.37-2.508-2.37h-.115C12.135.209 11.669 0 11.265 0 8.159 0 6.675 3.877 6.21 5.846c-1.194.365-2.063.636-2.16.674-.675.213-.694.232-.772.87-.075.462-1.83 14.063-1.83 14.063L15.009 24l.927-21.166z"/></svg><span>Shopify</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#orders-%E2%86%92-the-merchant-s-warehouse">Orders to their warehouse</a></h3>
+          <p>Each merchant adds its own endpoints and picks the events it needs.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">order.paid</span><span class="code">204</span></div>
+        </li>
+        <li class="case" style="--i:5">
+          <div class="case-top"><span>Like</span><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.023 0v24h5.553v-8.434h2.998L15.326 24h6.65l-5.372-9.258a7.652 7.652 0 0 0 3.316-3.016c.709-1.21 1.062-2.57 1.062-4.08 0-1.462-.353-2.767-1.062-3.91-.709-1.165-1.692-2.079-2.95-2.742C15.737.331 14.355 0 12.823 0Zm5.553 4.87h4.219c.731 0 1.349.125 1.851.376.526.252.925.618 1.2 1.098.274.457.412.994.412 1.611S15.132 9.12 14.88 9.6c-.229.48-.572.856-1.03 1.13-.434.252-.948.38-1.542.38H7.576Z"/></svg><span>Resend</span><svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></div>
+          <h3><a href="/docs/use-cases#email-events-%E2%86%92-your-customer-s-app">Email events to their app</a></h3>
+          <p>High-volume events, where a per-message bill grows fastest.</p>
+          <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">email.bounced</span><span class="code">204</span></div>
+        </li>
       </ul>
       <p class="cases-note">Only receiving webhooks from Stripe, GitHub or Clerk? You don’t need Hookgres: use their verification library.</p>
       <p class="more"><a href="/docs/use-cases">The six cases, with code</a></p>
@@ -1345,17 +1447,20 @@ hookgres.start();
       <div class="seen">
         <h3>Not a contrived example. Other teams hit these bugs in 2026:</h3>
         <ul>
-          <li class="seen-card">
-            <blockquote>“…the entire batch is rolled back, but the webhook for the earlier (now rolled-back) request has already been dispatched.”</blockquote>
-            <a class="seen-src" href="https://issues.apache.org/jira/browse/FINERACT-2570">Apache Fineract, March 2026</a>
+          <li class="seen-card" style="--i:0">
+            <div class="seen-top"><span class="seen-logo"><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.805 2.197v.066h.156v.44h.072v-.44h.156v-.066zm.9 0l-.175.353-.172-.353h-.087v.506h.067V2.3l.172.35h.045l.172-.35v.404h.066v-.506zm-4.257 1c-.204.31-.424.66-.66 1.06l-.04.062a44.457 44.457 0 00-1.265 2.29c-.187.36-.38.742-.577 1.146l2.267-.25c.66-.302.955-.578 1.242-.976a15.5 15.5 0 00.23-.342c.23-.363.46-.763.663-1.16.197-.386.37-.767.505-1.11.083-.22.15-.422.198-.6.042-.158.074-.307.1-.45-.884.15-1.965.295-2.668.33zM11.894 7.78l-.077.16c-.078.16-.157.32-.236.488-.086.18-.172.364-.26.552l-.132.287a75.265 75.265 0 00-1.427 3.3c-.163.397-.327.807-.493 1.23-.15.38-.297.765-.45 1.164l-.02.06c-.15.396-.3.802-.453 1.22l-.01.027.72-.08a.213.213 0 01-.042-.006c.863-.106 2.01-.75 2.75-1.547.342-.367.652-.8.94-1.306.213-.377.413-.795.604-1.258.168-.405.328-.843.48-1.318-.196.105-.423.18-.673.235a2.184 2.184 0 01-.273.046c.806-.31 1.314-.905 1.683-1.64a2.816 2.816 0 01-.968.428c-.06.012-.116.022-.174.03l-.043.006h.002c.278-.118.514-.248.718-.403a2.571 2.571 0 00.637-.698l.063-.104.077-.154a8.107 8.107 0 00.367-.85l.03-.088a3.04 3.04 0 00.123-.463.733.733 0 01-.094.065c-.243.145-.66.277-.996.34l.663-.074-.664.073h-.017l-.1.017c.006-.003.01-.006.017-.008l-2.265.25-.013.022zM8.27 16.45c-.117.323-.236.654-.355.992l-.005.015c-.016.046-.032.094-.05.142-.08.227-.15.432-.31.9.264.12.475.435.675.793a1.44 1.44 0 00-.466-.99c1.293.06 2.41-.27 2.99-1.217.05-.084.096-.173.14-.268-.26.333-.59.474-1.2.44 0 0-.004 0-.005.002l.004-.002c.9-.404 1.354-.79 1.754-1.433.094-.153.186-.32.28-.503-.788.81-1.702 1.04-2.664.865l-.72.078a6.43 6.43 0 00-.067.183zM15.42.112c-.376.222-1 .85-1.748 1.763l.686 1.294c.48-.687.97-1.307 1.462-1.836l.058-.062c-.02.02-.04.04-.057.062-.16.176-.644.74-1.375 1.863.703-.035 1.784-.18 2.666-.33.262-1.47-.258-2.142-.258-2.142s-.66-1.07-1.436-.61zm-3.084 6.402a40.253 40.253 0 011.306-2.26l.04-.064c.224-.352.45-.693.677-1.02l-.685-1.293-.157.192c-.197.245-.403.51-.613.79a39.853 39.853 0 00-2.016 2.97l-.022.038.893 1.763c.19-.378.38-.752.575-1.118zm-3.73 8.32c.158-.406.319-.81.483-1.225.156-.394.32-.79.484-1.19a91.133 91.133 0 011.6-3.604l.205-.424c.12-.243.237-.485.36-.724a.125.125 0 01.02-.04l-.895-1.763-.044.07c-.207.34-.414.687-.617 1.042a38.056 38.056 0 00-1.092 2.04l-.094.193a24.573 24.573 0 00-1.258 3.087 18.492 18.492 0 00-.52 1.997l.896 1.77c.117-.317.24-.638.364-.963zm-1.376-.476a13.38 13.38 0 00-.234 1.692c0 .02-.004.04-.005.06-.28-.45-1.03-.888-1.026-.884.537.778.944 1.55 1.005 2.31-.29.058-.684-.027-1.14-.195.475.436.83.556.97.588-.434.03-.89.328-1.346.67.668-.27 1.21-.38 1.596-.29-.61 1.74-1.23 3.655-1.843 5.69a.538.538 0 00.364-.354c.11-.368.84-2.786 1.978-5.965l.097-.27.028-.078c.12-.332.246-.672.374-1.02l.09-.237v-.004L7.24 14.3c-.003.02-.01.04-.012.06z"/></svg></span><span class="seen-who"><b>Apache Fineract</b><span>Jira · FINERACT-2570</span></span><span class="seen-date">Mar 2026</span></div>
+            <blockquote>“…the entire batch is <mark>rolled back</mark>, but the webhook for the earlier (now rolled-back) request <mark>has already been dispatched</mark>.”</blockquote>
+            <a class="seen-src" href="https://issues.apache.org/jira/browse/FINERACT-2570">Read it on issues.apache.org<svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></a>
           </li>
-          <li class="seen-card">
-            <blockquote>“REST API dispatches events for writes that were rolled back”</blockquote>
-            <a class="seen-src" href="https://github.com/netbox-community/netbox/issues/22978">NetBox, August 2026</a>
+          <li class="seen-card" style="--i:1">
+            <div class="seen-top"><span class="seen-logo"><svg class="brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></span><span class="seen-who"><b>NetBox</b><span>GitHub · #22978</span></span><span class="seen-date">Aug 2026</span></div>
+            <blockquote>“REST API <mark>dispatches events for writes that were rolled back</mark>”</blockquote>
+            <a class="seen-src" href="https://github.com/netbox-community/netbox/issues/22978">Read it on github.com<svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></a>
           </li>
-          <li class="seen-card">
-            <blockquote>“If that process dies — for any reason — the webhook dies with it.”</blockquote>
-            <a class="seen-src" href="https://dodopayments.com/engineering/building-webhooks-never-fail">Dodo Payments, January 2026</a>
+          <li class="seen-card" style="--i:2">
+            <div class="seen-top"><span class="seen-logo"><svg class="brand" viewBox="5 5.5 20 20" fill="currentColor" aria-hidden="true"><path d="M12.9679 11.4606H12.9599C12.4637 11.3182 11.9387 11.603 11.7707 12.0734C11.585 12.579 11.8795 13.1582 12.3997 13.3182C13.6737 13.6798 14.2211 11.8542 12.9679 11.4606Z"/><path d="M23.8265 14.0425C22.1859 10.4505 16.9523 11.9369 16.4689 10.9961C15.0525 8.77368 12.4084 7.52568 9.54993 8.16888C9.10979 7.99288 7.59411 7.94488 6.6146 8.56088L7.20518 8.82168C7.25 8.84088 7.23719 8.83608 7.30281 8.86008C7.5701 8.96088 7.52368 8.93208 7.33162 9.03768C6.89148 9.29528 6.34251 9.59448 6 10.0441C6.0144 10.0649 6.75384 10.2425 6.75384 10.2425C6.76664 10.2457 6.90429 10.2601 6.87388 10.3209C4.45551 14.1385 8.5336 19.9001 10.5134 23.0009H16.2449C15.3598 21.4169 14.3483 19.2553 14.694 17.7881C14.7564 17.5225 14.8364 17.1849 15.1629 17.1401C15.952 17.0137 17.0083 17.0249 17.7605 16.9401C17.7605 16.9401 17.7643 16.9401 17.7717 16.9401C17.9318 16.9321 21.8498 16.4345 22.7877 18.8761C22.8678 19.1001 23.0518 18.9545 23.1254 18.8073C23.8249 17.4169 24.2762 15.2281 23.8297 14.0441L23.8265 14.0425ZM17.5013 12.8633C17.226 13.3545 17.0387 13.9929 16.9907 14.5497C16.9651 14.9033 17.0019 15.2521 17.0371 15.6057C17.0563 15.8009 17.0579 16.0473 16.9011 16.1753C16.765 16.2905 16.5393 16.3017 16.3121 16.3177C15.1965 16.3129 12.4757 16.3177 11.4273 15.6041L11.4209 15.5993C9.89564 14.6697 9.07938 12.5705 9.98527 10.9401C10.2782 10.3865 10.8175 10.0265 11.4321 9.89048C12.2228 9.70968 13.0935 9.84408 13.7993 10.2137C14.0874 10.3593 14.4315 10.5513 14.694 10.7721C15.2141 11.2265 15.6591 11.6985 16.3409 11.8441C16.6546 11.9337 16.9811 11.9209 17.2948 11.9849C17.8822 12.1257 17.7349 12.4601 17.4997 12.8601L17.5013 12.8633Z"/></svg></span><span class="seen-who"><b>Dodo Payments</b><span>Engineering blog</span></span><span class="seen-date">Jan 2026</span></div>
+            <blockquote>“If that process dies — for any reason — <mark>the webhook dies with it.</mark>”</blockquote>
+            <a class="seen-src" href="https://dodopayments.com/engineering/building-webhooks-never-fail">Read it on dodopayments.com<svg class="go" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 10.5l5-5M6.5 5.5h4v4"/></svg></a>
           </li>
         </ul>
         <p class="more"><a href="/docs/answers/webhooks-for-rolled-back-changes">Why the usual fixes close only one gap</a></p>
@@ -1367,7 +1472,7 @@ hookgres.start();
     <div class="wrap">
       <p class="kicker">retry schedule · 0s → 27.6h</p>
       <h2>Watch it retry.</h2>
-      <p class="sub">One <code>invoice.paid</code>, three of your customers' servers. Each endpoint retries on its own schedule for up to 28 hours, here squeezed into a few seconds.</p>
+      <p class="sub">One <code>invoice.paid</code>, three of your customers’ servers. Each endpoint retries on its own schedule for up to 28 hours, here squeezed into a few seconds.</p>
       <div class="demo sim">
         <div class="window sim-window">
           <div class="window-bar">
@@ -1449,7 +1554,7 @@ $wh-&gt;verify($body, $headers);
     </div>
   </section>
 
-  <section class="band night night-out">
+  <section class="band night night-out to-alt">
     <div class="wrap">
       <p class="kicker">hookgres.deliveries</p>
       <h2>Every attempt is a row you can query.</h2>
@@ -1581,7 +1686,6 @@ $wh-&gt;verify($body, $headers);
 </footer>
 
 <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
-<div class="toast" id="agent-toast" aria-hidden="true"></div>
 <script>
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -1692,6 +1796,7 @@ $wh-&gt;verify($body, $headers);
   for (const button of document.querySelectorAll(".copy, .copy-btn")) {
     const label = button.dataset.label || button.textContent;
     const icon = button.classList.contains("copy-btn");
+    const tip = button.dataset.tip;
     let timer;
     button.addEventListener("click", async () => {
       let text = button.dataset.copy;
@@ -1706,16 +1811,19 @@ $wh-&gt;verify($body, $headers);
         await navigator.clipboard.writeText(text);
         if (!icon) button.textContent = "Copied";
         button.dataset.copied = "";
+        if (tip) { button.dataset.tip = "Copied"; button.dataset.tipOn = ""; }
         status.textContent = "Copied to clipboard";
       } catch {
         if (icon) button.dataset.failed = "";
         else button.textContent = "Failed";
+        if (tip) { button.dataset.tip = "Couldn't copy"; button.dataset.tipOn = ""; }
         status.textContent = "Copy failed";
       }
       timer = setTimeout(() => {
         if (!icon) button.textContent = label;
         delete button.dataset.copied;
         delete button.dataset.failed;
+        if (tip) { button.dataset.tip = tip; delete button.dataset.tipOn; }
       }, 1600);
     });
   }
@@ -1736,26 +1844,29 @@ $wh-&gt;verify($body, $headers);
       gemini: { name: "Gemini CLI" },
     };
     const desktop = matchMedia("(hover: hover) and (pointer: fine)").matches;
-    const toast = document.getElementById("agent-toast");
     const status = document.getElementById("copy-status");
     let timer;
-    const say = (message) => {
+    let shown;
+    const say = (link, tip, message) => {
       clearTimeout(timer);
-      toast.textContent = message;
-      toast.dataset.show = "";
+      if (shown && shown !== link) { shown.dataset.tip = shown.dataset.name; delete shown.dataset.tipOn; }
+      shown = link;
+      link.dataset.tip = tip;
+      link.dataset.tipOn = "";
       // Clear first so a repeated message is announced again.
       status.textContent = "";
       requestAnimationFrame(() => { status.textContent = message; });
-      timer = setTimeout(() => delete toast.dataset.show, 4000);
+      timer = setTimeout(() => { link.dataset.tip = link.dataset.name; delete link.dataset.tipOn; }, 2600);
     };
     for (const link of document.querySelectorAll(".agent-link")) {
       const agent = agents[link.dataset.agent];
       const href = desktop && agent.href;
       if (href) link.href = href;
       else if (link.dataset.agent !== "gemini") {
-        link.title = `Copy the prompt for ${agent.name}`;
-        link.querySelector(".sr-only").textContent = link.title;
+        link.dataset.tip = `Copy for ${agent.name}`;
+        link.querySelector(".sr-only").textContent = `Copy the prompt for ${agent.name}`;
       }
+      link.dataset.name = link.dataset.tip;
       link.addEventListener("click", async (event) => {
         event.preventDefault();
         // Copy before opening: the app's "Open?" dialog takes focus, and a
@@ -1768,9 +1879,9 @@ $wh-&gt;verify($body, $headers);
         }
         if (href) {
           location.href = href;
-          say(copied ? `Opening ${agent.name}… The prompt is copied too, in case it doesn't open.` : `Opening ${agent.name}…`);
+          say(link, copied ? `Copied · opening ${agent.name}…` : `Opening ${agent.name}…`, copied ? `Opening ${agent.name}. The prompt is copied too, in case it doesn't open.` : `Opening ${agent.name}…`);
         } else {
-          say(copied ? `Prompt copied. Paste it into ${agent.name}.` : "Couldn't copy. Open Full prompt to copy it.");
+          say(link, copied ? `Copied · paste it into ${agent.name}` : "Couldn't copy · use Full prompt", copied ? `Prompt copied. Paste it into ${agent.name}.` : "Couldn't copy. Open Full prompt to copy it.");
         }
       });
     }
@@ -1848,6 +1959,19 @@ $wh-&gt;verify($body, $headers);
       panel.hidden = panel.id !== button.getAttribute("aria-controls");
     }
   });
+
+  // Card grids get one pass of life when they first come on screen.
+  if (!reduceMotion && "IntersectionObserver" in window) {
+    for (const group of document.querySelectorAll(".cases, .seen ul")) {
+      group.dataset.arm = "";
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting) return;
+        group.dataset.live = "";
+        io.disconnect();
+      }, { threshold: 0.3 });
+      io.observe(group);
+    }
+  }
 
   // Transaction demo
   {
