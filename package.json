@@ -33,6 +33,10 @@
       "types": "./dist/kysely.d.ts",
       "default": "./dist/kysely.js"
     },
+    "./mcp-events": {
+      "types": "./dist/mcp-events.d.ts",
+      "default": "./dist/mcp-events.js"
+    },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
       "default": "./dist/prisma.js"
