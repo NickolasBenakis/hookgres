@@ -526,48 +526,84 @@
 
   /* Interactive demos */
   .demo { min-width: 0; }
-  .pill.action {
-    height: 40px; padding: 0 18px; font-size: 15px;
-    background: var(--accent); color: var(--accent-ink);
-  }
-  @media (hover: hover) and (pointer: fine) { .pill.action:hover { background: var(--accent-hover); } }
-  .pill.action.quiet { background: var(--surface); color: var(--ink); box-shadow: var(--raised); }
-  @media (hover: hover) and (pointer: fine) { .pill.action.quiet:hover { background: color-mix(in oklch, var(--ink) 4%, var(--surface)); } }
-
-  .bar-hint { color: var(--code-dim); }
   .tx-demo pre { white-space: pre-wrap; word-break: break-word; }
   .ln { display: block; padding: 0 6px; margin: 0 -6px; border-radius: 6px; transition: background-color 240ms var(--ease), opacity 240ms var(--ease); }
   .tx-demo[data-state="commit"] .tx-end { background: oklch(76% 0.15 152 / 0.16); }
   .tx-demo[data-state="rollback"] .tx-end { background: oklch(70% 0.17 27 / 0.18); }
   .tx-demo[data-state="rollback"] .ln:not(.tx-end) { opacity: 0.38; }
-  .flow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 20px 4px 0; }
-  .node b { display: block; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-  .node small { display: block; font-size: 12.5px; color: var(--ink-3); transition: color 200ms var(--ease); }
-  .node:last-child { text-align: right; }
-  .track { position: relative; height: 26px; }
-  .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1.5px dashed var(--line); }
-  .packet {
-    position: absolute; left: 0; top: 0; height: 26px; display: inline-flex; align-items: center;
-    padding: 0 10px; border-radius: 8px; font: 500 12px/1 var(--mono); letter-spacing: 0;
-    background: var(--accent); color: var(--accent-ink);
-    opacity: 0; transform: translateX(0) scale(0.95);
+  .tx-pick { margin-left: 0; }
+  .tx-pick .tab[aria-pressed="true"] { color: var(--code-ink); background: oklch(100% 0 0 / 0.08); }
+
+  /* Transaction diagram: both rows land together, then the worker delivers. */
+  .tx-card { margin-top: 16px; }
+  .tx-stage { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(44px, 0.55fr) minmax(0, 1fr); align-items: stretch; gap: 0; padding: 18px; }
+  .tx-box { min-width: 0; border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--ink) 2.5%, var(--surface)); box-shadow: inset 0 0 0 1px var(--line); }
+  .tx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .tx-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .tx-badge {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.02em; padding: 5px 7px; border-radius: 6px;
+    color: var(--ink-3); background: color-mix(in oklch, var(--ink) 6%, transparent);
+    transition: color 200ms var(--ease), background-color 200ms var(--ease);
   }
-  .packet.go { animation: travel 900ms cubic-bezier(0.65, 0, 0.35, 1) forwards; }
-  .packet.drop { animation: drop 420ms var(--ease-out) forwards; }
-  @keyframes travel {
-    0% { opacity: 0; transform: translateX(0) scale(0.95); }
-    15% { opacity: 1; transform: translateX(0) scale(1); }
-    85% { opacity: 1; transform: translateX(var(--dist)) scale(1); }
-    100% { opacity: 0; transform: translateX(var(--dist)) scale(0.95); }
+  .tx-badge[data-s="ok"] { color: var(--ok); background: color-mix(in oklch, var(--ok) 13%, transparent); }
+  .tx-badge[data-s="bad"] { color: var(--bad); background: color-mix(in oklch, var(--bad) 13%, transparent); }
+  .tx-rows { display: grid; gap: 6px; }
+  .tx-row {
+    position: relative; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px;
+    font: 12px/1 var(--mono); letter-spacing: 0; color: var(--ink-2); background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--line);
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 260ms var(--ease-out), transform 360ms var(--ease-out), box-shadow 220ms var(--ease), background-color 220ms var(--ease), color 220ms var(--ease);
   }
-  @keyframes drop {
-    0% { opacity: 1; transform: translateX(0) scale(1); }
-    100% { opacity: 0; transform: translateX(0) translateY(10px) scale(0.92); }
+  .tx-row .tx-tbl { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .tx-row .tx-val { margin-left: auto; white-space: nowrap; color: var(--ink); }
+  .tx-row .tx-tick { flex: none; width: 14px; height: 14px; margin-left: -2px; color: var(--ok); opacity: 0; transform: scale(0.6); transition: opacity 200ms var(--ease), transform 300ms var(--ease-out); }
+  .tx-row[data-s] { opacity: 1; transform: none; }
+  .tx-row[data-s="pending"] { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+  .tx-row[data-s="ok"] { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 7%, var(--surface)); }
+  .tx-row[data-s="ok"] .tx-tick { opacity: 1; transform: none; }
+  .tx-row[data-s="bad"] { opacity: 0.45; box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--bad) 40%, transparent); background: color-mix(in srgb, var(--bad) 6%, var(--surface)); }
+  .tx-row[data-s="bad"] .tx-val, .tx-row[data-s="bad"] .tx-tbl { text-decoration: line-through; text-decoration-color: var(--bad); }
+  .tx-wire { position: relative; align-self: center; height: 34px; margin: 0 10px; }
+  .tx-wire-rail, .tx-wire-fill { position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; }
+  .tx-wire-rail { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 9px); }
+  .tx-wire-fill { background: var(--ok); transform-origin: left; transform: scaleX(0); }
+  .tx-wire-head { position: absolute; inset: 0; transform: translateX(0); pointer-events: none; }
+  .tx-wire-head::after {
+    content: ""; position: absolute; left: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 20%, transparent), 0 0 16px color-mix(in oklch, var(--accent) 55%, transparent);
+    opacity: 0; transition: opacity 160ms var(--ease);
   }
-  .tx-rx.ok { color: var(--ok); }
-  .tx-db.bad { color: var(--bad); }
-  .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
-  .demo-status { margin: 0 0 0 6px; font-size: 14px; color: var(--ink-2); flex: 1 1 200px; }
+  .tx-wire[data-s="go"] .tx-wire-fill, .tx-wire[data-s="done"] .tx-wire-fill { transform: scaleX(1); transition: transform 760ms cubic-bezier(0.65, 0, 0.35, 1); }
+  .tx-wire[data-s="go"] .tx-wire-head { transform: translateX(100%); transition: transform 760ms cubic-bezier(0.65, 0, 0.35, 1); }
+  .tx-wire[data-s="go"] .tx-wire-head::after { opacity: 1; }
+  .tx-wire-x {
+    position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+    display: grid; place-items: center; color: var(--bad); background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--bad) 40%, transparent);
+    opacity: 0; transform: scale(0.6); transition: opacity 200ms var(--ease), transform 300ms var(--ease-out);
+  }
+  .tx-wire-x svg { width: 10px; height: 10px; }
+  .tx-wire[data-s="cut"] .tx-wire-x { opacity: 1; transform: none; }
+  .tx-ep { position: relative; }
+  .tx-code { display: flex; align-items: center; gap: 10px; height: 34px; font: 600 24px/1 var(--mono); letter-spacing: -0.02em; color: var(--ink-3); font-variant-numeric: tabular-nums; transition: color 200ms var(--ease); }
+  .tx-pulse { position: relative; flex: none; width: 10px; height: 10px; border-radius: 50%; background: color-mix(in oklch, var(--ink) 18%, transparent); transition: background-color 200ms var(--ease); }
+  .tx-note { margin: 6px 0 0; min-height: 2lh; font-size: 12.5px; line-height: 1.35; color: var(--ink-3); }
+  .tx-ep[data-s="ok"] .tx-code { color: var(--ok); }
+  .tx-ep[data-s="ok"] .tx-pulse { background: var(--ok); }
+  .tx-ep[data-s="ok"] .tx-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok); animation: mark-ring 800ms var(--ease-out) both; }
+  .tx-ep[data-s="none"] .tx-code { color: var(--ink-3); }
+  .tx-status { margin: 14px 2px 0; min-height: 2lh; font-size: 14px; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+  @media (max-width: 560px) {
+    .tx-stage { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+    .tx-wire { height: 40px; width: 2px; margin: 0 auto; }
+    .tx-wire-rail, .tx-wire-fill { left: 0; right: auto; top: 0; bottom: 0; width: 2px; height: auto; margin: 0; }
+    .tx-wire-rail { background: repeating-linear-gradient(180deg, var(--line) 0 4px, transparent 4px 9px); }
+    .tx-wire-fill { transform-origin: top; transform: scaleY(0); }
+    .tx-wire-head::after { left: 50%; top: 0; margin: -6px 0 0 -6px; }
+    .tx-wire[data-s="go"] .tx-wire-fill, .tx-wire[data-s="done"] .tx-wire-fill { transform: scaleY(1); }
+    .tx-wire[data-s="go"] .tx-wire-head { transform: translateY(100%); }
+    .tx-note { min-height: 1lh; }
+  }
 
   .sim { margin-top: 36px; }
   .sim-window .live-toggle { margin-left: 4px; }
@@ -911,8 +947,8 @@
   @media (prefers-reduced-motion: reduce) {
     .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .ln, .verify-panel { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
-    .packet.go, .packet.drop, .live-dot::after { animation: none; }
-    .packet.go { opacity: 0; }
+    .live-dot::after, .tx-ep[data-s="ok"] .tx-pulse::after { animation: none; }
+    .tx-row, .tx-row .tx-tick, .tx-badge, .tx-wire-x, .tx-wire-head::after, .tx-wire[data-s] .tx-wire-fill, .tx-wire[data-s] .tx-wire-head { transition: none; }
   }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
@@ -1173,7 +1209,7 @@ hookgres.start();
       </div>
       <div class="demo tx-demo" data-state="idle">
         <div class="code" data-spot>
-          <div class="bar"><span>billing.ts</span><span class="bar-hint">Choose how the transaction ends</span></div>
+          <div class="bar"><span>billing.ts</span><div class="tabs tx-pick"><button type="button" class="tab" data-tx="commit" aria-pressed="false">Commit</button><button type="button" class="tab" data-tx="rollback" aria-pressed="false">Roll back</button></div></div>
 <pre><span class="ln"><span class="k">await</span> client.query(<span class="s">"BEGIN"</span>);</span><span class="ln"><span class="k">await</span> client.query(
   <span class="s">`UPDATE invoices SET status = 'paid'
    WHERE id = $1`</span>,
@@ -1184,16 +1220,24 @@ hookgres.start();
   payload: { id },
 }, { client });</span><span class="ln tx-end"><span class="k">await</span> client.query(<span class="s tx-word">"COMMIT"</span>);</span></pre>
         </div>
-        <div class="flow" aria-hidden="true">
-          <div class="node"><b>Postgres</b><small class="tx-db">waiting</small></div>
-          <div class="track"><span class="packet">invoice.paid</span></div>
-          <div class="node"><b>acme.com</b><small class="tx-rx">nothing yet</small></div>
+        <div class="window tx-card" aria-hidden="true">
+          <div class="tx-stage">
+            <div class="tx-box tx-db">
+              <div class="tx-head"><span class="tx-name">Postgres</span><span class="tx-badge">BEGIN</span></div>
+              <div class="tx-rows">
+                <div class="tx-row"><svg class="tx-tick" aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="tx-tbl">invoices</span><span class="tx-val">#1042 paid</span></div>
+                <div class="tx-row"><svg class="tx-tick" aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="tx-tbl">hookgres.messages</span><span class="tx-val">invoice.paid</span></div>
+              </div>
+            </div>
+            <div class="tx-wire"><span class="tx-wire-rail"></span><span class="tx-wire-fill"></span><span class="tx-wire-head"></span><span class="tx-wire-x"><svg aria-hidden="true" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></div>
+            <div class="tx-box tx-ep">
+              <div class="tx-head"><span class="tx-name">acme.com</span></div>
+              <div class="tx-code"><span class="tx-pulse"></span><span class="tx-code-text">—</span></div>
+              <p class="tx-note">Waiting for the transaction</p>
+            </div>
+          </div>
         </div>
-        <div class="demo-controls">
-          <button type="button" class="pill action" data-tx="commit">Commit</button>
-          <button type="button" class="pill action quiet" data-tx="rollback">Roll back</button>
-          <p class="demo-status" role="status" aria-live="off">Nothing is sent until the transaction commits.</p>
-        </div>
+        <p class="tx-status" role="status" aria-live="off">Nothing is sent until the transaction commits.</p>
       </div>
     </div>
     <div class="wrap tx-bug" id="rollback-demo">
@@ -1732,44 +1776,66 @@ $wh-&gt;verify($body, $headers);</pre>
   // Transaction demo
   {
     const demo = $(".tx-demo");
-    const packet = $(".packet", demo);
     const word = $(".tx-word", demo);
-    const db = $(".tx-db", demo);
-    const rx = $(".tx-rx", demo);
-    const status = $(".demo-status", demo);
-    let timer;
+    const rows = [...demo.querySelectorAll(".tx-row")];
+    const badge = $(".tx-badge", demo);
+    const wire = $(".tx-wire", demo);
+    const ep = $(".tx-ep", demo);
+    const code = $(".tx-code-text", demo);
+    const note = $(".tx-note", demo);
+    const status = $(".tx-status", demo);
+    const buttons = [...demo.querySelectorAll("[data-tx]")];
+    const set = (el, value) => (value ? el.setAttribute("data-s", value) : el.removeAttribute("data-s"));
+    let timers = [];
+    const at = (ms, fn) => timers.push(setTimeout(fn, reduceMotion ? 0 : ms));
     const run = (commit) => {
-      clearTimeout(timer);
-      demo.dataset.state = commit ? "commit" : "rollback";
+      for (const t of timers) clearTimeout(t);
+      timers = [];
+      for (const b of buttons) b.setAttribute("aria-pressed", String((b.dataset.tx === "commit") === commit));
+      demo.dataset.state = "idle";
       word.textContent = commit ? '"COMMIT"' : '"ROLLBACK"';
-      packet.className = "packet";
-      void packet.offsetWidth; // restart the animation
-      rx.className = "tx-rx";
-      db.className = "tx-db";
+      badge.textContent = "BEGIN";
+      set(badge);
+      for (const row of rows) set(row);
+      set(wire);
+      set(ep);
+      code.textContent = "—";
+      note.textContent = "Waiting for the transaction";
+      at(120, () => set(rows[0], "pending"));
+      at(480, () => set(rows[1], "pending"));
+      at(1100, () => {
+        demo.dataset.state = commit ? "commit" : "rollback";
+        badge.textContent = commit ? "COMMIT" : "ROLLBACK";
+        set(badge, commit ? "ok" : "bad");
+        for (const row of rows) set(row, commit ? "ok" : "bad");
+        status.textContent = commit
+          ? "Committed: the invoice and its webhook were saved together, so the worker delivers it."
+          : "Rolled back: the invoice and its webhook were discarded together. Nothing is sent.";
+        if (!commit) {
+          set(wire, "cut");
+          code.textContent = "—";
+          set(ep, "none");
+          note.textContent = "Nothing sent";
+        }
+      });
       if (commit) {
-        const track = $(".track", demo);
-        packet.style.setProperty("--dist", `${Math.max(0, track.clientWidth - packet.offsetWidth)}px`);
-        db.textContent = "committed";
-        rx.textContent = "…";
-        status.textContent = "Committed: the webhook was queued with your change, and the worker sends it.";
-        packet.classList.add("go");
-        timer = setTimeout(() => {
-          rx.textContent = "204 · invoice.paid";
-          rx.classList.add("ok");
-        }, reduceMotion ? 0 : 780);
-      } else {
-        db.textContent = "rolled back";
-        db.classList.add("bad");
-        rx.textContent = "nothing sent";
-        status.textContent = "Rolled back: the invoice update and the webhook were discarded together.";
-        packet.classList.add("drop");
+        at(1450, () => {
+          set(wire, "go");
+          note.textContent = "Delivering invoice.paid";
+        });
+        at(2220, () => {
+          set(wire, "done");
+          set(ep, "ok");
+          code.textContent = "204";
+          note.textContent = "invoice.paid · 84 ms";
+        });
       }
     };
     let auto = !reduceMotion;
     const live = () => status.setAttribute("aria-live", "polite");
-    $(".demo-controls", demo).addEventListener("pointerdown", live);
-    $(".demo-controls", demo).addEventListener("focusin", live);
-    for (const button of demo.querySelectorAll("[data-tx]")) {
+    $(".tx-pick", demo).addEventListener("pointerdown", live);
+    $(".tx-pick", demo).addEventListener("focusin", live);
+    for (const button of buttons) {
       button.addEventListener("click", () => {
         auto = false;
         status.setAttribute("aria-live", "polite");
@@ -1783,7 +1849,7 @@ $wh-&gt;verify($body, $headers);</pre>
           await whenVisible(demo);
           if (!auto) return;
           run(commit);
-          await sleep(3400);
+          await sleep(4600);
           if (!auto) return;
         }
       })();
