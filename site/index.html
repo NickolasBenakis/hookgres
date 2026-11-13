@@ -462,14 +462,14 @@
   section.alt { background: linear-gradient(var(--bg-alt) calc(100% - 200px), color-mix(in oklab, var(--bg-alt) 50%, var(--bg)) calc(100% - 100px), var(--bg)); }
   h2 {
     font-family: var(--display);
-    font-size: clamp(30px, 1rem + 2vw, 42px);
-    line-height: 1.1; letter-spacing: -0.03em; font-weight: 700;
+    font-size: clamp(28px, 0.9rem + 1.6vw, 38px);
+    line-height: 1.12; letter-spacing: -0.028em; font-weight: 700;
     margin: 0; max-width: 18em; text-wrap: balance;
   }
   /* Section labels name the real thing in mono, led by the same packet mark the sketch uses. */
   .kicker {
-    display: flex; align-items: center; gap: 10px; margin: 0 0 18px;
-    font: 500 13.5px/1.2 var(--mono); letter-spacing: 0; color: var(--accent);
+    display: flex; align-items: center; gap: 10px; margin: 0 0 16px;
+    font: 500 15px/1.3 var(--mono); letter-spacing: 0; color: var(--accent);
   }
   .kicker::before { content: ""; flex: none; width: 14px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent); }
   .sub { font-size: 18px; line-height: 1.55; letter-spacing: -0.012em; color: var(--ink-2); margin: 18px 0 0; max-width: 36em; text-wrap: pretty; }
@@ -928,17 +928,17 @@
   /* Seams: the page eases into the band and back out instead of switching at a hard edge. */
   /* Eased stops (no visible start or end line), and each band fades into the colour of the section it meets. */
   :root { --page-bg-alt: var(--bg-alt); }
-  .night-in {
+  section.night-in {
     --from: var(--page-bg);
     background: linear-gradient(var(--from), color-mix(in oklab, var(--night) 3%, var(--from)) 30px, color-mix(in oklab, var(--night) 12%, var(--from)) 64px, color-mix(in oklab, var(--night) 32%, var(--from)) 100px, color-mix(in oklab, var(--night) 68%, var(--from)) 140px, color-mix(in oklab, var(--night) 88%, var(--from)) 176px, color-mix(in oklab, var(--night) 97%, var(--from)) 210px, var(--night) 240px);
-    padding-top: clamp(128px, 13vw, 184px);
+    padding-top: clamp(232px, 18vw, 272px);
   }
-  .night-out {
+  section.night-out {
     --to: var(--page-bg);
     background: linear-gradient(var(--night) calc(100% - 240px), color-mix(in oklab, var(--night) 97%, var(--to)) calc(100% - 210px), color-mix(in oklab, var(--night) 88%, var(--to)) calc(100% - 176px), color-mix(in oklab, var(--night) 68%, var(--to)) calc(100% - 140px), color-mix(in oklab, var(--night) 32%, var(--to)) calc(100% - 100px), color-mix(in oklab, var(--night) 12%, var(--to)) calc(100% - 64px), color-mix(in oklab, var(--night) 3%, var(--to)) calc(100% - 30px), var(--to));
-    padding-bottom: clamp(128px, 13vw, 184px);
+    padding-bottom: clamp(232px, 18vw, 272px);
   }
-  .night-out.to-alt { --to: var(--page-bg-alt); }
+  section.night-out.to-alt { --to: var(--page-bg-alt); }
   .night .kicker::before { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent), 0 0 14px color-mix(in oklch, var(--accent) 60%, transparent); }
 
   /* Hero field: a dot grid that leans away from the cursor, with webhooks crossing it.
@@ -1247,7 +1247,7 @@ hookgres.start();
           <div class="case-req" aria-hidden="true"><span class="m">POST</span><span class="ev">email.bounced</span><span class="code">204</span></div>
         </li>
       </ul>
-      <p class="cases-note">Only receiving webhooks from Stripe, GitHub or Clerk? You don’t need Hookgres: use their verification library.</p>
+      <p class="cases-note">Only receiving webhooks from Stripe, GitHub or Clerk? You don’t need Hookgres. Their verification library is enough.</p>
       <p class="more"><a href="/docs/use-cases">The six cases, with code</a></p>
     </div>
   </section>
@@ -1482,7 +1482,7 @@ hookgres.start();
           </div>
           <p class="sr-only">Animation of one event sent to three endpoints. The healthy one answers 204 on the first attempt. The flaky one answers 503 twice, then 204 on the third attempt, 5 minutes in. The one that is down answers 500 to all eight attempts over 27.6 hours and the delivery fails.</p>
           <div class="race" aria-hidden="true"></div>
-          <p class="sim-note">A server that’s down never holds up the others: every endpoint gets its own delivery, retries and log rows.</p>
+          <p class="sim-note">A server that’s down never holds up the others. Each endpoint gets its own delivery, its own retries and its own log rows.</p>
         </div>
       </div>
       <div class="numbers">
@@ -1500,7 +1500,7 @@ hookgres.start();
       <div>
         <p class="kicker">standard webhooks</p>
         <h2>Your customers verify it with code they already have.</h2>
-        <p class="sub">Every request is signed to the open Standard Webhooks spec. Your customers check it with an official library in their own language, so you never design, document or support a signing scheme of your own.</p>
+        <p class="sub">Every request is signed to the open Standard Webhooks spec. Your customers check it with an official library in their own language, so you never have to invent a signing scheme and support it.</p>
         <p class="langs"><b>Official libraries</b> for JavaScript, Python, Go, Ruby, PHP, Rust, Java, C# and Elixir. Hookgres’s tests check its signatures against the JavaScript one.</p>
         <p class="more"><a href="/docs/guides/verifying">Verifying webhooks</a></p>
       </div>
@@ -1558,7 +1558,7 @@ $wh-&gt;verify($body, $headers);
     <div class="wrap">
       <p class="kicker">hookgres.deliveries</p>
       <h2>Every attempt is a row you can query.</h2>
-      <p class="sub">Status, response body and timing for each request, stored next to your data. Build a customer-facing log, a support view or an alert with plain SQL.</p>
+      <p class="sub">Status, response body and timing for each request, stored next to your data. A customer-facing log or a support view is one SQL query away.</p>
       <div class="log-stage">
         <div class="code console" data-spot>
           <div class="bar">
@@ -1624,7 +1624,7 @@ $wh-&gt;verify($body, $headers);
     <div class="wrap">
       <p class="kicker">library vs. hosted service</p>
       <h2>A library, not a service.</h2>
-      <p class="sub">Hosted services like Svix and Hookdeck are a great fit when you want someone else to run it. Hookgres fits when you’d rather keep webhooks next to your data.</p>
+      <p class="sub">Hosted services like Svix and Hookdeck make sense when you want someone else to run it. Hookgres fits when you’d rather keep webhooks next to your data.</p>
       <table class="table">
         <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col" class="us">Hookgres</th><th scope="col">Hosted service</th></tr></thead>
         <tbody>
@@ -1638,7 +1638,7 @@ $wh-&gt;verify($body, $headers);
 
       <div class="waitlist" id="portal">
         <h3>Customer portal, coming to Hookgres Pro</h3>
-        <p>Today, customers add endpoints through your own settings page: a few routes around <code>createEndpoint()</code>, scoped to their tenant (<a href="/docs/guides/endpoints#exposing-endpoints-to-customers">example</a>). Pro adds a portal where they add endpoints, see every delivery and replay failures, styled to match your app. Join the waitlist for early access.</p>
+        <p>Today, customers add endpoints through your own settings page, a few routes around <code>createEndpoint()</code> scoped to their tenant (<a href="/docs/guides/endpoints#exposing-endpoints-to-customers">example</a>). Pro adds a portal where they add endpoints, see every delivery and replay failures, styled to match your app. Join the waitlist for early access.</p>
         <form class="waitlist-form" id="waitlist-form" data-form-url="https://tally.so/r/q5axXY" novalidate>
           <label class="sr-only" for="waitlist-email">Email</label>
           <input id="waitlist-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@company.com" required>
@@ -1654,7 +1654,7 @@ $wh-&gt;verify($body, $headers);
     <div class="cta-panel night split">
       <div>
         <h2>Your next webhook ships in your next&nbsp;commit.</h2>
-        <p class="sub">Add the package, run <code>migrate()</code>, start sending. Or try the playground first: Postgres plus three fake customer endpoints (healthy, flaky and down) at <code>localhost:3000</code>.</p>
+        <p class="sub">Add the package, run <code>migrate()</code>, start sending. Or try the playground first. It runs Postgres and three fake customer endpoints, one healthy, one flaky and one down, at <code>localhost:3000</code>.</p>
         <div class="actions">
           <a class="pill large" href="/docs/getting-started">Get started</a>
           <a class="pill ghost" href="https://github.com/NickolasBenakis/hookgres">View on GitHub</a>
