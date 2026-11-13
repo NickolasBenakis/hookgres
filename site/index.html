@@ -449,7 +449,7 @@
   .points b { color: var(--ink); font-weight: 600; }
   .points code { color: var(--ink); }
 
-  /* Windows (delivery log, simulator) */
+  /* Windows (delivery log, retry race) */
   .window { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; text-align: left; }
   .window-bar { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
   .window-bar .title { font-weight: 500; color: var(--ink); }
@@ -523,29 +523,6 @@
   .live-toggle[data-paused] .live-dot::after { animation: none; opacity: 0; }
   @keyframes live-ping { 0% { transform: scale(1); opacity: 0.6; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 
-  /* Segmented control (simulator) */
-  .seg {
-    position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-    padding: 3px; border-radius: 999px; background: var(--bg-alt); box-shadow: inset 0 0 0 1px var(--line);
-    --i: 0; --n: 3;
-  }
-  .seg button {
-    position: relative; z-index: 1; border: 0; background: none; cursor: pointer;
-    font: 500 13.5px/1 var(--sans); letter-spacing: -0.01em; color: var(--ink-2);
-    padding: 10px 16px; border-radius: 999px; white-space: nowrap;
-    transition: color 200ms var(--ease);
-  }
-  .seg button::before { content: ""; position: absolute; inset: -6px 0; }
-  .seg button[aria-pressed="true"] { color: var(--ink); }
-  .seg-thumb {
-    position: absolute; top: 3px; bottom: 3px; left: 3px;
-    width: calc((100% - 6px) / var(--n)); border-radius: 999px;
-    background: var(--surface); box-shadow: 0 0 0 1px oklch(25% 0.05 var(--h) / 0.04), 0 1px 2px oklch(25% 0.05 var(--h) / 0.08), 0 2px 8px oklch(25% 0.05 var(--h) / 0.06);
-    transform: translateX(calc(var(--i) * 100%));
-    transition: transform 280ms var(--ease-out);
-  }
-  fieldset.seg { margin: 0; border: 0; min-inline-size: 0; }
-  @media (max-width: 400px) { .seg button { padding: 10px 10px; } }
 
   /* Interactive demos */
   .demo { min-width: 0; }
@@ -593,63 +570,72 @@
   .demo-status { margin: 0 0 0 6px; font-size: 14px; color: var(--ink-2); flex: 1 1 200px; }
 
   .sim { margin-top: 36px; }
-  .sim-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  .sim-track { position: relative; padding: 20px 28px 14px 0; }
+  .sim-window .live-toggle { margin-left: 4px; }
 
-  /* Retry chart: attempts evenly spaced, elapsed time on a log scale, so the curve is the backoff. */
-  .chart { position: relative; height: 248px; }
-  .chart-caption { position: absolute; left: 24px; top: 4px; font-size: 12px; color: var(--ink-3); }
-  .chart-plot { position: absolute; left: 64px; right: 28px; top: 44px; bottom: 34px; }
-  .chart-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-  .chart-svg path, .chart-svg line { vector-effect: non-scaling-stroke; }
-  .chart-grid line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; }
-  .chart-grid .chart-axis { stroke-dasharray: none; }
-  .chart-line-base { fill: none; stroke: color-mix(in oklch, var(--ink) 22%, transparent); stroke-width: 1.5; stroke-dasharray: 4 5; }
-  .chart-line { fill: none; stroke: var(--accent); stroke-width: 2.25; stroke-linejoin: round; }
-  .chart-area { fill: url(#chart-fill); }
-  .chart-stop-0 { stop-color: var(--accent); stop-opacity: 0.2; }
-  .chart-stop-1 { stop-color: var(--accent); stop-opacity: 0; }
-  .chart-y .tick, .chart-x .tick {
-    position: absolute; font: 500 11px/1 var(--mono); letter-spacing: 0; color: var(--ink-3);
-    font-variant-numeric: tabular-nums; white-space: nowrap;
+  /* Retry race: one event, three endpoints, attempts evenly spaced along the schedule. */
+  .race { padding: 4px 18px 0; }
+  .race-row { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) minmax(0, 150px); align-items: center; gap: 16px; }
+  .lane { border-top: 1px solid var(--line); }
+  .lane:first-child { border-top: 0; }
+  .lane-track { position: relative; height: 64px; }
+  .lane-inner { position: absolute; inset: 0 16px; }
+  .lane-rail, .lane-fill { position: absolute; left: 0; right: 0; top: 42px; height: 2px; margin-top: -1px; border-radius: 1px; }
+  .lane-rail { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 9px); }
+  .lane-fill { background: var(--tone, var(--accent)); transform-origin: left; transform: scaleX(var(--p, 0)); transition: background-color 300ms var(--ease); }
+  .lane[data-result="ok"] { --tone: var(--ok); }
+  .lane[data-result="bad"] { --tone: var(--bad); }
+  .lane-head { position: absolute; inset: 0; transform: translateX(calc(var(--p, 0) * 100%)); pointer-events: none; }
+  .lane-head::after {
+    content: ""; position: absolute; left: -6px; top: 36px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 20%, transparent), 0 0 16px color-mix(in oklch, var(--accent) 55%, transparent);
+    opacity: 0; transition: opacity 200ms var(--ease);
   }
-  .chart-y .tick { left: 24px; top: calc(44px + (1 - var(--y)) * (100% - 78px)); transform: translateY(-50%); }
-  .chart-x { position: absolute; left: 64px; right: 28px; bottom: 0; height: 22px; }
-  .chart-x .tick { left: calc(var(--x) * 100%); bottom: 4px; transform: translateX(-50%); }
-  .mark, .chart-head { position: absolute; left: calc(var(--x) * 100%); top: calc((1 - var(--y)) * 100%); }
+  .lane[data-active] .lane-head::after { opacity: 1; }
+  .mark { position: absolute; left: calc(var(--x) * 100%); top: 42px; transition: opacity 400ms var(--ease); }
+  .mark[data-skip] { opacity: 0.3; }
   .mark-dot {
     position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%;
     background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--ink) 28%, transparent);
-    transition: background-color 200ms var(--ease) 320ms, box-shadow 200ms var(--ease) 320ms;
+    transition: background-color 200ms var(--ease), box-shadow 200ms var(--ease);
   }
   .mark[data-state] .mark-dot { background: var(--tone); box-shadow: 0 0 0 4px color-mix(in oklch, var(--tone) 18%, transparent); }
+  .mark[data-state] .mark-dot::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--tone);
+    animation: mark-ring 700ms var(--ease-out) both;
+  }
+  @keyframes mark-ring { from { transform: scale(1); opacity: 0.55; } to { transform: scale(3.2); opacity: 0; } }
   .mark[data-state="ok"] { --tone: var(--ok); }
   .mark[data-state="warn"] { --tone: var(--warn); }
   .mark[data-state="bad"] { --tone: var(--bad); }
   .mark-chip { position: absolute; left: 0; bottom: 12px; transform: translateX(-50%); }
-  .mark-chip .attempt { animation: chip-in 260ms var(--ease-out) 320ms both; box-shadow: 0 1px 2px oklch(25% 0.05 var(--h) / 0.08); }
+  .mark-chip .attempt { animation: chip-in 260ms var(--ease-out) both; box-shadow: 0 1px 2px oklch(25% 0.05 var(--h) / 0.08); }
   @keyframes chip-in { from { opacity: 0; transform: translateY(4px) scale(0.95); } }
-  .chart-head {
-    width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; pointer-events: none;
-    background: var(--accent); box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 20%, transparent), 0 0 18px color-mix(in oklch, var(--accent) 55%, transparent);
-    opacity: 0; transition: opacity 200ms var(--ease);
+  .lane .status { font-variant-numeric: tabular-nums; }
+  .lane .status small { white-space: nowrap; }
+  .race-axis { padding: 2px 0 12px; }
+  .race-axis .lane-track { height: 18px; }
+  .race-axis .tick {
+    position: absolute; left: calc(var(--x) * 100%); top: 2px; transform: translateX(-50%);
+    font: 500 11px/1 var(--mono); letter-spacing: 0; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .chart-head[data-on] { opacity: 1; }
-  .sim-status { margin: 0; padding: 14px 24px 16px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); min-height: 52px; }
-  .sim-status b { font-weight: 600; }
-  .sim-status .ok { color: var(--ok); }
-  .sim-status .bad { color: var(--bad); }
-  @media (max-width: 640px) {
+  .race-lanes { transition: opacity 300ms var(--ease); }
+  .race-lanes[data-fading] { opacity: 0; }
+  .sim-note { margin: 0; padding: 14px 24px 16px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); }
+  @media (max-width: 760px) {
+    .race { padding: 4px 14px 0; }
+    .race-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; column-gap: 12px; }
+    .lane { padding-top: 12px; }
+    .lane .lane-track { grid-column: 1 / -1; grid-row: 2; height: 40px; }
+    .lane .status { grid-column: 2; grid-row: 1; text-align: right; min-width: 9.5em; }
+    .race-axis .race-label, .race-axis .race-end { display: none; }
+    .race-axis .lane-track { grid-column: 1 / -1; }
+    .lane-inner { inset: 0 10px; }
     /* Too narrow for eight chips side by side: the dots carry the colour. */
     .mark-chip { display: none; }
-    .chart { height: 200px; }
-    .chart-plot { left: 44px; right: 16px; top: 34px; }
-    .chart-caption { left: 10px; top: 0; font-size: 11.5px; }
-    .chart-x { left: 44px; right: 16px; }
-    .chart-y .tick { left: 10px; top: calc(34px + (1 - var(--y)) * (100% - 68px)); font-size: 10px; }
-    .chart-x .tick { font-size: 10px; }
-    .sim-track { padding: 14px 14px 10px 0; }
-    .sim-status { padding: 14px 16px; }
+    .lane-rail, .lane-fill, .mark { top: 22px; }
+    .lane-head::after { top: 16px; }
+    .race-axis .tick { font-size: 10px; }
+    .sim-note { padding: 14px 16px; }
   }
 
   .verify { display: grid; gap: 14px; }
@@ -806,7 +792,6 @@
   .night-in { background: linear-gradient(var(--page-bg), var(--night) 200px); padding-top: clamp(120px, 12vw, 168px); }
   .night-out { background: linear-gradient(var(--night) calc(100% - 200px), var(--page-bg)); padding-bottom: clamp(120px, 12vw, 168px); }
   .night .kicker::before { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent), 0 0 14px color-mix(in oklch, var(--accent) 60%, transparent); }
-  .night .seg-thumb { background: oklch(33% 0.06 var(--h)); box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.1), 0 0 0 1px oklch(100% 0 0 / 0.14); }
 
   /* Hero field: a dot grid that leans away from the cursor, with webhooks crossing it.
      Densest behind the code, gone under the headline so the text stays crisp. */
@@ -920,11 +905,11 @@
 
   @media (prefers-reduced-motion: reduce) {
     .hero-code, .hero-shadow { transform: none; }
-    .mark-dot, .chart-head, [data-spot]::after, .sketch [data-step], .step-bar { transition: none; }
-    .mark-chip .attempt { animation: none; }
+    .mark-dot, .mark, .lane-fill, .race-lanes, [data-spot]::after, .sketch [data-step], .step-bar { transition: none; }
+    .mark-chip .attempt, .mark[data-state] .mark-dot::after { animation: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .seg-thumb, .ln, .verify-panel { transition: none; }
+    .pill, .copy, .copy-btn, .copy-btn .glyph, .copy-btn .check, .search-trigger, .theme-toggle, .agent-link, .toast, .tab, .disclose .chev, .ln, .verify-panel { transition: none; }
     .full-prompt, .full-prompt-body { transition: none; }
     .packet.go, .packet.drop, .live-dot::after { animation: none; }
     .packet.go { opacity: 0; }
@@ -1249,46 +1234,19 @@ hookgres.start();
 
   <section class="band night night-in">
     <div class="wrap">
-      <div class="head-row">
-        <div>
-          <p class="kicker">retry schedule · 0s → 27.6h</p>
-          <h2>Watch it retry.</h2>
-          <p class="sub">When your customer's server is down, Hookgres keeps trying for 28 hours, here squeezed into a few seconds. Pick a server to replay it.</p>
-        </div>
-        <div class="sim-controls">
-          <fieldset class="seg">
-            <legend class="sr-only">Receiver behaviour</legend>
-            <span class="seg-thumb" aria-hidden="true"></span>
-            <button type="button" aria-pressed="true" data-mode="healthy">Healthy</button>
-            <button type="button" aria-pressed="false" data-mode="flaky">Flaky</button>
-            <button type="button" aria-pressed="false" data-mode="down">Down</button>
-          </fieldset>
-        </div>
-      </div>
+      <p class="kicker">retry schedule · 0s → 27.6h</p>
+      <h2>Watch it retry.</h2>
+      <p class="sub">One <code>invoice.paid</code>, three of your customers' servers. Each endpoint retries on its own schedule for up to 28 hours, here squeezed into a few seconds.</p>
       <div class="demo sim">
         <div class="window sim-window">
-          <div class="window-bar"><span class="title">invoice.paid</span><span class="meta sim-clock" aria-hidden="true">t = 0s</span></div>
-          <div class="sim-track" aria-hidden="true">
-            <div class="chart">
-              <span class="chart-caption">Time since the first attempt</span>
-              <div class="chart-y"></div>
-              <div class="chart-plot">
-                <svg class="chart-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden="true">
-                  <defs>
-                    <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="chart-stop-0"/><stop offset="1" class="chart-stop-1"/></linearGradient>
-                    <clipPath id="chart-clip"><rect class="chart-reveal" x="0" y="-10" width="0" height="220"/></clipPath>
-                  </defs>
-                  <g class="chart-grid"></g>
-                  <path class="chart-line-base"/>
-                  <g clip-path="url(#chart-clip)"><path class="chart-area"/><path class="chart-line"/></g>
-                </svg>
-                <div class="chart-marks"></div>
-                <span class="chart-head"></span>
-              </div>
-              <div class="chart-x"></div>
-            </div>
+          <div class="window-bar">
+            <span class="title">invoice.paid</span>
+            <span class="meta sim-clock" aria-hidden="true">t = 0s</span>
+            <button type="button" class="live-toggle" hidden><span class="live-dot" aria-hidden="true"></span><span class="live-label">Pause</span></button>
           </div>
-          <p class="sim-status" role="status" aria-live="off">Healthy, flaky and down play in turn. Pick one to replay it.</p>
+          <p class="sr-only">Animation of one event sent to three endpoints. The healthy one answers 204 on the first attempt. The flaky one answers 503 twice, then 204 on the third attempt, 5 minutes in. The one that is down answers 500 to all eight attempts over 27.6 hours and the delivery fails.</p>
+          <div class="race" aria-hidden="true"></div>
+          <p class="sim-note">A server that's down never holds up the others: every endpoint gets its own delivery, retries and log rows.</p>
         </div>
       </div>
       <div class="numbers">
@@ -1711,7 +1669,7 @@ $wh-&gt;verify($body, $headers);</pre>
     });
   }
 
-  // Segmented controls: tabs (hero code) and toggle buttons (simulator).
+  // Segmented controls: tab lists (hero code, verify languages).
   function segmented(seg, onChange) {
     const buttons = [...seg.querySelectorAll("button")];
     const tabs = buttons[0].getAttribute("role") === "tab";
@@ -1832,167 +1790,171 @@ $wh-&gt;verify($body, $headers);</pre>
     }
   }
 
-  // Retry simulator: the default schedule, compressed.
+  // Retry race: one event, three endpoints, each on its own schedule. Attempts are
+  // evenly spaced; the clock runs through the real elapsed times.
   {
+    const sim = $(".sim");
+    const race = $(".race", sim);
+    const clock = $(".sim-clock", sim);
+    const toggle = $(".live-toggle", sim);
     const labels = ["0s", "5s", "5m", "35m", "2.6h", "7.6h", "17.6h", "27.6h"];
-    const outcomes = {
-      healthy: [204],
-      flaky: [503, 503, 204],
-      down: [500, 500, 500, 500, 500, 500, 500, 500],
-    };
-    // Seconds since the first attempt, on a log scale: the curve is the backoff.
     const elapsed = [0, 5, 305, 2105, 9305, 27305, 63305, 99305];
-    const logT = (t) => Math.log10(1 + t) / Math.log10(1 + elapsed.at(-1));
-    const points = elapsed.map((t, i) => [i / (elapsed.length - 1), logT(t)]);
-    const chart = $(".chart");
-    const head = $(".chart-head", chart);
-    const reveal = $(".chart-reveal", chart);
-    const clock = $(".sim-clock");
-    const status = $(".sim-status");
-    let run = 0;
-
-    // Monotone cubic through the attempts (Fritsch–Carlson), in a 1000×200 box.
-    const X = (x) => x * 1000;
-    const Y = (y) => 200 - y * 200;
-    const curve = (() => {
-      const n = points.length;
-      const d = points.slice(0, -1).map(([x, y], i) => (points[i + 1][1] - y) / (points[i + 1][0] - x));
-      const m = points.map((_, i) => (i === 0 ? d[0] : i === n - 1 ? d[n - 2] : d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2));
-      let path = `M${X(points[0][0])} ${Y(points[0][1])}`;
-      for (let i = 0; i < n - 1; i++) {
-        const [x0, y0] = points[i];
-        const [x1, y1] = points[i + 1];
-        const h = (x1 - x0) / 3;
-        path += `C${X(x0 + h)} ${Y(y0 + m[i] * h)} ${X(x1 - h)} ${Y(y1 - m[i + 1] * h)} ${X(x1)} ${Y(y1)}`;
-      }
-      return path;
-    })();
-    $(".chart-line-base", chart).setAttribute("d", curve);
-    $(".chart-line", chart).setAttribute("d", curve);
-    $(".chart-area", chart).setAttribute("d", `${curve}L1000 200L0 200Z`);
-    const gridlines = [["5s", 5], ["1m", 60], ["1h", 3600], ["10h", 36000]];
-    const lines = gridlines.map(([, t]) => `<line x1="0" x2="1000" y1="${Y(logT(t))}" y2="${Y(logT(t))}"/>`).join("");
-    $(".chart-grid", chart).innerHTML = `${lines}<line class="chart-axis" x1="0" x2="1000" y1="200" y2="200"/>`;
-    $(".chart-y", chart).innerHTML = gridlines.map(([label, t]) => `<span class="tick" style="--y:${logT(t)}">${label}</span>`).join("");
-    $(".chart-x", chart).innerHTML = labels.map((label, i) => `<span class="tick" style="--x:${points[i][0]}">${label}</span>`).join("");
-    const marks = $(".chart-marks", chart);
-    marks.innerHTML = points.map(([x, y]) => `<span class="mark" style="--x:${x};--y:${y}"><span class="mark-chip"></span><span class="mark-dot"></span></span>`).join("");
-    const markEls = [...marks.children];
-    const wraps = markEls.map((mark) => $(".mark-chip", mark));
-
-    // The head rides the curve; sample it once to look up y for any x.
-    const samples = (() => {
-      const path = $(".chart-line-base", chart);
-      const length = path.getTotalLength();
-      return Array.from({ length: 241 }, (_, i) => path.getPointAtLength((length * i) / 240));
-    })();
-    const yAt = (x) => {
-      const px = x * 1000;
-      const i = samples.findIndex((p) => p.x >= px);
-      if (i <= 0) return i === 0 ? samples[0].y : samples.at(-1).y;
-      const a = samples[i - 1];
-      const b = samples[i];
-      return a.y + ((b.y - a.y) * (px - a.x)) / (b.x - a.x || 1);
+    const last = elapsed.length - 1;
+    const fmt = (t) => (t < 59.5 ? `${Math.round(t)}s` : t < 3570 ? `${Math.round(t / 60)}m` : `${(t / 3600).toFixed(1)}h`);
+    const timeAt = (p) => {
+      const i = Math.min(last - 1, Math.floor(p * last));
+      return elapsed[i] + (elapsed[i + 1] - elapsed[i]) * (p * last - i);
     };
-    let at = 0;
-    let tween = 0;
-    const place = (x) => {
-      at = x;
-      reveal.setAttribute("width", String(x * 1000));
-      head.style.setProperty("--x", x);
-      head.style.setProperty("--y", 1 - yAt(x) / 200);
+    const endpoints = [
+      { host: "acme.com/webhooks", kind: "Healthy", codes: [204], note: "1st attempt · 84 ms" },
+      { host: "shop.example/hooks", kind: "Flaky", codes: [503, 503, 204], note: "3rd attempt · 5m in" },
+      { host: "crm.example/in", kind: "Down", codes: [500, 500, 500, 500, 500, 500, 500, 500], note: "8 attempts · 27.6h" },
+    ];
+    const marks = labels.map((_, i) => `<span class="mark" style="--x:${i / last}"><span class="mark-chip"></span><span class="mark-dot"></span></span>`).join("");
+    race.innerHTML = `<div class="race-lanes">${endpoints.map((e) => `
+      <div class="race-row lane">
+        <div class="endpoint"><b>${e.host}</b><small>${e.kind}</small></div>
+        <div class="lane-track"><div class="lane-inner"><span class="lane-rail"></span><span class="lane-fill"></span>${marks}<span class="lane-head"></span></div></div>
+        <div class="status"><span class="status-text"></span><small></small></div>
+      </div>`).join("")}</div>
+      <div class="race-row race-axis"><span class="race-label"></span><div class="lane-track"><div class="lane-inner">${labels.map((l, i) => `<span class="tick" style="--x:${i / last}">${l}</span>`).join("")}</div></div><span class="race-end"></span></div>`;
+    const lanesEl = $(".race-lanes", race);
+    const lanes = [...race.querySelectorAll(".lane")].map((el, n) => ({
+      el,
+      ...endpoints[n],
+      marks: [...el.querySelectorAll(".mark")],
+      inner: $(".lane-inner", el),
+      status: $(".status", el),
+      text: $(".status-text", el),
+      small: $(".status small", el),
+      reached: -1,
+      shown: "",
+    }));
+    const setStatus = (lane, cls, text, small) => {
+      const key = `${cls}|${text}|${small}`;
+      if (lane.shown === key) return;
+      lane.shown = key;
+      lane.status.className = `status ${cls}`;
+      lane.text.textContent = text;
+      lane.small.textContent = small;
     };
-    const setProgress = (fraction, animate) => {
-      cancelAnimationFrame(tween);
-      head.toggleAttribute("data-on", fraction > 0 || animate);
-      if (!animate || reduceMotion) return place(fraction);
-      const from = at;
-      const start = performance.now();
-      const step = (now) => {
-        const p = Math.min(1, (now - start) / 460);
-        const eased = p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2;
-        place(from + (fraction - from) * eased);
-        if (p < 1) tween = requestAnimationFrame(step);
-      };
-      tween = requestAnimationFrame(step);
-    };
-    place(0);
-    const say = (html) => {
-      status.replaceChildren();
-      for (const part of html) status.append(part);
-    };
-    const strong = (text, cls) => {
-      const b = document.createElement("b");
-      b.textContent = text;
-      if (cls) b.className = cls;
-      return b;
-    };
-    const play = async (runMode) => {
-      const id = ++run;
-      const codes = outcomes[runMode];
-      for (const w of wraps) w.replaceChildren();
-      for (const mark of markEls) delete mark.dataset.state;
-      setProgress(0, false);
-      clock.textContent = "t = 0s";
-      say(["Sending…"]);
-      const step = reduceMotion ? 0 : 560;
-      for (let i = 0; i < codes.length; i++) {
-        if (i > 0) await sleep(step);
-        if (id !== run) return;
-        const code = codes[i];
-        const tone = code < 300 ? "ok" : code >= 500 && runMode === "down" ? "bad" : "warn";
-        const chip = document.createElement("span");
-        chip.className = `attempt ${tone}`;
-        chip.textContent = code;
-        wraps[i].append(chip);
-        markEls[i].dataset.state = tone;
-        setProgress(i / (labels.length - 1), true);
-        clock.textContent = `t = ${labels[i]}`;
-        say([`Attempt ${i + 1}: HTTP ${code}`]);
-      }
-      await sleep(reduceMotion ? 0 : 300);
-      if (id !== run) return;
-      head.removeAttribute("data-on");
-      const n = codes.length;
-      if (codes[n - 1] < 300) {
-        say([strong("Succeeded", "ok"), ` after ${n} attempt${n > 1 ? "s" : ""}. Every attempt is stored in the delivery log.`]);
-      } else {
-        say([strong("Failed", "bad"), " after 8 attempts over about 28 hours. If an endpoint keeps failing for 5 days, Hookgres disables it."]);
-      }
-    };
-    // Plays healthy, flaky and down in turn while on screen. Picking one stops the
-    // tour and replays that one.
-    const order = ["healthy", "flaky", "down"];
-    let auto = !reduceMotion;
-    let driving = false;
-    const seg = $(".sim-controls .seg");
-    const live = () => status.setAttribute("aria-live", "polite");
-    seg.addEventListener("pointerdown", live);
-    seg.addEventListener("focusin", live);
-    const pick = segmented(seg, (button) => {
-      if (driving) return;
-      auto = false;
-      status.setAttribute("aria-live", "polite");
-      play(button.dataset.mode);
-    });
-    const show = (i) => {
-      driving = true;
-      pick(i, false);
-      driving = false;
-      return play(order[i]);
-    };
-    if (reduceMotion) {
-      show(1);
-    } else {
-      (async () => {
-        for (let i = 0; ; i = (i + 1) % order.length) {
-          await whenVisible(chart);
-          if (!auto) return;
-          await show(i);
-          await sleep(2400);
-          if (!auto) return;
+    const render = (p) => {
+      if (p < 0) {
+        clock.textContent = "t = 0s";
+        for (const lane of lanes) {
+          lane.inner.style.setProperty("--p", 0);
+          lane.el.toggleAttribute("data-active", true);
+          setStatus(lane, "live", "Sending", "first attempt");
         }
-      })();
+        return;
+      }
+      const t = timeAt(p);
+      clock.textContent = `t = ${fmt(t)}`;
+      for (const lane of lanes) {
+        const end = (lane.codes.length - 1) / last;
+        const reached = Math.min(lane.codes.length - 1, Math.floor(p * last + 1e-6));
+        for (let i = lane.reached + 1; i <= reached; i++) {
+          const code = lane.codes[i];
+          const tone = code < 300 ? "ok" : lane.kind === "Down" ? "bad" : "warn";
+          const chip = document.createElement("span");
+          chip.className = `attempt ${tone}`;
+          chip.textContent = code;
+          $(".mark-chip", lane.marks[i]).append(chip);
+          lane.marks[i].dataset.state = tone;
+        }
+        lane.reached = reached;
+        const done = p >= end;
+        lane.inner.style.setProperty("--p", Math.min(p, end));
+        lane.el.toggleAttribute("data-active", !done);
+        if (done) {
+          const ok = lane.codes.at(-1) < 300;
+          lane.el.dataset.result = ok ? "ok" : "bad";
+          for (const mark of lane.marks.slice(lane.codes.length)) mark.dataset.skip = "";
+          setStatus(lane, ok ? "ok" : "bad", ok ? "Delivered" : "Failed", lane.note);
+        } else {
+          setStatus(lane, "live", "Retrying", `next try in ${fmt(Math.max(1, elapsed[reached + 1] - t))}`);
+        }
+      }
+    };
+    const reset = () => {
+      for (const lane of lanes) {
+        lane.reached = -1;
+        delete lane.el.dataset.result;
+        for (const mark of lane.marks) {
+          delete mark.dataset.state;
+          delete mark.dataset.skip;
+          $(".mark-chip", mark).replaceChildren();
+        }
+      }
+    };
+
+    if (reduceMotion) render(1);
+    else {
+      // One run: a short lead-in, 7s along the schedule, a 2.6s hold on the result,
+      // then a quick fade.
+      const LEAD = 550;
+      const RUN = 7000;
+      const HOLD = 2600;
+      const FADE = 320;
+      let clockMs = 0;
+      let lastNow = 0;
+      let onscreen = false;
+      let paused = false;
+      let frame = 0;
+      let fading = false;
+      let holding = false;
+      const restart = () => {
+        fading = false;
+        holding = false;
+        clockMs = 0;
+        reset();
+        render(-1);
+        delete lanesEl.dataset.fading;
+      };
+      const tick = (now) => {
+        const dt = Math.min(64, now - (lastNow || now));
+        lastNow = now;
+        clockMs += dt;
+        if (clockMs < LEAD + RUN) render((clockMs - LEAD) / RUN);
+        else if (clockMs < LEAD + RUN + HOLD) {
+          if (!holding) {
+            holding = true;
+            render(1);
+          }
+        }
+        else if (clockMs < LEAD + RUN + HOLD + FADE) {
+          if (!fading) {
+            fading = true;
+            lanesEl.dataset.fading = "";
+          }
+        } else restart();
+        frame = requestAnimationFrame(tick);
+      };
+      const sync = () => {
+        cancelAnimationFrame(frame);
+        lastNow = 0;
+        // Stopped mid-fade: start the next run now rather than leave the lanes blank.
+        if (fading) restart();
+        if (onscreen && !paused && !document.hidden) frame = requestAnimationFrame(tick);
+      };
+      render(-1);
+      toggle.hidden = false;
+      toggle.addEventListener("click", () => {
+        paused = !paused;
+        toggle.toggleAttribute("data-paused", paused);
+        $(".live-label", toggle).textContent = paused ? "Play" : "Pause";
+        sync();
+      });
+      document.addEventListener("visibilitychange", sync);
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver(([entry]) => {
+          onscreen = entry.isIntersecting && entry.intersectionRatio >= 0.4;
+          sync();
+        }, { threshold: [0, 0.4] }).observe(race);
+      } else {
+        onscreen = true;
+        sync();
+      }
     }
   }
 
