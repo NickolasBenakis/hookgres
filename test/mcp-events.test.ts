@@ -237,6 +237,50 @@ describe("events/subscribe", () => {
   });
 });
 
+describe("races and limits", () => {
+  it("creates one endpoint for concurrent subscribes with the same key", async () => {
+    // Verify the URL first, so the three calls race on find-then-create.
+    await subscribe({ arguments: { severity: "P9" } });
+    const args = { arguments: { severity: "P1" } };
+    // Warm the pool so the three calls get their own connections at once.
+    const clients = await Promise.all(
+      [1, 2, 3, 4, 5, 6].map(() => pool.connect()),
+    );
+    for (const client of clients) client.release();
+    await Promise.all([subscribe(args), subscribe(args), subscribe(args)]);
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM "${schema}".endpoints
+       WHERE metadata->'arguments'->>'severity' = 'P1'`,
+    );
+    expect(rows[0].n).toBe(1);
+  });
+
+  it("rate-limits verification POSTs per host", async () => {
+    const limited = create({ verificationsPerHostPerMinute: 1 });
+    receiver.respond = () => 200;
+    receiver.body = "{}";
+    const attempt = (path: string) =>
+      limited.handle(
+        "events/subscribe",
+        {
+          name: "incident.created",
+          delivery: { url: `${receiver.url}/${path}`, secret },
+        },
+        { principal: "user_1" },
+      );
+    await expectError(attempt("a"), McpEventsErrorCode.CallbackEndpointError);
+    await expectError(attempt("b"), McpEventsErrorCode.ResourceExhausted);
+    await limited.stop();
+  });
+
+  it("caps the size of arguments", async () => {
+    await expectError(
+      subscribe({ arguments: { blob: "x".repeat(5000) } }),
+      McpEventsErrorCode.InvalidParams,
+    );
+  });
+});
+
 describe("emit and delivery", () => {
   it("delivers only when the emitting transaction commits", async () => {
     const { id } = await subscribe();

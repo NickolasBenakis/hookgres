@@ -99,6 +99,14 @@ subscription even if the process restarts before delivery.
 - Cursor replay: events are emit-only (`cursor: null`). Hookgres keeps queued
   events across restarts, which is more than the SEP asks of emit-only types.
 - `gap` and `terminated` control envelopes.
+- `arguments` aren't validated against `inputSchema`; they're only capped at
+  4 KB. Validate them before calling `handle()` if your `matches` relies on
+  their shape.
 - No-expiry subscriptions are only granted with `allowNoExpiry: true`.
+
+Verification POSTs are limited to 10 per destination host per minute
+(`verificationsPerHostPerMinute`); over that, subscribe answers
+`ResourceExhausted`. Concurrent subscribe and unsubscribe calls for the same
+subscription are serialized with a Postgres advisory lock.
 
 Call `events.deleteExpired()` on a schedule to remove expired subscriptions.

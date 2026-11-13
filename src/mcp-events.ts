@@ -93,13 +93,20 @@ export interface McpEventsOptions {
       | "envelope"
       | "deliveryHeaders"
       | "blockPrivateAddresses"
+      // A custom fetch would turn off the delivery-time address checks.
+      | "fetch"
     >
   >;
+  /** Verification POSTs allowed per destination host per minute. Defaults to 10. */
+  verificationsPerHostPerMinute?: number;
 }
 
 /** SEP-3415 suggests 3-5 attempts within 10-15 minutes. */
 const RETRY_SCHEDULE = [5_000, 30_000, 120_000, 300_000];
 const HOUR = 3_600_000;
+const MAX_ARGUMENTS_BYTES = 4096;
+/** Enough for {"challenge": "..."}; a longer body can't be a valid answer. */
+const MAX_CHALLENGE_RESPONSE_BYTES = 4096;
 
 interface Subscription {
   endpointId: string;
@@ -122,6 +129,9 @@ export class McpEvents {
   private readonly allowHttp: boolean;
   private readonly guard: AddressGuard;
   private readonly transport: { send: Transport; close(): void };
+  private readonly verificationLimit: number;
+  /** Verification POST times per host, for the SEP's per-host rate limit. */
+  private readonly verificationLog = new Map<string, number[]>();
 
   constructor(options: McpEventsOptions) {
     const schema = options.schema ?? "hookgres_mcp_events";
@@ -154,6 +164,7 @@ export class McpEvents {
     this.allowNoExpiry = options.allowNoExpiry ?? false;
     this.verifyMode = options.verify ?? "handshake";
     this.allowHttp = options.insecure?.allowHttp ?? false;
+    this.verificationLimit = options.verificationsPerHostPerMinute ?? 10;
   }
 
   /** Merge into the capabilities your server returns. */
@@ -269,11 +280,39 @@ export class McpEvents {
 
   /** Deletes subscriptions past their `refreshBefore`. Returns how many. */
   async deleteExpired(): Promise<number> {
-    const { rowCount } = await this.pool.query(
-      `DELETE FROM ${this.table}
+    const { rows } = await this.pool.query<{ id: string }>(
+      `SELECT id FROM ${this.table}
        WHERE (metadata->>'refreshBefore')::timestamptz <= now()`,
     );
-    return rowCount ?? 0;
+    let deleted = 0;
+    // deleteEndpoint removes deliveries first, so it can't deadlock workers.
+    for (const row of rows) {
+      if (await this.hookgres.deleteEndpoint(row.id)) deleted++;
+    }
+    return deleted;
+  }
+
+  /**
+   * Runs `fn` while holding a session advisory lock on the subscription id,
+   * so concurrent subscribe and unsubscribe calls for one key can't race.
+   */
+  private async withKeyLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
+        id,
+      ]);
+      try {
+        return await fn();
+      } finally {
+        await client.query(
+          "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+          [id],
+        );
+      }
+    } finally {
+      client.release();
+    }
   }
 
   private async subscribe(
@@ -305,6 +344,21 @@ export class McpEvents {
       throw invalid("delivery.secret is required");
     const refreshBefore = this.grant(params.ttlMs);
     const id = subscriptionId(principal, url, name, args);
+    return this.withKeyLock(id, () =>
+      this.upsert({ id, principal, name, args, url, secret, refreshBefore }),
+    );
+  }
+
+  private async upsert(input: {
+    id: string;
+    principal: string;
+    name: string;
+    args: Record<string, unknown>;
+    url: string;
+    secret: string;
+    refreshBefore: string | null;
+  }): Promise<Record<string, unknown>> {
+    const { id, principal, name, args, url, secret, refreshBefore } = input;
     const existing = await this.find(id);
 
     let verified =
@@ -322,13 +376,20 @@ export class McpEvents {
     };
 
     if (!existing) {
-      await this.hookgres.createEndpoint({
-        tenantId: id,
-        url,
-        eventTypes: [name],
-        secret,
-        metadata,
-      });
+      try {
+        await this.hookgres.createEndpoint({
+          tenantId: id,
+          url,
+          eventTypes: [name],
+          secret,
+          metadata,
+        });
+      } catch (error) {
+        if (error instanceof HookgresValidationError) {
+          throw invalid("delivery.url is not an allowed callback address");
+        }
+        throw error;
+      }
       return {
         resultType: "complete",
         id,
@@ -369,16 +430,20 @@ export class McpEvents {
       });
     }
     const { name, args, url } = this.keyParams(params);
-    const existing = await this.find(
-      subscriptionId(principal, url, name, args),
-    );
-    if (!existing) {
-      throw new McpEventsError(McpEventsErrorCode.NotFound, "NotFound", {
-        kind: "subscription",
-      });
-    }
-    await this.hookgres.deleteEndpoint(existing.endpointId);
-    return { resultType: "complete" };
+    const id = subscriptionId(principal, url, name, args);
+    return this.withKeyLock(id, async () => {
+      const { rows } = await this.pool.query<{ id: string }>(
+        `SELECT id FROM ${this.table} WHERE tenant_id = $1`,
+        [id],
+      );
+      if (rows.length === 0) {
+        throw new McpEventsError(McpEventsErrorCode.NotFound, "NotFound", {
+          kind: "subscription",
+        });
+      }
+      for (const row of rows) await this.hookgres.deleteEndpoint(row.id);
+      return { resultType: "complete" };
+    });
   }
 
   private keyParams(params: Record<string, unknown>) {
@@ -392,6 +457,9 @@ export class McpEvents {
     const args = (params.arguments ?? {}) as Record<string, unknown>;
     if (typeof args !== "object" || args === null || Array.isArray(args)) {
       throw invalid("arguments must be an object");
+    }
+    if (canonicalJson(args).length > MAX_ARGUMENTS_BYTES) {
+      throw invalid(`arguments must be at most ${MAX_ARGUMENTS_BYTES} bytes`);
     }
     const delivery = params.delivery;
     if (typeof delivery !== "object" || delivery === null) {
@@ -460,6 +528,7 @@ export class McpEvents {
         { reason: "challenge_failed" },
       );
     }
+    this.limitVerifications(new URL(url).hostname);
     const challenge = randomBytes(24).toString("base64url");
     const body = JSON.stringify({ type: "verification", challenge });
     const messageId = `msg_verification_${randomBytes(16).toString("hex")}`;
@@ -479,9 +548,10 @@ export class McpEvents {
         redirect: "manual",
         signal: AbortSignal.timeout(5_000),
       });
-      const text = response.body
-        ? await new Response(response.body).text()
-        : "";
+      const text = await readBounded(
+        response.body,
+        MAX_CHALLENGE_RESPONSE_BYTES,
+      );
       if (response.status >= 200 && response.status < 300) {
         const echoed = parseChallenge(text);
         if (echoed !== null && safeEqual(echoed, challenge)) return;
@@ -499,6 +569,22 @@ export class McpEvents {
     );
   }
 
+  private limitVerifications(host: string) {
+    const now = Date.now();
+    const recent = (this.verificationLog.get(host) ?? []).filter(
+      (at) => at > now - 60_000,
+    );
+    if (recent.length >= this.verificationLimit) {
+      throw new McpEventsError(
+        McpEventsErrorCode.ResourceExhausted,
+        "Too many verification requests to this host",
+        { limit: "verifications", max: this.verificationLimit },
+      );
+    }
+    recent.push(now);
+    this.verificationLog.set(host, recent);
+  }
+
   private async deliveryStatus(sub: Subscription) {
     const { rows } = await this.pool.query<{
       last_success: Date | null;
@@ -514,7 +600,8 @@ export class McpEvents {
     );
     const row = rows[0];
     return {
-      active: true,
+      // false when delivery was suspended; this refresh has just resumed it.
+      active: !sub.disabled,
       lastDeliveryAt: row?.last_success?.toISOString() ?? null,
       lastError:
         sub.failingSince && row?.last_error
@@ -551,6 +638,29 @@ function canonicalJson(value: unknown): string {
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+/** Reads at most `limit` bytes of a body, then cancels the rest. */
+async function readBounded(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<string> {
+  if (!body) return "";
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size <= limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  if (size > limit) return "";
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function invalid(message: string): McpEventsError {
