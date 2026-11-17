@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- [#60](https://github.com/NickolasBenakis/hookgres/pull/60) [`8ddcea4`](https://github.com/NickolasBenakis/hookgres/commit/8ddcea45c1d2d6479b3488088111c3cf7f579264) Thanks [@NickolasBenakis](https://github.com/NickolasBenakis)! - Add three delivery options for receivers with their own conventions, such as MCP Events webhook mode: `envelope: false` sends the payload itself as the body, `deliveryHeaders` adds request headers per attempt, and `nonRetryableStatuses` fails a delivery at once on statuses like `410` without counting against the endpoint's health.
+
+- [#61](https://github.com/NickolasBenakis/hookgres/pull/61) [`8d3f089`](https://github.com/NickolasBenakis/hookgres/commit/8d3f089803641abcf0ae7a1d3fd0cf2fe5cbe4a9) Thanks [@NickolasBenakis](https://github.com/NickolasBenakis)! - Add `hookgres/mcp-events`: webhook delivery for MCP Events (SEP-3415, draft). It handles `events/list`, `events/subscribe` and `events/unsubscribe`, verifies callback endpoints with a signed challenge, and `emit()` queues an event for every matching subscription inside your transaction, with bounded retries, `X-MCP-Subscription-Id` and Standard Webhooks signatures.
+
 ## 0.6.0
 
 ### Minor Changes
