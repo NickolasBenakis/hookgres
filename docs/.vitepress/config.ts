@@ -170,6 +170,7 @@ export default defineConfig({
           },
           { text: "Privacy and GDPR", link: "/guides/privacy" },
           { text: "Migrating from Svix", link: "/guides/migrating-from-svix" },
+          { text: "MCP Events webhooks", link: "/guides/mcp-events" },
         ],
       },
       {
